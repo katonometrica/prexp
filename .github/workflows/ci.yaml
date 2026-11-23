@@ -66,7 +66,14 @@ jobs:
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           month="$(date -u +%Y-%m)"
           tag="${INPUTS_HASH:0:16}-${month}"
-          mirror="$(awk '/^URIs:/ {print $2; exit}' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true)"
+          # The runner lists its mirrors in a file (URIs: mirror+file:/etc/apt/...): take
+          # the first plain http(s) mirror from it. Anything else means default mirrors.
+          uri="$(awk '/^URIs:/ {print $2; exit}' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true)"
+          case "$uri" in
+            mirror+file:*) mirror="$(grep -m1 -oE 'https?://[^[:space:]]+' "${uri#mirror+file:}" 2>/dev/null || true)" ;;
+            *) mirror="$uri" ;;
+          esac
+          [[ "$mirror" =~ ^https?://[A-Za-z0-9.-]+(/[A-Za-z0-9._/-]*)?$ ]] || mirror=""
           {
             echo "image=ghcr.io/${owner}/prexp-ci:${tag}"
             echo "cache=ghcr.io/${owner}/prexp-ci:buildcache"
