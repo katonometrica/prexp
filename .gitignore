@@ -1,0 +1,32 @@
+# R and RStudio
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+.Rapp.history
+
+# renv: packages are restored, never committed
+renv/library/
+renv/staging/
+renv/sandbox/
+
+# Secrets and local settings: every .env variant except the committed example
+.env
+.env.*
+!.env.example
+.Renviron
+.claude/settings.local.json
+
+# Downloads, build, check and coverage output
+*.zip
+!tests/testthat/fixtures/**/*.zip
+*.part
+*.tar.gz
+*.Rcheck/
+/coverage/
+coverage.html
+
+# Operating systems
+.DS_Store
+Thumbs.db
+desktop.ini
