@@ -62,6 +62,8 @@ R's site library, and renv is never switched on inside a container.
 
 NHSBSA Copyright 2021-2026
 
+What the loader relies on about the files (format, grain, measures, prescribers) is in [docs/dataset.md](docs/dataset.md).
+
 Contains public sector information licensed under the Open Government Licence v3.0.
 
 ## Licence

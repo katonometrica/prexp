@@ -2,7 +2,7 @@
 
 How Prescription Explorer is built, at the level needed to write and work tickets. The goal and scope come first; the tickets are this repository's GitHub issues, one milestone per phase (section 9).
 
-Items marked **(phase 0)** are assumptions to confirm before building on them.
+The source data's format and grain were checked in phase 0; the findings are in [dataset.md](dataset.md).
 
 ## Goal and scope
 
@@ -115,7 +115,7 @@ Creating, attaching and detaching partitions needs ownership of the tables, whic
 
 ### 3.2 Tables
 
-Column names from the source are provisional **(phase 0)**. So is the grain: if a source row is finer than practice × BNF code × month (for example one row per SNOMED product), phase 0 decides whether the fact table keeps that grain or aggregates on load.
+A source row is finer than practice × BNF presentation × month: it is per SNOMED product and quantity per item, about 18.4 million rows a month. The app never needs that detail, so the loader aggregates on load to one row per month × practice × presentation (about 9.5 million rows a month), summing the measures ([dataset.md](dataset.md#row-grain)).
 
 **`core.prescribing`**, partitioned by range on `year_month`, one partition per month (`core.prescribing_202609`), no default partition
 
@@ -124,11 +124,13 @@ Column names from the source are provisional **(phase 0)**. So is the grain: if 
 | `year_month` | `int4` | `YYYYMM`. The source sends the text `'YYYY-MM'` (since March 2025), converted on load |
 | `practice_id` | `int4` | Key into `dim_practice` |
 | `presentation_id` | `int4` | Key into `dim_presentation` |
-| `items` | `int4` | |
-| `total_quantity` | `float8` | Units differ by form, never summed across presentations |
-| `adq_usage` | `float8` | Null where no ADQ is defined |
-| `nic` | `int8` or `float8` | Pence as `int8` if the source has at most two decimals **(phase 0)** |
-| `actual_cost` | `int8` or `float8` | Same rule |
+| `items` | `int4` | Sum of `ITEMS` |
+| `total_quantity` | `numeric` | Sum of `TOTAL_QUANTITY`. Units differ by presentation, never summed across presentations |
+| `adq_usage` | `numeric` | Sum of `ADQ_USAGE`; NULL where the presentation has no ADQ (the source writes 0) |
+| `nic` | `numeric` | Pounds; the source has at most 2 decimals |
+| `actual_cost` | `numeric` | Pounds; the source has up to 5 decimals |
+
+The measures are exact `numeric`, so the load check reconciles to the penny.
 
 Indexes, defined on the parent so each attached partition's matching indexes are adopted:
 
@@ -137,11 +139,11 @@ Indexes, defined on the parent so each attached partition's matching indexes are
 
 Both are covering indexes, so lookups are index-only scans. That only works once the visibility map is set, which is why the loader runs `VACUUM (ANALYZE)` on each new partition.
 
-**`core.dim_chemical`**: `chemical_id` (identity), `chemical_code` (unique, the first 9 characters of the BNF code), `chemical_name`. Trigram GIN index on `chemical_name`.
+**`core.dim_chemical`**: `chemical_id` (identity), `chemical_code` (unique, the source's `BNF_CHEMICAL_SUBSTANCE_CODE`: 9 characters, or 4 for appliance chapters 20 to 23), `chemical_name`. Trigram GIN index on `chemical_name`.
 
-**`core.dim_presentation`**: `presentation_id` (identity), `bnf_code` (unique), `bnf_description`, `chemical_id`, `bnf_chapter`, `bnf_section`, `bnf_paragraph`, `is_generic` (characters 10 and 11 of the BNF code are `AA`; null for appliance chapters 20 to 23), `snomed_code`, `first_seen`, `last_seen`. Trigram GIN index on `bnf_description`.
+**`core.dim_presentation`**: `presentation_id` (identity), `bnf_code` (unique), `bnf_description`, `chemical_id`, `bnf_chapter`, `bnf_section`, `bnf_paragraph`, `is_generic` (characters 10 and 11 of the BNF code are `AA`; null for appliance chapters 20 to 23), `first_seen`, `last_seen`. No SNOMED code: a presentation can have several. Trigram GIN index on `bnf_description`.
 
-**`core.dim_practice`**: `practice_id` (identity), `practice_code` (unique), `practice_name`, `address`, `postcode`, `icb_code`, `icb_name`, `region_code`, `region_name`, `first_seen`, `last_seen`. Trigram GIN index on `practice_name`. Name, ICB and region take the latest month's values.
+**`core.dim_practice`**: `practice_id` (identity), `practice_code` (unique), `practice_name`, `address`, `postcode`, `icb_code`, `icb_name`, `region_code`, `region_name`, `is_unidentified`, `first_seen`, `last_seen`. Trigram GIN index on `practice_name`. Name, ICB and region take the latest month's values, so every month shows today's geography (ICBs were reorganised in April 2026). `is_unidentified` marks the 'UNIDENTIFIED DOCTORS' codes, including the national code `-`; their rows stay in the fact table so totals reconcile.
 
 **Rollups**, all rebuilt one month at a time by the loader:
 
@@ -151,7 +153,7 @@ Both are covering indexes, so lookups are index-only scans. That only works once
 | `core.agg_chemical_month` | Chemical × region × month | Drug series at chemical level, regional comparison |
 | `core.agg_practice_month` | Practice × month | Practice monthly totals |
 
-**`core.load_log`**: `year_month`, `source_url`, `source_rows`, `loaded_rows`, `file_bytes`, `started_at`, `finished_at`, `status` (`running`, `loaded`, `failed`, `dropped`), `error`. The current window is the first and last month with status `loaded`.
+**`core.load_log`**: `year_month`, `source_url`, `source_sha256`, `source_rows`, `loaded_rows`, `file_bytes`, `started_at`, `finished_at`, `status` (`running`, `loaded`, `failed`, `dropped`), `error`. The current window is the first and last month with status `loaded`.
 
 **`raw.epd_staging`**: unlogged, every column `text`, matching the source header exactly. Truncated at the start of each load.
 
@@ -171,7 +173,7 @@ Both are covering indexes, so lookups are index-only scans. That only works once
 
 ### 3.4 Size estimate
 
-About 80 bytes per fact row including overhead, so about 1.4 GB of table per month and about 1.5 GB of indexes. Twelve months: roughly 35 GB, plus 5 to 10 GB while a month is staged, plus the next month being built before the oldest is dropped. **Plan for at least 80 GB free disk for Postgres.** P1-09 replaces this estimate with measured numbers.
+After aggregation about 9.5 million fact rows per month. At about 90 bytes per row including overhead, that is about 0.9 GB of table per month and about 1 GB of indexes. Twelve months: roughly 23 GB, plus 5 to 10 GB while a month is staged, plus the next month being built before the oldest is dropped. **Plan for at least 80 GB free disk for Postgres.** P1-09 replaces this estimate with measured numbers.
 
 ### 3.5 Migrations
 
@@ -197,13 +199,13 @@ A Postgres advisory lock stops two loads from running at once. The window size c
 
 | Step | What | Detail |
 | --- | --- | --- |
-| 1. Find | Look up the month's file | The NHSBSA open data portal runs CKAN: `package_show` for the dataset lists one resource per month, named `EPD_SNOMED_YYYYMM`. Resource ids are random, so the month is found by name |
-| 2. Download | Fetch the ZIP into `epd-downloads` | The ZIP is only offered through the resource's `zip_url`, a signed link valid for one hour with no published size or hash, so the metadata is fetched again just before each attempt. The CSV (`url`, about 7.7 GB, with a sha256) is the alternative; the choice is made in phase 0 **(phase 0)**. Written to a `.part` file and renamed when complete. Skipped if a complete file is already there |
-| 3. Validate header | Compare the CSV header with `inst/extdata/epd_columns.csv` | Any difference stops the load with a message listing the differences |
-| 4. Stage | Stream into `raw.epd_staging` | `unzip -p file.zip \| psql -c "\copy raw.epd_staging FROM STDIN CSV HEADER"` under `bash -o pipefail`. Streaming avoids unpacking a multi-GB file to disk and avoids loading it into R |
+| 1. Find | Look up the month's file | The NHSBSA open data portal runs CKAN: `package_show` for the dataset lists one resource per month, named `EPD_SNOMED_YYYYMM`. Resource ids are random, so the month is found by name. Its `sha256` is recorded; months are sometimes re-published, and a changed hash means the month is reloaded |
+| 2. Download | Fetch the ZIP into `epd-downloads` | The ZIP (about 0.67 GB against 7.7 GB for the CSV) is only offered through the resource's `zip_url`, a signed link valid for one hour, so the metadata is fetched again just before each attempt. Without a `zip_url`, the CSV (`url`) is downloaded instead. Written to a `.part` file and renamed when complete. Skipped if a complete file is already there |
+| 3. Validate header | Compare the CSV header with `inst/extdata/epd_columns.csv` | Read as the first line of `bsdtar -xOf`. Any difference stops the load with a message listing the differences |
+| 4. Stage | Stream into `raw.epd_staging` | `bsdtar -xOf file.zip \| psql -c "\copy raw.epd_staging FROM STDIN CSV HEADER"` under `bash -o pipefail`, with the stream's SHA-256 computed on the way and compared with the resource's `sha256`. `bsdtar` (libarchive), because Ubuntu's `unzip` cannot read these archives and silently outputs nothing. Streaming avoids unpacking a multi-GB file to disk and avoids loading it into R |
 | 5. Dimensions | Upsert chemicals, presentations and practices | `INSERT ... ON CONFLICT DO UPDATE`. Names are only overwritten by a month at least as recent as `last_seen` |
-| 6. Build | Create `core.prescribing_YYYYMM_new` as a plain table, insert from staging joined to the dimensions, add `CHECK (year_month = YYYYMM)`, build both indexes, `VACUUM (ANALYZE)` | Done outside the partitioned table, so the live data is untouched while it builds |
-| 7. Check | Row count, `sum(items)` and `sum(nic)` of the new table against staging; row count against the `COPY` count | Any mismatch stops the load. The live data is still untouched |
+| 6. Build | Create `core.prescribing_YYYYMM_new` as a plain table, insert from staging joined to the dimensions and grouped by practice and presentation (sums of the measures; `ADQ_USAGE` of 0 becomes NULL), add `CHECK (year_month = YYYYMM)`, build both indexes, `VACUUM (ANALYZE)` | Done outside the partitioned table, so the live data is untouched while it builds |
+| 7. Check | Staging rows against the `COPY` count; new table rows against the distinct practice × presentation pairs in staging; `sum(items)`, `sum(nic)` and `sum(actual_cost)` of the new table against staging | Any mismatch stops the load. The live data is still untouched |
 | 8. Swap | One transaction, `lock_timeout` 10 s, retried: detach and drop the existing partition for that month if any, rename and attach the new table, rebuild that month in the three rollups, drop the oldest partition and its rollup rows if the window is exceeded, update `load_log` | The `CHECK` constraint makes the attach instant. Detaching briefly locks the parent, so app queries may wait a moment |
 | 9. Clean | Truncate staging. Delete the ZIP | |
 
@@ -359,7 +361,7 @@ A failing scheduled task notifies by email through Coolify's notifications.
 
 **Backups.** The data can be rebuilt from the source, so there is no database backup. `docs/runbook.md` documents a rebuild from an empty database: `migrate()`, `load_window()`, `check_plans()`. The rebuild time is estimated from the phase 2 load timings.
 
-**Server.** Minimum 4 vCPU, 16 GB RAM, 100 GB SSD free for Postgres. Checked in phase 0.
+**Server.** Minimum 4 vCPU, 16 GB RAM, 100 GB SSD free for Postgres. Checked in phase 0 (P0-07) and recorded in `docs/benchmarks.md` in P1-08.
 
 ## 8. Repository conventions
 
@@ -414,7 +416,7 @@ At 10 hours a week, v1 is about 18 weeks and v2 about 6 more.
 | English Indices of Deprivation, latest release | Deprivation score per LSOA | LSOA, weighted by the practice's patients |
 | ONS Rural Urban Classification | Rural or urban per LSOA | LSOA, weighted the same way |
 
-**Groups.** One model per group. Prefixes follow the legacy BNF structure the dataset uses, confirmed in P0-07.
+**Groups.** One model per group. Prefixes follow the legacy BNF structure the dataset uses. P0-07 found that several prefixes also capture drugs the group does not mean (for example heart-failure diuretics in `0202`, INR test strips in `020802`) and that ADQ is undefined for whole classes; the proposals are in [dataset.md](dataset.md#v2-groups-findings-to-review-in-v2-03). V2-03 turns the table below into a reviewed lookup of chemical codes with inclusions, exclusions and reasons.
 
 | Area | Group | BNF prefix | Outcome |
 | --- | --- | --- | --- |
@@ -422,7 +424,7 @@ At 10 hours a week, v1 is about 18 weeks and v2 about 6 more.
 | Cardiovascular | Antihypertensives | `0204`, `020505`, `020602`, `0202` | ADQ |
 | Cardiovascular | Oral anticoagulants | `020802` | Items |
 | Diabetes | Insulins | `060101` | Items |
-| Diabetes | Non-insulin antidiabetics | `060102` | ADQ |
+| Diabetes | Non-insulin antidiabetics | `060102` | Items (ADQ is 0 for 44% of items) |
 | Respiratory | Inhaled bronchodilators | `0301` | Items |
 | Respiratory | Inhaled corticosteroids and combinations | `0302` | Items |
 
