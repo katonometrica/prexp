@@ -1,13 +1,15 @@
 # Continuous integration for prexp (spec section 6.2).
 #
 # image        Builds and pushes ghcr.io/<owner>/prexp-ci:<hash>-<month> only when no image
-#              exists for the current docker/Dockerfile, renv.lock and month. The month
-#              makes the OS layer (apt-get upgrade) refresh monthly.
-# test         Runs in that image with a PostgreSQL 18 service: lint, migrate, then tests
-#              with coverage. "test" is the required check on main, so keep this job id,
-#              give it no name, and make sure it can only pass by passing.
-# app-image    Pull requests: builds the app image on the tested layers and checks that it
-#              loads, with a read-only token.
+#              exists for the current docker/Dockerfile, renv.lock and month; otherwise
+#              every run reuses the stored image. The month refreshes the OS layer
+#              (apt-get upgrade) monthly.
+# checks       Runs in that image with a PostgreSQL 18 service: lint, migrate, then tests
+#              with coverage.
+# test         The required check on main: a gate that passes only if "checks" passed.
+#              Keep this job id, give it no name, and make sure it can only pass by passing.
+# app-image    Pull requests: builds the app image on the tested image's layers and checks
+#              that it loads, with a read-only token.
 # app-publish  main (push, monthly schedule, manual run): the same build, then pushes
 #              :<sha>, and :main only while the commit is still main's tip.
 #
@@ -46,11 +48,14 @@ jobs:
       packages: write
     outputs:
       image: ${{ steps.ref.outputs.image }}
-      cache: ${{ steps.ref.outputs.cache }}
       os-refresh: ${{ steps.ref.outputs.os-refresh }}
+      ubuntu-mirror: ${{ steps.ref.outputs.ubuntu-mirror }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The runner's own Ubuntu mirror is passed to the build, because archive.ubuntu.com
+      # can be very slow from GitHub's runners. All image builds must pass the same
+      # build arguments, or they cannot reuse each other's layers.
       - name: Name the CI image after its inputs and the month
         id: ref
         env:
@@ -61,13 +66,14 @@ jobs:
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           month="$(date -u +%Y-%m)"
           tag="${INPUTS_HASH:0:16}-${month}"
+          mirror="$(awk '/^URIs:/ {print $2; exit}' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true)"
           {
             echo "image=ghcr.io/${owner}/prexp-ci:${tag}"
-            echo "cache=ghcr.io/${owner}/prexp-ci:cache-${tag}"
-            echo "shared-cache=ghcr.io/${owner}/prexp-ci:buildcache"
+            echo "cache=ghcr.io/${owner}/prexp-ci:buildcache"
             echo "os-refresh=${month}"
+            echo "ubuntu-mirror=${mirror}"
           } >> "$GITHUB_OUTPUT"
-          echo "CI image: ghcr.io/${owner}/prexp-ci:${tag}" >> "$GITHUB_STEP_SUMMARY"
+          echo "CI image: ghcr.io/${owner}/prexp-ci:${tag} (Ubuntu mirror: ${mirror:-default})" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Log in to the GitHub Container Registry
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
@@ -109,9 +115,9 @@ jobs:
         with:
           driver-opts: image=moby/buildkit:v0.35.1@sha256:baf6138eb8c37644800c7c913fba051e840ebb9ba13eaf92d92ef9a1712d0b4c
 
-      # Two registry caches: one per image tag, written only by the single build of that
-      # tag, so the app image can reuse exactly the tested layers; and a shared one, so a
-      # build for a new renv.lock still reuses the OS layer of the month.
+      # Caches: the image itself carries its cache metadata (inline), so the app builds
+      # reuse exactly the tested layers with nothing extra stored; and one shared cache,
+      # overwritten by each build, lets a build for a new renv.lock reuse the OS layer.
       - name: Build and push the CI image
         if: steps.check.outputs.exists != 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -123,21 +129,20 @@ jobs:
           tags: ${{ steps.ref.outputs.image }}
           build-args: |
             OS_REFRESH=${{ steps.ref.outputs.os-refresh }}
+            UBUNTU_MIRROR=${{ steps.ref.outputs.ubuntu-mirror }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.description=prexp CI image: R, system libraries and the locked R packages
-          cache-from: |
-            type=registry,ref=${{ steps.ref.outputs.cache }}
-            type=registry,ref=${{ steps.ref.outputs.shared-cache }}
+          cache-from: type=registry,ref=${{ steps.ref.outputs.cache }}
           cache-to: |
+            type=inline
             type=registry,ref=${{ steps.ref.outputs.cache }},mode=max,image-manifest=true,oci-mediatypes=true
-            type=registry,ref=${{ steps.ref.outputs.shared-cache }},mode=max,image-manifest=true,oci-mediatypes=true
 
-  test:
+  checks:
     needs: image
-    # always(): the job also runs when the image job fails or the run is cancelled, and
-    # then fails, because GitHub counts a skipped required check as passed.
-    if: ${{ always() }}
+    # Runs when the image job fails (and then fails); Cancel and cancel-in-progress stop
+    # it. The required check is the gate job "test" below.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -240,6 +245,26 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  # The required check. It always runs, so a failed, skipped or cancelled "checks" job
+  # fails it (GitHub counts a skipped required check as passed), while Cancel still stops
+  # the checks themselves. Keep this job id and give it no name.
+  test:
+    needs: [image, checks]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Pass only if the checks passed
+        env:
+          IMAGE_RESULT: ${{ needs.image.result }}
+          CHECKS_RESULT: ${{ needs.checks.result }}
+        run: |
+          echo "image: ${IMAGE_RESULT}, checks: ${CHECKS_RESULT}"
+          if [ "$CHECKS_RESULT" != "success" ]; then
+            echo "::error::The checks ended with '${CHECKS_RESULT}'."
+            exit 1
+          fi
+
   # Pull requests, including Dependabot's: a read-only token. Writes happen in app-publish.
   app-image:
     if: ${{ github.event_name == 'pull_request' }}
@@ -272,8 +297,8 @@ jobs:
         with:
           driver-opts: image=moby/buildkit:v0.35.1@sha256:baf6138eb8c37644800c7c913fba051e840ebb9ba13eaf92d92ef9a1712d0b4c
 
-      # The base layers come from the tested CI image's own cache (same Dockerfile,
-      # renv.lock and month), so the app runs on the packages the tests ran on.
+      # The base layers come from the tested CI image itself (its inline cache), so the
+      # app runs on the packages the tests ran on.
       - name: Build the app image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -284,12 +309,13 @@ jobs:
           tags: ${{ steps.ref.outputs.image }}:${{ github.sha }}
           build-args: |
             OS_REFRESH=${{ needs.image.outputs.os-refresh }}
+            UBUNTU_MIRROR=${{ needs.image.outputs.ubuntu-mirror }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.description=Prescription Explorer app image
           cache-from: |
-            type=registry,ref=${{ needs.image.outputs.cache }}
+            type=registry,ref=${{ needs.image.outputs.image }}
             type=registry,ref=${{ steps.ref.outputs.app-cache }}
 
       - name: Check that prexp loads in the app image
@@ -340,12 +366,13 @@ jobs:
             ${{ steps.ref.outputs.image }}:${{ github.sha }}
           build-args: |
             OS_REFRESH=${{ needs.image.outputs.os-refresh }}
+            UBUNTU_MIRROR=${{ needs.image.outputs.ubuntu-mirror }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.description=Prescription Explorer app image
           cache-from: |
-            type=registry,ref=${{ needs.image.outputs.cache }}
+            type=registry,ref=${{ needs.image.outputs.image }}
             type=registry,ref=${{ steps.ref.outputs.app-cache }}
           cache-to: type=registry,ref=${{ steps.ref.outputs.app-cache }},mode=max,image-manifest=true,oci-mediatypes=true
 
