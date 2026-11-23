@@ -327,7 +327,7 @@ Tests use the `prexp_test` database with all migrations applied and the fixture 
 
 ### 6.2 Workflow `ci.yaml`, on every pull request and push to `main`
 
-1. Job `image`: the tag is the hash of `docker/Dockerfile` and `renv.lock` plus the ISO week. It builds and pushes `ghcr.io/katonometrica/prexp-ci:<tag>` only if that tag does not exist yet, passing the week as the build argument `OS_REFRESH`, so the OS layer (`apt-get upgrade`) is rebuilt weekly instead of being frozen by the build cache. Each build writes its own registry cache, and a shared one for the next build. Pull requests from forks cannot push, so a fork that needs a new image gets a clear failure
+1. Job `image`: the tag is the hash of `docker/Dockerfile` and `renv.lock` plus the month. It builds and pushes `ghcr.io/katonometrica/prexp-ci:<tag>` only if that tag does not exist yet, passing the month as the build argument `OS_REFRESH`, so the OS layer (`apt-get upgrade`) is rebuilt monthly instead of being frozen by the build cache. Otherwise every run reuses the stored image, so a new image is built only when a package or the Dockerfile changes, or the month turns. Each build writes its own registry cache, and a shared one for the next build. Pull requests from forks cannot push, so a fork that needs a new image gets a clear failure
 2. Job `test` runs in that image with a `postgres:18.7-trixie` service (the same digest as Compose), after creating the roles with the same init scripts as Compose. It runs even when `image` fails or the run is cancelled (`always()`), and then fails itself, because GitHub treats a skipped required check as passed
 3. Install the package, then `lintr::lint_package()`, failing on any lint
 4. `prexp::migrate()` on the empty service database and on the test database
@@ -335,7 +335,7 @@ Tests use the `prexp_test` database with all migrations applied and the fixture 
 6. `shinytest2` flows (from phase 6), not counted in coverage
 7. Jobs `app-image` (pull requests, read-only token) and `app-publish` (`main` only): build the `app` image from the tested CI image's cache and check that `library(prexp)` loads. `app-publish` pushes `:<commit sha>`, and moves `:main` only while the commit is still the tip of `main`, so re-running an old run cannot roll it back; from phase 6 it then calls the Coolify deploy webhook
 
-Triggers: pull requests, pushes to `main`, a weekly schedule on Mondays (which publishes the refreshed image) and manual runs. Third-party actions are pinned to commit SHAs and updated by Dependabot, with a seven-day cooldown on new releases; the BuildKit image is pinned by digest and updated by hand, because the image jobs hold a token that can push packages. The required check is strict: a pull request must be up to date with `main` before it merges. The container packages stay private until P1-08, when the server has to pull them; jobs log in with `GITHUB_TOKEN`.
+Triggers: pull requests, pushes to `main`, a monthly schedule on the 1st (which publishes the refreshed image) and manual runs. Third-party actions are pinned to commit SHAs and updated by Dependabot, with a seven-day cooldown on new releases; the BuildKit image is pinned by digest and updated by hand, because the image jobs hold a token that can push packages. The required check is strict: a pull request must be up to date with `main` before it merges. The container packages stay private until P1-08, when the server has to pull them; jobs log in with `GITHUB_TOKEN`.
 
 ### 6.3 Checks that need the full database
 

@@ -1,14 +1,14 @@
 # Continuous integration for prexp (spec section 6.2).
 #
-# image        Builds and pushes ghcr.io/<owner>/prexp-ci:<hash>-<week> only when no image
-#              exists for the current docker/Dockerfile, renv.lock and ISO week. The week
-#              makes the OS layer (apt-get upgrade) refresh weekly.
+# image        Builds and pushes ghcr.io/<owner>/prexp-ci:<hash>-<month> only when no image
+#              exists for the current docker/Dockerfile, renv.lock and month. The month
+#              makes the OS layer (apt-get upgrade) refresh monthly.
 # test         Runs in that image with a PostgreSQL 18 service: lint, migrate, then tests
 #              with coverage. "test" is the required check on main, so keep this job id,
 #              give it no name, and make sure it can only pass by passing.
 # app-image    Pull requests: builds the app image on the tested layers and checks that it
 #              loads, with a read-only token.
-# app-publish  main (push, weekly schedule, manual run): the same build, then pushes
+# app-publish  main (push, monthly schedule, manual run): the same build, then pushes
 #              :<sha>, and :main only while the commit is still main's tip.
 #
 # Third-party actions are pinned to commit SHAs, and the BuildKit image to a digest,
@@ -21,8 +21,9 @@ on:
   push:
     branches: [main]
   schedule:
-    # Mondays: rebuild the images on the new ISO week, so they get Ubuntu security fixes
-    - cron: "17 5 * * 1"
+    # The 1st of each month: rebuild the images for the new month, so they get Ubuntu
+    # security fixes
+    - cron: "17 5 1 * *"
   workflow_dispatch:
 
 permissions:
@@ -50,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Name the CI image after its inputs and the week
+      - name: Name the CI image after its inputs and the month
         id: ref
         env:
           # Every file that the base or ci stage copies belongs in this hash.
@@ -58,13 +59,13 @@ jobs:
         run: |
           : "${INPUTS_HASH:?docker/Dockerfile and renv.lock were not found}"
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          week="$(date -u +%G-W%V)"
-          tag="${INPUTS_HASH:0:16}-${week}"
+          month="$(date -u +%Y-%m)"
+          tag="${INPUTS_HASH:0:16}-${month}"
           {
             echo "image=ghcr.io/${owner}/prexp-ci:${tag}"
             echo "cache=ghcr.io/${owner}/prexp-ci:cache-${tag}"
             echo "shared-cache=ghcr.io/${owner}/prexp-ci:buildcache"
-            echo "os-refresh=${week}"
+            echo "os-refresh=${month}"
           } >> "$GITHUB_OUTPUT"
           echo "CI image: ghcr.io/${owner}/prexp-ci:${tag}" >> "$GITHUB_STEP_SUMMARY"
 
@@ -99,7 +100,7 @@ jobs:
           github.event_name == 'pull_request' &&
           github.event.pull_request.head.repo.full_name != github.repository
         run: |
-          echo "::error::This pull request needs a new CI image (a new docker/Dockerfile, renv.lock or week), and pull requests from forks cannot push images. A maintainer can push the branch to this repository and open the pull request from there."
+          echo "::error::This pull request needs a new CI image (a new docker/Dockerfile, renv.lock or month), and pull requests from forks cannot push images. A maintainer can push the branch to this repository and open the pull request from there."
           exit 1
 
       - name: Set up Docker Buildx
@@ -110,7 +111,7 @@ jobs:
 
       # Two registry caches: one per image tag, written only by the single build of that
       # tag, so the app image can reuse exactly the tested layers; and a shared one, so a
-      # build for a new renv.lock still reuses the OS layer of the week.
+      # build for a new renv.lock still reuses the OS layer of the month.
       - name: Build and push the CI image
         if: steps.check.outputs.exists != 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -269,7 +270,7 @@ jobs:
           driver-opts: image=moby/buildkit:v0.35.1@sha256:baf6138eb8c37644800c7c913fba051e840ebb9ba13eaf92d92ef9a1712d0b4c
 
       # The base layers come from the tested CI image's own cache (same Dockerfile,
-      # renv.lock and week), so the app runs on the packages the tests ran on.
+      # renv.lock and month), so the app runs on the packages the tests ran on.
       - name: Build the app image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -293,7 +294,7 @@ jobs:
           IMAGE: ${{ steps.ref.outputs.image }}:${{ github.sha }}
         run: docker run --rm "$IMAGE" Rscript -e 'library(prexp); cat(prexp_version(), "\n")'
 
-  # main only: push, the weekly schedule, or a manual run on main.
+  # main only: push, the monthly schedule, or a manual run on main.
   app-publish:
     if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     needs: [image, test]

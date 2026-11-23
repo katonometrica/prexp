@@ -43,8 +43,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 # - Fonts metric-compatible with Arial, Times New Roman and Courier New for charts and
 #   Office exports, DejaVu for wide Unicode coverage. unzip as a general tool (the
 #   loader reads the monthly archives with bsdtar, added in P1-05).
-# OS_REFRESH: CI passes the ISO week (for example 2026-W48). A new value changes this
-# layer's cache key, so the upgrade and everything after it run again once a week;
+# OS_REFRESH: CI passes the month (for example 2026-11). A new value changes this
+# layer's cache key, so the upgrade and everything after it run again once a month;
 # otherwise the build cache would keep the first build's OS packages forever. Local
 # builds leave it empty and keep their cache.
 ARG OS_REFRESH=
