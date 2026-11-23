@@ -1,0 +1,104 @@
+# Local development stack (docs/spec.md §2.2). From the repository root:
+#   docker compose up -d --build --wait      PostgreSQL 18 and RStudio (http://localhost:8787)
+#   docker compose --profile app up -d app   the Shiny app (http://localhost:3838)
+#   docker compose down                      stop; add -v to delete every volume, downloads included
+# Values come from .env (copy .env.example; never commit .env).
+name: prexp
+
+services:
+  db:
+    # 18.7 on Debian 13. postgres:latest and postgres:trixie are PostgreSQL 19 since 2026-11-19.
+    # Keep this reference identical to the CI service in .github/workflows/ci.yaml.
+    image: postgres:18.7-trixie@sha256:eb63372c1e05c755f55fa30cbd07aecc443676fc6c0fa90b9002d01537841e1a
+    # Development settings: the file includes the configuration initdb wrote into the
+    # data volume, then overrides it (docker/db/postgresql.dev.conf)
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.dev.conf"]
+    environment:
+      POSTGRES_USER: prexp_owner
+      POSTGRES_DB: ${PREXP_DB_NAME:-prexp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # read by docker/db/init/01-roles.sh on first start
+      PREXP_LOADER_PASSWORD: ${PREXP_LOADER_PASSWORD:?set PREXP_LOADER_PASSWORD in .env}
+      PREXP_APP_PASSWORD: ${PREXP_APP_PASSWORD:?set PREXP_APP_PASSWORD in .env}
+      PREXP_TEST_DB_NAME: ${PREXP_TEST_DB_NAME:-prexp_test}
+    volumes:
+      # PostgreSQL 18 keeps its cluster in /var/lib/postgresql/18/docker; mount the parent
+      - pgdata:/var/lib/postgresql
+      # run once, when pgdata is empty
+      - ./docker/db/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/db/postgresql.dev.conf:/etc/postgresql/postgresql.dev.conf:ro
+    ports:
+      - "127.0.0.1:${HOST_PORT_DB:-5432}:5432"
+    # parallel queries use /dev/shm; the default is 64 MB
+    shm_size: 1gb
+    stop_grace_period: 1m
+    healthcheck:
+      # TCP on 127.0.0.1: the temporary socket-only server that runs the init scripts
+      # never counts as healthy, so rstudio starts only after they have finished
+      test: ["CMD-SHELL", "pg_isready -q -h 127.0.0.1 -p 5432 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 2m
+      start_interval: 2s
+
+  rstudio:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: dev
+    image: prexp-dev:local
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # RStudio login for user rstudio
+      PASSWORD: ${RSTUDIO_PASSWORD:?set RSTUDIO_PASSWORD in .env}
+      PREXP_DB_HOST: ${PREXP_DB_HOST:-db}
+      PREXP_DB_PORT: ${PREXP_DB_PORT:-5432}
+      PREXP_DB_NAME: ${PREXP_DB_NAME:-prexp}
+      PREXP_TEST_DB_NAME: ${PREXP_TEST_DB_NAME:-prexp_test}
+      # the owner's password under the same naming scheme as the other roles
+      PREXP_OWNER_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PREXP_LOADER_PASSWORD: ${PREXP_LOADER_PASSWORD:?set PREXP_LOADER_PASSWORD in .env}
+      PREXP_APP_PASSWORD: ${PREXP_APP_PASSWORD:?set PREXP_APP_PASSWORD in .env}
+      PREXP_DOWNLOAD_DIR: /data/epd
+      # defaults for psql in the RStudio terminal (always pass -U)
+      PGHOST: ${PREXP_DB_HOST:-db}
+      PGPORT: ${PREXP_DB_PORT:-5432}
+      PGDATABASE: ${PREXP_DB_NAME:-prexp}
+    volumes:
+      # source code only; the database and the downloads live in named volumes
+      - .:/home/rstudio/prexp
+      - epd-downloads:/data/epd
+    ports:
+      - "127.0.0.1:${HOST_PORT_RSTUDIO:-8787}:8787"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8787/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 1m
+
+  app:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: app
+    image: prexp-app:local
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # read-only app role only
+      PREXP_DB_HOST: ${PREXP_DB_HOST:-db}
+      PREXP_DB_PORT: ${PREXP_DB_PORT:-5432}
+      PREXP_DB_NAME: ${PREXP_DB_NAME:-prexp}
+      PREXP_APP_PASSWORD: ${PREXP_APP_PASSWORD:?set PREXP_APP_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${HOST_PORT_APP:-3838}:3838"
+
+volumes:
+  pgdata:
+  epd-downloads:
