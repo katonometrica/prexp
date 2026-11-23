@@ -111,9 +111,10 @@ jobs:
         with:
           driver-opts: image=moby/buildkit:v0.35.1@sha256:baf6138eb8c37644800c7c913fba051e840ebb9ba13eaf92d92ef9a1712d0b4c
 
-      # This runner's own Ubuntu mirror, because archive.ubuntu.com can be very slow from
-      # GitHub's runners. Passed as a build secret, not a build argument: build arguments
-      # are part of the cache key, and the mirror differs from runner to runner.
+      # The fastest Ubuntu mirror from this runner (.github/scripts/ubuntu-mirror.sh),
+      # because some are very slow from GitHub's runners. Passed as a build secret, not a
+      # build argument: build arguments are part of the cache key, and the choice differs
+      # from runner to runner.
       - name: Find this runner's Ubuntu mirror
         if: steps.check.outputs.exists != 'true'
         run: |
@@ -297,9 +298,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # This runner's own Ubuntu mirror, because archive.ubuntu.com can be very slow from
-      # GitHub's runners. Passed as a build secret, not a build argument: build arguments
-      # are part of the cache key, and the mirror differs from runner to runner.
+      # The fastest Ubuntu mirror from this runner (.github/scripts/ubuntu-mirror.sh),
+      # because some are very slow from GitHub's runners. Passed as a build secret, not a
+      # build argument: build arguments are part of the cache key, and the choice differs
+      # from runner to runner.
       - name: Find this runner's Ubuntu mirror
         run: |
           mirror="$(bash .github/scripts/ubuntu-mirror.sh)"
@@ -362,9 +364,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # This runner's own Ubuntu mirror, because archive.ubuntu.com can be very slow from
-      # GitHub's runners. Passed as a build secret, not a build argument: build arguments
-      # are part of the cache key, and the mirror differs from runner to runner.
+      # The fastest Ubuntu mirror from this runner (.github/scripts/ubuntu-mirror.sh),
+      # because some are very slow from GitHub's runners. Passed as a build secret, not a
+      # build argument: build arguments are part of the cache key, and the choice differs
+      # from runner to runner.
       - name: Find this runner's Ubuntu mirror
         run: |
           mirror="$(bash .github/scripts/ubuntu-mirror.sh)"

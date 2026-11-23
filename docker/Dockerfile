@@ -49,10 +49,10 @@ ARG DEBIAN_FRONTEND=noninteractive
 # layer's cache key, so the upgrade and everything after it run again once a month;
 # otherwise the build cache would keep the first build's OS packages forever. Local
 # builds leave it empty and keep their cache.
-# The Ubuntu mirror: CI passes its runner's own mirror as the build secret ubuntu_mirror,
-# because archive.ubuntu.com can be very slow from GitHub's runners (62 kB/s once). A
-# secret, not a build argument, because secrets are not part of the cache key and the
-# mirror differs from runner to runner. It is used for this layer only: the original
+# The Ubuntu mirror: CI passes the fastest mirror its runner can reach as the build
+# secret ubuntu_mirror (.github/scripts/ubuntu-mirror.sh), because some mirrors are very
+# slow from GitHub's runners (62 kB/s once). A secret, not a build argument, because
+# secrets are not part of the cache key and the choice differs from runner to runner. It is used for this layer only: the original
 # sources are put back at the end, so the image's apt setup is standard. Local builds
 # pass no secret and use the default mirrors.
 ARG OS_REFRESH=
