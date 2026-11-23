@@ -8,6 +8,17 @@ fixture_sha256 <- function(ym) {
   unname(tools::sha256sum(csv))
 }
 
+# A new migrated database with fixture months loaded by the real loader
+local_loaded_db <- function(months, env = parent.frame()) {
+  dbname <- local_migrated_db(env = env)
+  for (ym in months) {
+    suppressMessages(load_month(
+      ym, file = fixture_file(ym), sha256 = fixture_sha256(ym), dbname = dbname
+    ))
+  }
+  dbname
+}
+
 # One staging row, as text, with every column; arguments override the defaults
 staging_row <- function(...) {
   row <- list(
@@ -30,4 +41,82 @@ stage_rows <- function(con, ...) {
   rows <- do.call(rbind, list(...))
   DBI::dbExecute(con, "TRUNCATE raw.epd_staging")
   DBI::dbAppendTable(con, DBI::Id(schema = "raw", table = "epd_staging"), rows)
+}
+
+# The fact table and the rollups, keyed by codes, with measures as
+# trim_scale() text: the shape of oracle_text()
+loaded_fact <- function(con) {
+  DBI::dbGetQuery(con, "
+    SELECT f.year_month, pr.practice_code, p.bnf_code, coalesce(pr.region_code, '-') AS region_code,
+           c.chemical_code, f.items::text AS items,
+           trim_scale(f.total_quantity)::text AS total_quantity,
+           trim_scale(f.adq_usage)::text AS adq_usage, trim_scale(f.nic)::text AS nic,
+           trim_scale(f.actual_cost)::text AS actual_cost
+    FROM core.prescribing f
+    JOIN core.dim_practice pr ON pr.practice_id = f.practice_id
+    JOIN core.dim_presentation p ON p.presentation_id = f.presentation_id
+    JOIN core.dim_chemical c ON c.chemical_id = p.chemical_id")
+}
+
+loaded_presentation_month <- function(con) {
+  DBI::dbGetQuery(con, "
+    SELECT a.year_month, p.bnf_code, a.region_code, a.practices, a.items::text AS items,
+           trim_scale(a.total_quantity)::text AS total_quantity,
+           trim_scale(a.adq_usage)::text AS adq_usage, trim_scale(a.nic)::text AS nic,
+           trim_scale(a.actual_cost)::text AS actual_cost
+    FROM core.agg_presentation_month a
+    JOIN core.dim_presentation p ON p.presentation_id = a.presentation_id")
+}
+
+loaded_chemical_month <- function(con) {
+  DBI::dbGetQuery(con, "
+    SELECT a.year_month, c.chemical_code, a.region_code, a.practices, a.items::text AS items,
+           trim_scale(a.adq_usage)::text AS adq_usage, trim_scale(a.nic)::text AS nic,
+           trim_scale(a.actual_cost)::text AS actual_cost
+    FROM core.agg_chemical_month a
+    JOIN core.dim_chemical c ON c.chemical_id = a.chemical_id")
+}
+
+loaded_practice_month <- function(con) {
+  DBI::dbGetQuery(con, "
+    SELECT a.year_month, pr.practice_code, a.presentations, a.items::text AS items,
+           trim_scale(a.nic)::text AS nic, trim_scale(a.actual_cost)::text AS actual_cost
+    FROM core.agg_practice_month a
+    JOIN core.dim_practice pr ON pr.practice_id = a.practice_id")
+}
+
+# The same rows, whatever their order, with the expected columns
+expect_same_rows <- function(actual, expected, keys) {
+  tidy <- function(df) {
+    df <- as.data.frame(dplyr::arrange(df, dplyr::across(dplyr::all_of(keys))))[names(expected)]
+    rownames(df) <- NULL
+    df
+  }
+  testthat::expect_identical(tidy(actual), tidy(expected))
+}
+
+# Every loaded table equals the oracle for these months
+expect_loaded_as_oracle <- function(con, months) {
+  expect_same_rows(
+    loaded_fact(con), oracle_text(oracle_fact(months)), c("year_month", "practice_code", "bnf_code")
+  )
+  expect_same_rows(
+    loaded_presentation_month(con), oracle_text(oracle_presentation_month(months)),
+    c("year_month", "bnf_code", "region_code")
+  )
+  expect_same_rows(
+    loaded_chemical_month(con), oracle_text(oracle_chemical_month(months)),
+    c("year_month", "chemical_code", "region_code")
+  )
+  expect_same_rows(
+    loaded_practice_month(con), oracle_text(oracle_practice_month(months)),
+    c("year_month", "practice_code")
+  )
+}
+
+load_log <- function(con) {
+  DBI::dbGetQuery(con, "
+    SELECT year_month, status, source_rows::float8 AS source_rows,
+           loaded_rows::float8 AS loaded_rows, error
+    FROM core.load_log ORDER BY load_id")
 }

@@ -3,5 +3,6 @@
 export(db_connect)
 export(download_month)
 export(epd_resources)
+export(load_month)
 export(migrate)
 export(prexp_version)

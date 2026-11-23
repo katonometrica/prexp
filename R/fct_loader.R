@@ -7,6 +7,9 @@
 # holds the month's temporary tables between those steps (spec section 3.1).
 # Nothing in core changes before the swap. The SQL is in inst/sql/load/.
 
+# Advisory lock key for loads (namespace "prex", as the migration lock in db.R)
+load_lock <- c(1886545272L, 2L)
+
 # The named statements of inst/sql/load/<file>.sql. Each starts at a line
 # "-- name: <name>" and runs to the next; the comments before the first one are
 # the file's header.
@@ -28,6 +31,14 @@ month_statements <- function(file, year_month) {
   sql <- load_statements(file)
   sql[] <- gsub("{next}", ym + 1L, gsub("{ym}", ym, sql, fixed = TRUE), fixed = TRUE)
   sql
+}
+
+# Runs expr, then reports how long it took.
+timed <- function(step, expr) {
+  started <- Sys.time()
+  value <- force(expr)
+  message(sprintf("%s: %.1f s", step, as.numeric(difftime(Sys.time(), started, units = "secs"))))
+  value
 }
 
 #' Stream a monthly file into staging
@@ -95,6 +106,27 @@ stage_month <- function(file, sha256 = NULL, dbname = NULL) {
   )
 }
 
+#' Check that staging holds the month asked for
+#'
+#' Run right after staging, before anything uses the staged rows: a file for
+#' another month must never reach the dimensions or the build.
+#'
+#' @param con A connection as the loader.
+#' @param year_month The month, as `YYYYMM`.
+#' @noRd
+check_staged_month <- function(con, year_month) {
+  ym <- check_year_month(year_month)
+  staged <- DBI::dbGetQuery(con, month_statements("check_month", ym)[["staged_months"]])
+  expected <- sprintf("%d-%02d", ym %/% 100L, ym %% 100L)
+  if (!identical(staged$year_month, expected)) {
+    stop(
+      "The staged file holds ", toString(staged$year_month), ", not ", expected, ".",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
 #' Work out the staged month's dimensions
 #'
 #' Fills temporary tables with the month's chemicals, presentations and
@@ -153,8 +185,379 @@ apply_dimensions <- function(con, year_month) {
   invisible(TRUE)
 }
 
+#' Build a month beside the live data
+#'
+#' Creates `core.prescribing_<ym>_new` from staging and the month's prepared
+#' dimensions, one row per practice and presentation, with a `CHECK`
+#' constraint for the month and the parent's indexes, and runs `VACUUM
+#' (ANALYZE)` on it. Then computes the month's rollup rows into temporary
+#' tables, which [swap_month()] copies on the same connection.
+#'
+#' @param con The owner connection that ran [prepare_dimensions()].
+#' @param year_month The month, as `YYYYMM`.
+#' @return The rows of the new table, invisibly.
+#' @noRd
+build_month <- function(con, year_month) {
+  ym <- check_year_month(year_month)
+  sql <- month_statements("build_month", ym)
+  quiet_notices(con)
+  run <- function(name) DBI::dbExecute(con, sql[[name]], immediate = TRUE)
+  rows <- timed("build: aggregate", {
+    run("analyze_staging")
+    run("drop_new")
+    run("create_new")
+    run("insert_new")
+  })
+  timed("build: indexes", {
+    parent <- DBI::dbGetQuery(con, sql[["parent_indexes"]])
+    for (i in seq_len(nrow(parent))) {
+      DBI::dbExecute(con, new_index_sql(parent$name[i], parent$definition[i], ym), immediate = TRUE)
+    }
+  })
+  timed("build: vacuum", run("vacuum_new"))
+  timed("build: rollups", {
+    for (name in c("drop_rollups", "rollup_presentation", "rollup_chemical", "rollup_practice")) {
+      run(name)
+    }
+  })
+  invisible(as.numeric(rows))
+}
+
+# One of the parent's index definitions, for the new table: same columns, same
+# INCLUDE list, so the attach adopts it. Named prescribing_<ym>_new_<suffix>,
+# renamed by the swap.
+new_index_sql <- function(name, definition, ym) {
+  suffix <- sub("^prescribing_", "", name)
+  pattern <- "^(CREATE (UNIQUE )?INDEX) \\S+ ON ONLY core\\.prescribing "
+  if (!grepl(pattern, definition)) {
+    stop("Unexpected index definition on core.prescribing: ", definition, call. = FALSE)
+  }
+  sub(pattern, sprintf("\\1 prescribing_%d_new_%s ON core.prescribing_%d_new ", ym, suffix, ym),
+      definition)
+}
+
+#' Check a built month against staging
+#'
+#' Every staged value must be valid: `ITEMS` a whole number of at least 1, the
+#' other measures finite and not negative. Staging must hold the rows the file
+#' had; the new table one row per practice and presentation in staging; and
+#' the sums of every measure must be equal, exactly. Any difference stops the
+#' load, before the live data changes.
+#'
+#' @param con A connection as the loader.
+#' @param year_month The month, as `YYYYMM`.
+#' @param source_rows The `COPY` count from [stage_month()].
+#' @return A list with `source_rows`, `loaded_rows` and the new table's
+#'   `totals`, invisibly.
+#' @noRd
+check_month <- function(con, year_month, source_rows) {
+  ym <- check_year_month(year_month)
+  sql <- month_statements("check_month", ym)
+  staging <- DBI::dbGetQuery(con, sql[["staging_totals"]])
+  pairs <- DBI::dbGetQuery(con, sql[["staging_pairs"]])$pairs
+  built <- DBI::dbGetQuery(con, sql[["new_totals"]])
+  problems <- character()
+  if (staging$bad_items > 0L) {
+    problems <- c(problems, sprintf(
+      "%d staged rows have ITEMS below 1", staging$bad_items
+    ))
+  }
+  if (staging$bad_measures > 0L) {
+    problems <- c(problems, sprintf(
+      "%d staged rows have a measure that is negative or not finite", staging$bad_measures
+    ))
+  }
+  if (staging$rows != source_rows) {
+    problems <- c(problems, sprintf(
+      "staging holds %.0f rows, the file %.0f", staging$rows, source_rows
+    ))
+  }
+  if (built$rows != pairs) {
+    problems <- c(problems, sprintf(
+      "the new table has %.0f rows for %.0f practice and presentation pairs", built$rows, pairs
+    ))
+  }
+  for (measure in c("items", "total_quantity", "adq_usage", "nic", "actual_cost")) {
+    if (!identical(staging[[measure]], built[[measure]])) {
+      problems <- c(problems, sprintf(
+        "%s sums to %s in staging and %s in the new table",
+        measure, staging[[measure]], built[[measure]]
+      ))
+    }
+  }
+  if (length(problems) > 0L) {
+    stop(
+      "The check of ", ym, " failed: ", paste(problems, collapse = "; "),
+      ". The live data is unchanged.",
+      call. = FALSE
+    )
+  }
+  invisible(list(source_rows = staging$rows, loaded_rows = built$rows, totals = built))
+}
+
+#' Make a built month live
+#'
+#' In one transaction: writes the month's dimensions, replaces its rollup rows
+#' with those [build_month()] computed, detaches and drops the month's current
+#' partition if there is one, renames the new table and attaches it, and marks
+#' the load `loaded` and the month's previous load `replaced`. Any error rolls
+#' the whole swap back.
+#'
+#' Each lock is waited for at most `lock_timeout`, well under the app's 5 s
+#' statement timeout, because the app's queries queue behind a waiting detach.
+#' A lock timeout is retried after a pause that lets them run. After the
+#' commit, the parent table's statistics are refreshed; a failure there is only
+#' a warning, since the month is live.
+#'
+#' @param con The owner connection that prepared and built the month.
+#' @param year_month The month, as `YYYYMM`.
+#' @param load_id This load's row in `core.load_log`.
+#' @param source_rows,loaded_rows,file_bytes Recorded in `core.load_log`.
+#' @param lock_timeout How long each lock may be waited for.
+#' @param attempts Attempts when a lock times out.
+#' @param pause Seconds between attempts.
+#' @return `TRUE`, invisibly.
+#' @noRd
+swap_month <- function(con, year_month, load_id, source_rows, loaded_rows, file_bytes,
+                       lock_timeout = "1s", attempts = 10L, pause = 2) {
+  ym <- check_year_month(year_month)
+  sql <- month_statements("swap_month", ym)
+  for (attempt in seq_len(attempts)) {
+    done <- tryCatch(
+      DBI::dbWithTransaction(con, {
+        DBI::dbGetQuery(
+          con, "SELECT set_config('lock_timeout', $1, true)", params = list(lock_timeout)
+        )
+        swap_statements(con, sql, ym, list(load_id, source_rows, loaded_rows, file_bytes))
+        TRUE
+      }),
+      error = function(e) {
+        if (attempt < attempts && is_lock_timeout(e)) {
+          message("The swap of ", ym, " waited too long for a lock (attempt ", attempt, " of ",
+                  attempts, "); trying again")
+          return(FALSE)
+        }
+        stop(e)
+      }
+    )
+    # dbWithTransaction() rolls back on an interrupt and returns NULL
+    # instead of signalling it
+    if (is.null(done)) {
+      stop("The swap of ", ym, " was interrupted and rolled back.", call. = FALSE)
+    }
+    if (done) {
+      break
+    }
+    Sys.sleep(pause)
+  }
+  not_refreshed <- function(e) {
+    warning(
+      ym, " is loaded, but the statistics of core.prescribing were not refreshed: ",
+      conditionMessage(e),
+      call. = FALSE
+    )
+  }
+  tryCatch(analyze_parent(con), error = not_refreshed, interrupt = not_refreshed)
+  invisible(TRUE)
+}
+
+swap_statements <- function(con, sql, ym, log_params) {
+  run <- function(name) DBI::dbExecute(con, sql[[name]], immediate = TRUE)
+  apply_dimensions(con, ym)
+  for (rollup in c("presentation", "chemical", "practice")) {
+    run(paste0("delete_", rollup))
+    run(paste0("insert_", rollup))
+  }
+  live <- DBI::dbGetQuery(con, sql[["live_partition"]])
+  if (live$attached) {
+    run("detach")
+  }
+  if (live$exists) {
+    run("drop_old")
+  }
+  run("rename_new")
+  rename_new_indexes(con, ym)
+  run("attach")
+  run("replace_log")
+  DBI::dbExecute(con, sql[["loaded_log"]], params = log_params)
+}
+
+# Planner statistics for the parent table, which autovacuum never analyses.
+# ONLY: each partition was analysed when it was built, and a plain ANALYZE
+# would analyse them all again, waiting behind any VACUUM of one of them. It
+# runs after the swap's transaction, whose lock timeout has ended, so it gets
+# its own: the month is live, and the statistics can wait for the next load.
+analyze_parent <- function(con) {
+  DBI::dbExecute(con, "SET lock_timeout = '30s'", immediate = TRUE)
+  on.exit(try(DBI::dbExecute(con, "RESET lock_timeout", immediate = TRUE), silent = TRUE))
+  DBI::dbExecute(con, "ANALYZE ONLY core.prescribing", immediate = TRUE)
+}
+
+# The new table's indexes lose "_new" in their names once the table has.
+rename_new_indexes <- function(con, ym) {
+  names <- DBI::dbGetQuery(con, sprintf(
+    "SELECT indexname FROM pg_indexes WHERE schemaname = 'core' AND tablename = 'prescribing_%d'",
+    ym
+  ))$indexname
+  for (name in grep(sprintf("^prescribing_%d_new_", ym), names, value = TRUE)) {
+    DBI::dbExecute(con, sprintf(
+      "ALTER INDEX core.%s RENAME TO %s",
+      name, sub(sprintf("^prescribing_%d_new_", ym), sprintf("prescribing_%d_", ym), name)
+    ), immediate = TRUE)
+  }
+}
+
+is_lock_timeout <- function(error) {
+  grepl("lock timeout", conditionMessage(error), fixed = TRUE)
+}
+
 # NOTICEs, such as "table does not exist, skipping", are printed as messages by
 # RPostgres; loader sessions only report warnings and errors.
 quiet_notices <- function(con) {
   DBI::dbExecute(con, "SET client_min_messages = warning", immediate = TRUE)
+}
+
+#' Load or reload one month
+#'
+#' Runs the steps of the monthly load (spec section 4) with a timed message for
+#' each: find the month on the portal, download it, check its header, stage it
+#' and check that it is the month asked for, work out its dimensions, build the
+#' month beside the live data, check it against staging, and swap it in.
+#' Nothing in `core` changes before the swap, which runs in one transaction, so
+#' a month is either loaded completely, dimensions included, or left as it was.
+#' Loading a month again rebuilds and swaps it.
+#'
+#' An advisory lock lets only one load run at a time on a database. The load is
+#' recorded in `core.load_log`: `running` while it runs, then `loaded`, or
+#' `failed` with the error. At the end staging is truncated and a downloaded
+#' file is deleted. A downloaded file is also deleted when a step that reads it
+#' fails before its SHA-256 has been checked, so a damaged download is never
+#' used again.
+#'
+#' @param year_month The month, as `YYYYMM`.
+#' @param file A local monthly file (ZIP or CSV) to load instead of
+#'   downloading the month; it is kept.
+#' @param sha256 With `file`, the expected SHA-256 of its CSV, or `NULL` not
+#'   to check it. Without `file` the portal's is used.
+#' @param dbname Database name; defaults to `PREXP_DB_NAME`.
+#' @return A list with `year_month`, `source_rows`, `loaded_rows` and
+#'   `seconds`, invisibly.
+#' @export
+load_month <- function(year_month, file = NULL, sha256 = NULL, dbname = NULL) {
+  ym <- check_year_month(year_month)
+  started <- Sys.time()
+  downloaded <- is.null(file)
+  if (!downloaded) {
+    file <- normalizePath(file, mustWork = TRUE)
+  }
+  # check_interrupts: Ctrl-C cancels the running statement instead of waiting
+  # for it to finish
+  loader <- db_connect("loader", dbname = dbname, check_interrupts = TRUE)
+  on.exit(DBI::dbDisconnect(loader), add = TRUE)
+  lock_loads(loader)
+  owner <- db_connect("owner", dbname = dbname, check_interrupts = TRUE)
+  on.exit(DBI::dbDisconnect(owner), add = TRUE)
+  quiet_notices(loader)
+  quiet_notices(owner)
+
+  source_url <- NA_character_
+  if (downloaded) {
+    res <- timed("find", month_resource(ym))
+    sha256 <- res$sha256
+    source_url <- res$url
+  }
+  load_id <- start_load(loader, ym, source_url, sha256)
+  verified <- FALSE
+  failed <- function(error) {
+    fail_load(loader, owner, ym, load_id, error)
+    # A download that could not be read, or whose content differs from the
+    # portal's, is damaged or stale: the next run downloads it again
+    if (downloaded && !verified && !is.null(file)) {
+      unlink(file)
+    }
+  }
+  result <- tryCatch(
+    {
+      if (downloaded) {
+        file <- timed("download", download_month(ym))
+      }
+      timed("header", validate_header(file))
+      staged <- timed("stage", stage_month(file, sha256, dbname))
+      verified <- TRUE
+      timed("staged month", check_staged_month(loader, ym))
+      timed("dimensions", prepare_dimensions(owner, ym))
+      timed("build", build_month(owner, ym))
+      checked <- timed("check", check_month(loader, ym, staged$rows))
+      timed("swap", swap_month(
+        owner, ym, load_id, staged$rows, checked$loaded_rows, file.size(file)
+      ))
+      list(source_rows = staged$rows, loaded_rows = as.numeric(checked$loaded_rows))
+    },
+    error = function(e) {
+      failed(conditionMessage(e))
+      stop(e)
+    },
+    interrupt = function(e) {
+      failed("Interrupted.")
+      stop("The load of ", ym, " was interrupted.", call. = FALSE)
+    }
+  )
+  timed("clean", {
+    DBI::dbExecute(loader, "TRUNCATE raw.epd_staging", immediate = TRUE)
+    if (downloaded) {
+      unlink(file)
+    }
+  })
+  seconds <- as.numeric(difftime(Sys.time(), started, units = "secs"))
+  message(sprintf(
+    "Loaded %d: %.0f source rows, %.0f rows, in %.0f s",
+    ym, result$source_rows, result$loaded_rows, seconds
+  ))
+  invisible(c(list(year_month = ym), result, list(seconds = seconds)))
+}
+
+# Takes the load lock for this session, or stops: two loads must never run at
+# once. Closing the connection releases it.
+lock_loads <- function(con) {
+  locked <- DBI::dbGetQuery(
+    con, "SELECT pg_try_advisory_lock($1, $2) AS locked", params = as.list(load_lock)
+  )$locked
+  if (!isTRUE(locked)) {
+    stop("Another load is running on this database. Try again when it has finished.",
+         call. = FALSE)
+  }
+}
+
+# Records a new attempt as running. Any other running attempt was cut short:
+# the lock is held, so it cannot still be running.
+start_load <- function(con, ym, source_url, sha256) {
+  DBI::dbExecute(con, "
+    UPDATE core.load_log
+    SET status = 'failed', error = 'Interrupted: the load did not finish.', finished_at = now()
+    WHERE status = 'running'", immediate = TRUE)
+  DBI::dbGetQuery(con, "
+    INSERT INTO core.load_log (year_month, source_url, source_sha256)
+    VALUES ($1, $2, $3) RETURNING load_id",
+    params = list(ym, source_url, if (is.null(sha256)) NA_character_ else sha256)
+  )$load_id
+}
+
+# Records the failure and removes what the attempt left: the new table and the
+# staged rows. The month's temporary tables go with the owner's session. Only a
+# row still running is marked failed: once the swap has committed, the month is
+# live and its row says so. Errors here are reported but never hide the load's
+# own error.
+fail_load <- function(loader, owner, ym, load_id, error) {
+  tryCatch({
+    DBI::dbExecute(
+      owner, sprintf("DROP TABLE IF EXISTS core.prescribing_%d_new", ym), immediate = TRUE
+    )
+    DBI::dbExecute(loader, "TRUNCATE raw.epd_staging", immediate = TRUE)
+    DBI::dbExecute(loader, "
+      UPDATE core.load_log SET status = 'failed', error = $2, finished_at = now()
+      WHERE load_id = $1 AND status = 'running'", params = list(load_id, error))
+  }, error = function(e) {
+    warning("Could not record the failed load of ", ym, ": ", conditionMessage(e), call. = FALSE)
+  })
+  invisible()
 }
