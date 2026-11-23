@@ -29,6 +29,8 @@ Run it as the owner role: \code{migrate()} refuses any other login, because the
 default privileges in the migrations only cover objects \code{prexp_owner}
 creates. A migration file must not contain transaction control (\code{BEGIN},
 \code{COMMIT}) or commands that cannot run in a transaction, such as
-\verb{CREATE INDEX CONCURRENTLY}. Checksums ignore line endings and a byte-order
-mark, so Windows and Linux checkouts of a file agree.
+\verb{CREATE INDEX CONCURRENTLY}. Its row-returning statements must all return the
+same columns, because the file is read as one result; wrap calls whose result is
+not needed in \verb{DO $$ BEGIN PERFORM ...; END $$}. Checksums ignore line endings
+and a byte-order mark, so Windows and Linux checkouts of a file agree.
 }
