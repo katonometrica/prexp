@@ -1,12 +1,5 @@
 # The schema built by the migrations (spec sections 3.1 to 3.3). Each test gets a
-# new, empty database from local_temp_db() and migrates it.
-
-local_migrated_db <- function(env = parent.frame()) {
-  dbname <- local_temp_db(env = env)
-  owner <- local_test_db("owner", dbname = dbname, env = env)
-  suppressMessages(migrate(owner))
-  dbname
-}
+# new database from local_migrated_db().
 
 relations <- function(con) {
   DBI::dbGetQuery(con, "
@@ -16,6 +9,21 @@ relations <- function(con) {
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname IN ('raw', 'core', 'app', 'meta') AND c.relkind IN ('r', 'p', 'v', 'm')
     ORDER BY 3")
+}
+
+# has_table_privilege() for one role and a list of privileges, for each relation:
+# with all = TRUE every privilege must be held, otherwise any one.
+table_privilege <- function(con, oids, role, privileges, all = TRUE) {
+  sql <- paste0(
+    "SELECT ", if (all) "bool_and" else "bool_or",
+    "(has_table_privilege($1, $2::oid, p)) AS ok FROM unnest($3::text[]) AS p"
+  )
+  vapply(oids, function(oid) {
+    DBI::dbGetQuery(
+      con, sql,
+      params = list(role, oid, paste0("{", paste(privileges, collapse = ","), "}"))
+    )$ok
+  }, logical(1))
 }
 
 test_that("migrate() builds the full schema on an empty database", {
@@ -55,8 +63,19 @@ test_that("the fact table is partitioned by month, with its indexes on the paren
     WHERE schemaname = 'core' AND tablename = 'prescribing'
     ORDER BY indexname")
   expect_identical(idx$indexname, c("prescribing_practice_idx", "prescribing_presentation_idx"))
-  expect_match(idx$indexdef[1], "(practice_id, year_month) INCLUDE (presentation_id, items, adq_usage, nic, actual_cost)", fixed = TRUE)
-  expect_match(idx$indexdef[2], "(presentation_id, year_month) INCLUDE (practice_id, items, total_quantity, adq_usage, nic, actual_cost)", fixed = TRUE)
+  expect_match(
+    idx$indexdef[1],
+    "(practice_id, year_month) INCLUDE (presentation_id, items, adq_usage, nic, actual_cost)",
+    fixed = TRUE
+  )
+  expect_match(
+    idx$indexdef[2],
+    paste(
+      "(presentation_id, year_month)",
+      "INCLUDE (practice_id, items, total_quantity, adq_usage, nic, actual_cost)"
+    ),
+    fixed = TRUE
+  )
 })
 
 test_that("staging has one text column per source column, in the source's order", {
@@ -75,27 +94,23 @@ test_that("the app role reads every app view, and nothing in core, raw or meta",
   dbname <- local_migrated_db()
   owner <- local_test_db("owner", dbname = dbname)
   rel <- relations(owner)
-  rel$select <- vapply(rel$oid, function(oid) {
-    DBI::dbGetQuery(owner, "SELECT has_table_privilege('prexp_app', $1::oid, 'SELECT') AS ok",
-                    params = list(oid))$ok
-  }, logical(1))
-  rel$other <- vapply(rel$oid, function(oid) {
-    DBI::dbGetQuery(owner, "
-      SELECT has_table_privilege('prexp_app', $1::oid,
-        'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') AS ok",
-      params = list(oid))$ok
-  }, logical(1))
-  expect_true(all(rel$select[rel$schema == "app"]))
-  expect_false(any(rel$select[rel$schema != "app"]))
+  in_app <- rel$schema == "app"
+  can_select <- table_privilege(owner, rel$oid, "prexp_app", "SELECT")
+  expect_true(all(can_select[in_app]))
+  expect_false(any(can_select[!in_app]))
   # Simple views are updatable, so the app must not hold any write privilege on them
-  expect_false(any(rel$other))
+  writes <- c("INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
+  expect_false(any(table_privilege(owner, rel$oid, "prexp_app", writes, all = FALSE)))
 
   app <- local_test_db("app", dbname = dbname)
-  for (view in rel$qualified[rel$schema == "app"]) {
+  for (view in rel$qualified[in_app]) {
     expect_no_error(DBI::dbGetQuery(app, paste("SELECT * FROM", view, "LIMIT 0")))
   }
   for (table in c("core.dim_practice", "core.prescribing", "core.load_log", "raw.epd_staging")) {
-    expect_error(DBI::dbGetQuery(app, paste("SELECT 1 FROM", table, "LIMIT 1")), "permission denied")
+    expect_error(
+      DBI::dbGetQuery(app, paste("SELECT 1 FROM", table, "LIMIT 1")),
+      "permission denied"
+    )
   }
 })
 
@@ -104,13 +119,9 @@ test_that("the loader writes raw and core, but cannot change or drop the tables"
   owner <- local_test_db("owner", dbname = dbname)
   rel <- relations(owner)
   writable <- rel[rel$schema %in% c("raw", "core"), ]
-  writable$all <- vapply(writable$oid, function(oid) {
-    DBI::dbGetQuery(owner, "
-      SELECT bool_and(has_table_privilege('prexp_loader', $1::oid, p)) AS ok
-      FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) AS p",
-      params = list(oid))$ok
-  }, logical(1))
-  expect_true(all(writable$all), label = toString(writable$qualified[!writable$all]))
+  dml <- c("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE")
+  can_write <- table_privilege(owner, writable$oid, "prexp_loader", dml)
+  expect_true(all(can_write), label = toString(writable$qualified[!can_write]))
 
   loader <- local_test_db("loader", dbname = dbname)
   # The identity columns work for the loader, and the app views read the result
@@ -145,16 +156,16 @@ test_that("the loader writes raw and core, but cannot change or drop the tables"
 test_that("only one load of a month can be live", {
   dbname <- local_migrated_db()
   loader <- local_test_db("loader", dbname = dbname)
-  DBI::dbExecute(loader, "INSERT INTO core.load_log (year_month, status) VALUES (202609, 'loaded')")
-  DBI::dbExecute(loader, "INSERT INTO core.load_log (year_month, status) VALUES (202609, 'failed')")
-  expect_error(
-    DBI::dbExecute(loader, "INSERT INTO core.load_log (year_month, status) VALUES (202609, 'loaded')"),
-    "load_log_live_month"
-  )
-  expect_error(
-    DBI::dbExecute(loader, "INSERT INTO core.load_log (year_month, status) VALUES (202609, 'done')"),
-    "check constraint"
-  )
+  # Literal SQL: RPostgres leaves a failed parameterised statement's result open
+  insert <- function(status) {
+    DBI::dbExecute(loader, paste0(
+      "INSERT INTO core.load_log (year_month, status) VALUES (202609, '", status, "')"
+    ), immediate = TRUE)
+  }
+  insert("loaded")
+  insert("failed")
+  expect_error(insert("loaded"), "load_log_live_month")
+  expect_error(insert("done"), "check constraint")
   window <- DBI::dbGetQuery(loader, "SELECT first_month, last_month, months FROM app.v_window")
   expect_identical(window$months, 1L)
   expect_identical(window$first_month, 202609L)
