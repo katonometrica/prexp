@@ -41,9 +41,16 @@ ARG DEBIAN_FRONTEND=noninteractive
 #   package compile from source when no binary exists. Check them whenever renv.lock
 #   changes (renv::sysreqs()).
 # - Fonts metric-compatible with Arial, Times New Roman and Courier New for charts and
-#   Office exports, DejaVu for wide Unicode coverage. unzip for the loader.
+#   Office exports, DejaVu for wide Unicode coverage. unzip as a general tool (the
+#   loader reads the monthly archives with bsdtar, added in P1-05).
+# OS_REFRESH: CI passes the ISO week (for example 2026-W48). A new value changes this
+# layer's cache key, so the upgrade and everything after it run again once a week;
+# otherwise the build cache would keep the first build's OS packages forever. Local
+# builds leave it empty and keep their cache.
+ARG OS_REFRESH=
 RUN <<'EOF'
 set -eux
+echo "OS packages refreshed for: ${OS_REFRESH:-a local build}"
 . /etc/os-release
 apt-get update
 apt-get -y upgrade
@@ -133,7 +140,10 @@ set -eux
 export DEV_REPO="https://p3m.dev/cran/__linux__/${VERSION_CODENAME}/${PPM_DATE}"
 Rscript -e 'install.packages(c("devtools", "usethis", "roxygen2"), repos = c(CRAN = Sys.getenv("DEV_REPO")), Ncpus = 4, quiet = TRUE)'
 Rscript -e 'for (p in c("devtools", "usethis", "roxygen2")) loadNamespace(p); message("dev tools load")'
-install -d -o rstudio -g rstudio /home/rstudio/prexp /data/epd
+install -d -o rstudio -g rstudio /home/rstudio/prexp
+# Group staff, setgid: still writable when compose.yaml remaps rstudio to the host's
+# UID and GID (USERID, GROUPID), because rocker keeps rstudio in staff.
+install -d -o rstudio -g staff -m 2775 /data/epd
 rm -rf /root/.cache/R
 EOF
 ENV PREXP_DOWNLOAD_DIR=/data/epd
@@ -146,8 +156,14 @@ FROM base AS app
 
 # Non-root runtime user. /data/epd is the download directory of the jobs container
 # (spec §7, P1-08); a new named volume mounted there takes this owner.
+# tini runs as process 1: R installs no SIGTERM handler, and the kernel drops unhandled
+# signals for process 1, so without it every stop waits for SIGKILL, and child processes
+# (mirai daemons, the loader's pipes) that exit are never reaped.
 RUN <<'EOF'
 set -eux
+apt-get update
+apt-get install -y --no-install-recommends tini
+rm -rf /var/lib/apt/lists/*
 useradd --create-home --home-dir /home/prexp --shell /bin/bash --uid 10001 --user-group prexp
 install -d -o prexp -g prexp /data/epd
 EOF
@@ -168,4 +184,5 @@ EOF
 USER prexp
 WORKDIR /home/prexp
 EXPOSE 3838
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["Rscript", "-e", "prexp::run_app(host = '0.0.0.0', port = 3838)"]

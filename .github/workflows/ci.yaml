@@ -1,20 +1,29 @@
 # Continuous integration for prexp (spec section 6.2).
 #
-# image      Builds and pushes ghcr.io/<owner>/prexp-ci:<hash> only when no image exists
-#            for the current docker/Dockerfile and renv.lock.
-# test       Runs in that image with a PostgreSQL 18 service: lint, migrate, then tests
-#            with coverage. "test" is the required check on main, so keep this job id,
-#            give it no name, and never let it be skipped.
-# app-image  Builds the app image on every run; pushes :main and :<sha> from main.
+# image        Builds and pushes ghcr.io/<owner>/prexp-ci:<hash>-<week> only when no image
+#              exists for the current docker/Dockerfile, renv.lock and ISO week. The week
+#              makes the OS layer (apt-get upgrade) refresh weekly.
+# test         Runs in that image with a PostgreSQL 18 service: lint, migrate, then tests
+#              with coverage. "test" is the required check on main, so keep this job id,
+#              give it no name, and make sure it can only pass by passing.
+# app-image    Pull requests: builds the app image on the tested layers and checks that it
+#              loads, with a read-only token.
+# app-publish  main (push, weekly schedule, manual run): the same build, then pushes
+#              :<sha>, and :main only while the commit is still main's tip.
 #
-# Third-party actions are pinned to commit SHAs (the image jobs hold a token that can
-# push packages); Dependabot proposes updates (.github/dependabot.yml).
+# Third-party actions are pinned to commit SHAs, and the BuildKit image to a digest,
+# because the image jobs hold a token that can push packages; Dependabot proposes action
+# updates (.github/dependabot.yml). Update the BuildKit pin by hand.
 name: CI
 
 on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    # Mondays: rebuild the images on the new ISO week, so they get Ubuntu security fixes
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -36,10 +45,12 @@ jobs:
       packages: write
     outputs:
       image: ${{ steps.ref.outputs.image }}
+      cache: ${{ steps.ref.outputs.cache }}
+      os-refresh: ${{ steps.ref.outputs.os-refresh }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Name the CI image after its inputs
+      - name: Name the CI image after its inputs and the week
         id: ref
         env:
           # Every file that the base or ci stage copies belongs in this hash.
@@ -47,9 +58,15 @@ jobs:
         run: |
           : "${INPUTS_HASH:?docker/Dockerfile and renv.lock were not found}"
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          echo "image=ghcr.io/${owner}/prexp-ci:${INPUTS_HASH:0:16}" >> "$GITHUB_OUTPUT"
-          echo "cache=ghcr.io/${owner}/prexp-ci:buildcache" >> "$GITHUB_OUTPUT"
-          echo "CI image: ghcr.io/${owner}/prexp-ci:${INPUTS_HASH:0:16}" >> "$GITHUB_STEP_SUMMARY"
+          week="$(date -u +%G-W%V)"
+          tag="${INPUTS_HASH:0:16}-${week}"
+          {
+            echo "image=ghcr.io/${owner}/prexp-ci:${tag}"
+            echo "cache=ghcr.io/${owner}/prexp-ci:cache-${tag}"
+            echo "shared-cache=ghcr.io/${owner}/prexp-ci:buildcache"
+            echo "os-refresh=${week}"
+          } >> "$GITHUB_OUTPUT"
+          echo "CI image: ghcr.io/${owner}/prexp-ci:${tag}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Log in to the GitHub Container Registry
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
@@ -82,15 +99,18 @@ jobs:
           github.event_name == 'pull_request' &&
           github.event.pull_request.head.repo.full_name != github.repository
         run: |
-          echo "::error::This pull request changes docker/Dockerfile or renv.lock, so it needs a new CI image, and pull requests from forks cannot push images. A maintainer can push the branch to this repository and open the pull request from there."
+          echo "::error::This pull request needs a new CI image (a new docker/Dockerfile, renv.lock or week), and pull requests from forks cannot push images. A maintainer can push the branch to this repository and open the pull request from there."
           exit 1
 
       - name: Set up Docker Buildx
         if: steps.check.outputs.exists != 'true'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.35.1@sha256:baf6138eb8c37644800c7c913fba051e840ebb9ba13eaf92d92ef9a1712d0b4c
 
-      # The registry cache is readable from every branch, unlike the Actions cache,
-      # so the app image on main reuses the layers built and tested on a pull request.
+      # Two registry caches: one per image tag, written only by the single build of that
+      # tag, so the app image can reuse exactly the tested layers; and a shared one, so a
+      # build for a new renv.lock still reuses the OS layer of the week.
       - name: Build and push the CI image
         if: steps.check.outputs.exists != 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -100,17 +120,23 @@ jobs:
           target: ci
           push: true
           tags: ${{ steps.ref.outputs.image }}
+          build-args: |
+            OS_REFRESH=${{ steps.ref.outputs.os-refresh }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.description=prexp CI image: R, system libraries and the locked R packages
-          cache-from: type=registry,ref=${{ steps.ref.outputs.cache }}
-          cache-to: type=registry,ref=${{ steps.ref.outputs.cache }},mode=max,image-manifest=true,oci-mediatypes=true
+          cache-from: |
+            type=registry,ref=${{ steps.ref.outputs.cache }}
+            type=registry,ref=${{ steps.ref.outputs.shared-cache }}
+          cache-to: |
+            type=registry,ref=${{ steps.ref.outputs.cache }},mode=max,image-manifest=true,oci-mediatypes=true
+            type=registry,ref=${{ steps.ref.outputs.shared-cache }},mode=max,image-manifest=true,oci-mediatypes=true
 
   test:
     needs: image
-    # Runs even when the image job fails, so this required check fails instead of being
-    # skipped: GitHub counts a skipped check as passed.
-    if: ${{ !cancelled() }}
+    # always(): the job also runs when the image job fails or the run is cancelled, and
+    # then fails, because GitHub counts a skipped required check as passed.
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -210,15 +236,15 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  # Pull requests, including Dependabot's: a read-only token. Writes happen in app-publish.
   app-image:
-    needs: test
+    if: ${{ github.event_name == 'pull_request' }}
+    needs: [image, test]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
-      packages: write
-    env:
-      PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -227,7 +253,6 @@ jobs:
         run: |
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           echo "image=ghcr.io/${owner}/prexp-app" >> "$GITHUB_OUTPUT"
-          echo "ci-cache=ghcr.io/${owner}/prexp-ci:buildcache" >> "$GITHUB_OUTPUT"
           echo "app-cache=ghcr.io/${owner}/prexp-app:buildcache" >> "$GITHUB_OUTPUT"
 
       # Before the build: the registry caches are private packages.
@@ -240,9 +265,65 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.35.1@sha256:baf6138eb8c37644800c7c913fba051e840ebb9ba13eaf92d92ef9a1712d0b4c
 
-      # The base layers come from the CI image's cache, so the app runs on the same
-      # packages the tests ran on.
+      # The base layers come from the tested CI image's own cache (same Dockerfile,
+      # renv.lock and week), so the app runs on the packages the tests ran on.
+      - name: Build the app image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: app
+          load: true
+          tags: ${{ steps.ref.outputs.image }}:${{ github.sha }}
+          build-args: |
+            OS_REFRESH=${{ needs.image.outputs.os-refresh }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.description=Prescription Explorer app image
+          cache-from: |
+            type=registry,ref=${{ needs.image.outputs.cache }}
+            type=registry,ref=${{ steps.ref.outputs.app-cache }}
+
+      - name: Check that prexp loads in the app image
+        env:
+          IMAGE: ${{ steps.ref.outputs.image }}:${{ github.sha }}
+        run: docker run --rm "$IMAGE" Rscript -e 'library(prexp); cat(prexp_version(), "\n")'
+
+  # main only: push, the weekly schedule, or a manual run on main.
+  app-publish:
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    needs: [image, test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Name the app image
+        id: ref
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "image=ghcr.io/${owner}/prexp-app" >> "$GITHUB_OUTPUT"
+          echo "app-cache=ghcr.io/${owner}/prexp-app:buildcache" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the GitHub Container Registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.35.1@sha256:baf6138eb8c37644800c7c913fba051e840ebb9ba13eaf92d92ef9a1712d0b4c
+
       - name: Build the app image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -253,21 +334,33 @@ jobs:
           tags: |
             ${{ steps.ref.outputs.image }}:main
             ${{ steps.ref.outputs.image }}:${{ github.sha }}
+          build-args: |
+            OS_REFRESH=${{ needs.image.outputs.os-refresh }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.description=Prescription Explorer app image
           cache-from: |
-            type=registry,ref=${{ steps.ref.outputs.ci-cache }}
+            type=registry,ref=${{ needs.image.outputs.cache }}
             type=registry,ref=${{ steps.ref.outputs.app-cache }}
-          cache-to: ${{ env.PUSH == 'true' && format('type=registry,ref={0},mode=max,image-manifest=true,oci-mediatypes=true', steps.ref.outputs.app-cache) || '' }}
+          cache-to: type=registry,ref=${{ steps.ref.outputs.app-cache }},mode=max,image-manifest=true,oci-mediatypes=true
 
       - name: Check that prexp loads in the app image
         env:
           IMAGE: ${{ steps.ref.outputs.image }}:${{ github.sha }}
         run: docker run --rm "$IMAGE" Rscript -e 'library(prexp); cat(prexp_version(), "\n")'
 
-      - name: Push the main and commit tags
-        if: env.PUSH == 'true'
+      # A re-run of an older main run uses that run's commit, so :main moves only while
+      # the commit is still main's tip. Runs on main are serialised by the concurrency
+      # group, so this check cannot race a newer run.
+      - name: Push the commit tag, and :main if the commit is still main's tip
         env:
           IMAGE: ${{ steps.ref.outputs.image }}
-        run: docker push --all-tags "$IMAGE"
+        run: |
+          docker push "$IMAGE:$GITHUB_SHA"
+          tip="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ "$tip" = "$GITHUB_SHA" ]; then
+            docker push "$IMAGE:main"
+          else
+            echo "::warning::$GITHUB_SHA is no longer main's tip ($tip), so :main was not moved."
+          fi

@@ -1,11 +1,16 @@
 # Updates for the SHA-pinned actions in .github/workflows. The R packages are locked by
-# renv.lock and the base images by digest on purpose, so they are not listed here.
+# renv.lock and the base images by digest on purpose, so they are not listed here. The
+# BuildKit image pin in ci.yaml is updated by hand.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    # New releases wait a week before Dependabot proposes them, so a compromised
+    # release is more likely to be caught before it runs here.
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]
