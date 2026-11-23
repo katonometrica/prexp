@@ -10,9 +10,10 @@ services:
     # 18.7 on Debian 13. postgres:latest and postgres:trixie are PostgreSQL 19 since 2026-11-19.
     # Keep this reference identical to the CI service in .github/workflows/ci.yaml.
     image: postgres:18.7-trixie@sha256:eb63372c1e05c755f55fa30cbd07aecc443676fc6c0fa90b9002d01537841e1a
-    # Development settings: the file includes the configuration initdb wrote into the
-    # data volume, then overrides it (docker/db/postgresql.dev.conf)
-    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.dev.conf"]
+    # Settings from docker/db/postgresql.<PREXP_DB_CONFIG>.conf: dev (laptop-sized, the
+    # default) or full (the twelve-month window, P1-08). Both include the configuration
+    # initdb wrote into the data volume, then override it.
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.${PREXP_DB_CONFIG:-dev}.conf"]
     environment:
       POSTGRES_USER: prexp_owner
       POSTGRES_DB: ${PREXP_DB_NAME:-prexp}
@@ -27,10 +28,11 @@ services:
       # run once, when pgdata is empty
       - ./docker/db/init:/docker-entrypoint-initdb.d:ro
       - ./docker/db/postgresql.dev.conf:/etc/postgresql/postgresql.dev.conf:ro
+      - ./docker/db/postgresql.full.conf:/etc/postgresql/postgresql.full.conf:ro
     ports:
       - "127.0.0.1:${HOST_PORT_DB:-5432}:5432"
-    # parallel queries use /dev/shm; the default is 64 MB
-    shm_size: 1gb
+    # parallel queries share memory through /dev/shm; the default is 64 MB
+    shm_size: ${PREXP_DB_SHM_SIZE:-1gb}
     stop_grace_period: 1m
     healthcheck:
       # TCP on 127.0.0.1: the temporary socket-only server that runs the init scripts
