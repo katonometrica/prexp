@@ -60,6 +60,16 @@ R's site library, and renv is never switched on inside a container.
 - devtools, usethis and roxygen2 come with the development image and are not in
   `renv.lock`.
 
+### The full twelve months
+
+The default database settings suit a laptop. For the full window (about 23 GB of tables
+and indexes, plus a month being loaded), set `PREXP_DB_CONFIG=full` and
+`PREXP_DB_SHM_SIZE=8gb` in `.env`, then run `docker compose up -d --wait db`, which
+recreates the database container with `docker/db/postgresql.full.conf`; the data stays.
+That file is sized for a machine that gives Docker about 100 GB of memory and 16 CPUs,
+and `docs/benchmarks.md` records the machine it was measured on. Load a month from the
+RStudio console with `prexp::load_month(202609)`.
+
 ### Stop and reset
 
 - `docker compose down` stops everything and keeps all data.
