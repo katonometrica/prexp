@@ -1,4 +1,9 @@
 linters: linters_with_defaults(
     line_length_linter(100L)
   )
+exclusions: sapply(
+    list.files("tests/testthat", pattern = "[.]R$", full.names = TRUE),
+    function(file) list(object_usage_linter = Inf),
+    simplify = FALSE
+  )
 encoding: "UTF-8"

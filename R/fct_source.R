@@ -29,11 +29,12 @@ source_stream_command <- function(file) {
 }
 
 # Runs a shell snippet with bash, passing args as $1, $2, ... A non-zero exit
-# stops with the command's standard error.
+# stops with the command's standard error. If R is interrupted, the whole process
+# tree is killed, not only bash: an orphaned pipeline would keep loading staging.
 run_bash <- function(script, args = character(), error_on_status = TRUE, ...) {
   res <- processx::run(
     "bash", c("-c", script, "bash", args),
-    error_on_status = FALSE, encoding = "UTF-8", ...
+    error_on_status = FALSE, encoding = "UTF-8", cleanup_tree = TRUE, ...
   )
   if (error_on_status && res$status != 0L) {
     stop(trimws(res$stderr), call. = FALSE)
@@ -44,6 +45,7 @@ run_bash <- function(script, args = character(), error_on_status = TRUE, ...) {
 # The entries of a ZIP file, which must be exactly one file. Concatenated
 # entries would load a second header as data.
 check_archive <- function(file) {
+  file <- path.expand(file)
   res <- run_bash('bsdtar -tf "$1"', file, error_on_status = FALSE)
   if (res$status != 0L) {
     stop("Could not read the archive ", file, ": ", trimws(res$stderr), call. = FALSE)
@@ -60,8 +62,10 @@ check_archive <- function(file) {
   entries
 }
 
-# The first line of the file's CSV, without a trailing carriage return.
+# The first line of the file's CSV, without a trailing carriage return. The
+# path is expanded here, because bash never expands "~" in an argument.
 read_header_line <- function(file) {
+  file <- path.expand(file)
   if (!file.exists(file)) {
     stop("File not found: ", file, call. = FALSE)
   }
@@ -264,6 +268,7 @@ download_month <- function(year_month, dir = Sys.getenv("PREXP_DOWNLOAD_DIR", "/
                            attempts = 4L, backoff = function(attempt) min(300, 15 * 2^attempt)) {
   ym <- check_year_month(year_month)
   name <- paste0("EPD_SNOMED_", ym)
+  dir <- path.expand(dir)
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   zip <- file.path(dir, paste0(name, ".zip"))
   if (file.exists(zip)) {
@@ -289,7 +294,10 @@ download_month <- function(year_month, dir = Sys.getenv("PREXP_DOWNLOAD_DIR", "/
   stop("Could not download ", name, ": ", conditionMessage(error), call. = FALSE)
 }
 
-# One attempt: fresh metadata, then the ZIP, or the CSV, into <file>.part.
+# One attempt: fresh metadata, then the ZIP, or the CSV, into a part file of
+# its own in the same folder (so the rename is atomic, and two downloads of one
+# month never share a file), removed whatever happens. Only a non-empty file,
+# and for a ZIP a readable archive of one file, is renamed into place.
 download_attempt <- function(year_month, dir) {
   res <- month_resource(year_month)
   use_zip <- !is.na(res$zip_url)
@@ -298,8 +306,8 @@ download_attempt <- function(year_month, dir) {
     message("Using ", file, ", downloaded before")
     return(file)
   }
-  part <- paste0(file, ".part")
-  unlink(part)
+  part <- tempfile(paste0(basename(file), "-"), tmpdir = dir, fileext = ".part")
+  on.exit(unlink(part), add = TRUE)
   started <- Sys.time()
   fetch_file(if (use_zip) res$zip_url else res$url, part)
   if (!use_zip && !is.na(res$size) && file.size(part) != res$size) {
@@ -307,6 +315,21 @@ download_attempt <- function(year_month, dir) {
       "The download of ", basename(file), " has ", file.size(part), " bytes, not ",
       format(res$size, scientific = FALSE), ".",
       call. = FALSE
+    )
+  }
+  if (!isTRUE(file.size(part) > 0)) {
+    stop("The download of ", basename(file), " is empty.", call. = FALSE)
+  }
+  if (use_zip) {
+    tryCatch(
+      if (is_zip(part)) check_archive(part) else stop("not a ZIP file", call. = FALSE),
+      error = function(e) {
+        stop(
+          "The download of ", basename(file), " is not a readable archive: ",
+          conditionMessage(e),
+          call. = FALSE
+        )
+      }
     )
   }
   if (!file.rename(part, file)) {
@@ -336,7 +359,7 @@ fetch_file <- function(url, path) {
 
 # Network failures, server errors and rate limits are worth another attempt;
 # other HTTP errors (a missing file) and our own checks are not, except a
-# truncated download.
+# download that arrived truncated, empty or unreadable.
 is_retryable <- function(error) {
   if (inherits(error, "httr2_failure")) {
     return(TRUE)
@@ -344,5 +367,8 @@ is_retryable <- function(error) {
   if (inherits(error, "httr2_http")) {
     return(httr2::resp_status(error$resp) %in% c(429L, 500L, 502L, 503L, 504L))
   }
-  grepl("^The download of .* bytes, not", conditionMessage(error))
+  grepl(
+    "^The download of .* (bytes, not|is empty|is not a readable archive)",
+    conditionMessage(error)
+  )
 }
