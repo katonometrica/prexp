@@ -17,3 +17,7 @@
 **Only `EPD_SNOMED_202609` is real data.** The other twelve months repeat its rows with `YEAR_MONTH` shifted and the measures scaled by a factor between 0.8 and 1.2, so that series are not flat. They are test data, not statistics.
 
 The files keep the source's layout exactly: the published header line, every field quoted except `ITEMS`, numbers written as the publisher writes them (`"60."`, `"0.75199"`), and CRLF line endings. Each ZIP holds one CSV and is written with fixed times and owners, so regenerating the fixtures gives identical files.
+
+## Saved portal response
+
+`package_show.json`: the portal's CKAN `package_show` response for the dataset, trimmed for the download tests (P1-03). It keeps three real months (202607 to 202609) with the fields the loader reads. Their signed `zip_url` links are replaced with fake ones on `example.invalid`, because a real one works for an hour. Two resources are synthetic, as their titles say: a month published without a ZIP (202606, with a 10-byte CSV), and a resource that is not a monthly file.

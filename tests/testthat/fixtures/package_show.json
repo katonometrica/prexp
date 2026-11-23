@@ -1,0 +1,75 @@
+{
+  "help": "https://opendata.nhsbsa.net/api/3/action/help_show?name=package_show",
+  "success": true,
+  "result": {
+    "id": "906115a6-4155-44be-8b81-f8e83cebfb84",
+    "name": "english-prescribing-dataset-epd-with-snomed-code",
+    "title": "English Prescribing Dataset (EPD) with SNOMED Code",
+    "num_resources": 5,
+    "resources": [
+      {
+        "created": "2026-09-18T15:54:10.735718",
+        "format": "CSV",
+        "id": "00000000-0000-0000-0000-000000000606",
+        "last_modified": null,
+        "name": "EPD_SNOMED_202606",
+        "package_id": "906115a6-4155-44be-8b81-f8e83cebfb84",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "size": 10,
+        "state": "active",
+        "title": "Synthetic: a month published without a ZIP",
+        "url": "https://opendata.nhsbsa.net/dataset/906115a6-4155-44be-8b81-f8e83cebfb84/resource/31ae0413-fa45-4fe4-9a76-e884659b4936/download/epd_snomed_202607.csv",
+        "zip_url": ""
+      },
+      {
+        "created": "2026-09-18T15:54:10.735718",
+        "format": "CSV",
+        "id": "31ae0413-fa45-4fe4-9a76-e884659b4936",
+        "last_modified": null,
+        "name": "EPD_SNOMED_202607",
+        "package_id": "906115a6-4155-44be-8b81-f8e83cebfb84",
+        "sha256": "40dab749761abe18e0b50ce563c1ce0eb5e08e9b699e382bd7aa37755b248903",
+        "size": 7788728408,
+        "state": "active",
+        "title": "English Prescribing Dataset (EPD) with SNOMED code - Jul 2026",
+        "url": "https://opendata.nhsbsa.net/dataset/906115a6-4155-44be-8b81-f8e83cebfb84/resource/31ae0413-fa45-4fe4-9a76-e884659b4936/download/epd_snomed_202607.csv",
+        "zip_url": "https://example.invalid/signed/EPD_SNOMED_202607.zip?X-Amz-Signature=redacted"
+      },
+      {
+        "created": "2026-10-20T13:37:13.326711",
+        "format": "CSV",
+        "id": "30b74257-9912-4b54-8990-8eec2a4b7f14",
+        "last_modified": null,
+        "name": "EPD_SNOMED_202608",
+        "package_id": "906115a6-4155-44be-8b81-f8e83cebfb84",
+        "sha256": "1a3ee72477c8e999cabd3284544bf370f78eb3045529191c0062bf74c9a1017b",
+        "size": 7432815985,
+        "state": "active",
+        "title": "English Prescribing Dataset (EPD) with SNOMED code - Aug 2026",
+        "url": "https://opendata.nhsbsa.net/dataset/906115a6-4155-44be-8b81-f8e83cebfb84/resource/30b74257-9912-4b54-8990-8eec2a4b7f14/download/epd_snomed_202608.csv",
+        "zip_url": "https://example.invalid/signed/EPD_SNOMED_202608.zip?X-Amz-Signature=redacted"
+      },
+      {
+        "created": "2026-11-20T11:16:36.276766",
+        "format": "CSV",
+        "id": "4d751d28-ace3-4692-938a-b930eff85822",
+        "last_modified": null,
+        "name": "EPD_SNOMED_202609",
+        "package_id": "906115a6-4155-44be-8b81-f8e83cebfb84",
+        "sha256": "5f9dcebaccaa3bce6bdfd5f6d609609e6b8ffaaa9cb1d649c7bde9f85b367841",
+        "size": 7701102484,
+        "state": "active",
+        "title": "English Prescribing Dataset (EPD) with SNOMED code - Sep 2026",
+        "url": "https://opendata.nhsbsa.net/dataset/906115a6-4155-44be-8b81-f8e83cebfb84/resource/4d751d28-ace3-4692-938a-b930eff85822/download/epd_snomed_202609.csv",
+        "zip_url": "https://example.invalid/signed/EPD_SNOMED_202609.zip?X-Amz-Signature=redacted"
+      },
+      {
+        "name": "EPD_SNOMED_DATA_DICTIONARY",
+        "title": "Synthetic: a resource that is not a monthly file",
+        "url": "https://example.invalid/dictionary.pdf",
+        "format": "PDF",
+        "created": "2025-01-01T00:00:00.000000"
+      }
+    ]
+  }
+}
