@@ -41,9 +41,10 @@ ARG DEBIAN_FRONTEND=noninteractive
 #   package compile from source when no binary exists. Check them whenever renv.lock
 #   changes (renv::sysreqs()).
 # - Fonts metric-compatible with Arial, Times New Roman and Courier New for charts and
-#   Office exports, DejaVu for wide Unicode coverage. unzip as a general tool (the
-#   loader reads the monthly archives with bsdtar, added in P1-05). tini runs as
-#   process 1 in the app image.
+#   Office exports, DejaVu for wide Unicode coverage.
+# - libarchive-tools for bsdtar, which the loader uses to read the monthly archives:
+#   Ubuntu's unzip cannot (it writes nothing and still exits 0). unzip stays as a
+#   general tool. tini runs as process 1 in the app image.
 # OS_REFRESH: CI passes the month (for example 2026-11). A new value changes this
 # layer's cache key, so the upgrade and everything after it run again once a month;
 # otherwise the build cache would keep the first build's OS packages forever. Local
@@ -85,7 +86,8 @@ apt-get update
 apt-get install -y --no-install-recommends "postgresql-client-${PG_MAJOR}" \
   libpq-dev libxml2-dev libuv1-dev libcurl4-openssl-dev libssl-dev \
   libfontconfig-dev libfreetype-dev libharfbuzz-dev libfribidi-dev libpng-dev \
-  libjpeg-dev libtiff-dev libwebp-dev fonts-liberation fonts-dejavu-core unzip tini
+  libjpeg-dev libtiff-dev libwebp-dev fonts-liberation fonts-dejavu-core \
+  libarchive-tools unzip tini
 if [ -f /tmp/ubuntu.sources.orig ]; then
   mv /tmp/ubuntu.sources.orig /etc/apt/sources.list.d/ubuntu.sources
 fi
