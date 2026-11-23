@@ -48,6 +48,10 @@ saved_resources <- function() {
 
 calls_to_portal <- function(log) sum(startsWith(log$urls, ckan_package_show))
 
+# Real ZIP bodies, since a download must be a readable archive to be kept
+zip_body <- function(ym = 202609L) readBin(fixture_file(ym), "raw", file.size(fixture_file(ym)))
+same_bytes <- function(file, body) identical(readBin(file, "raw", length(body) + 1L), body)
+
 no_wait <- function(attempt) 0
 
 test_that("epd_resources() lists the monthly files, oldest first", {
@@ -93,11 +97,12 @@ test_that("download_month() fetches the ZIP through a fresh link and a .part fil
   dir <- withr::local_tempdir()
   log <- new.env()
   files <- list()
-  files[[zip_link(202609)]] <- charToRaw("zip bytes")
+  files[[zip_link(202609)]] <- zip_body()
   httr2::local_mocked_responses(mock_portal(files, log))
   expect_message(file <- download_month(202609, dir = dir, backoff = no_wait), "Downloaded")
   expect_identical(file, file.path(dir, "EPD_SNOMED_202609.zip"))
-  expect_identical(readBin(file, "raw", 100), charToRaw("zip bytes"))
+  expect_true(same_bytes(file, zip_body()))
+  # No part file is left behind
   expect_identical(list.files(dir), "EPD_SNOMED_202609.zip")
   # The metadata came first, then the signed link
   expect_identical(calls_to_portal(log), 1L)
@@ -116,14 +121,12 @@ test_that("a complete ZIP already downloaded is used without calling the portal"
 
 test_that("network and server errors are retried, each time with fresh metadata", {
   dir <- withr::local_tempdir()
-  # A stale partial file from an interrupted run
-  writeBin(charToRaw("par"), file.path(dir, "EPD_SNOMED_202609.zip.part"))
   log <- new.env()
   files <- list()
   files[[zip_link(202609)]] <- function(req, n) {
     if (n == 1L) network_failure()
     if (n == 2L) return(httr2::response(503, url = req$url))
-    httr2::response(200, url = req$url, body = charToRaw("third time"))
+    httr2::response(200, url = req$url, body = zip_body())
   }
   httr2::local_mocked_responses(mock_portal(files, log))
   messages <- testthat::capture_messages(
@@ -131,7 +134,7 @@ test_that("network and server errors are retried, each time with fresh metadata"
   )
   expect_match(messages[1], "failed (attempt 1 of 3): Failed to perform HTTP request", fixed = TRUE)
   expect_match(messages[2], "failed (attempt 2 of 3): HTTP 503", fixed = TRUE)
-  expect_identical(readBin(file, "raw", 100), charToRaw("third time"))
+  expect_true(same_bytes(file, zip_body()))
   expect_identical(calls_to_portal(log), 3L)
   expect_identical(list.files(dir), "EPD_SNOMED_202609.zip")
 })
@@ -145,12 +148,54 @@ test_that("an interrupted download leaves no complete-looking file, and the next
     suppressMessages(download_month(202609, dir = dir, attempts = 2, backoff = no_wait)),
     "Could not download EPD_SNOMED_202609: Failed to perform HTTP request"
   )
-  expect_false(file.exists(file.path(dir, "EPD_SNOMED_202609.zip")))
+  # Neither a complete-looking file nor a part file
+  expect_length(list.files(dir), 0L)
 
-  files[[zip_link(202609)]] <- charToRaw("complete")
+  files[[zip_link(202609)]] <- zip_body()
   httr2::local_mocked_responses(mock_portal(files))
   file <- suppressMessages(download_month(202609, dir = dir))
-  expect_identical(readBin(file, "raw", 100), charToRaw("complete"))
+  expect_true(same_bytes(file, zip_body()))
+})
+
+test_that("a download that is not a readable archive is retried, and never kept", {
+  dir <- withr::local_tempdir()
+  files <- list()
+  files[[zip_link(202609)]] <- function(req, n) {
+    body <- if (n == 1L) charToRaw("<html>Service unavailable</html>") else raw()
+    httr2::response(200, url = req$url, body = body)
+  }
+  httr2::local_mocked_responses(mock_portal(files))
+  messages <- testthat::capture_messages(expect_error(
+    download_month(202609, dir = dir, attempts = 2, backoff = no_wait),
+    "Could not download EPD_SNOMED_202609: The download of EPD_SNOMED_202609.zip is empty."
+  ))
+  expect_match(messages[1], "is not a readable archive: not a ZIP file", fixed = TRUE)
+  expect_length(list.files(dir), 0L)
+
+  # A ZIP that holds two files is refused too
+  two <- file.path(withr::local_tempdir(), "two.zip")
+  extra <- dirname(two)
+  writeBin(charToRaw("a\r\n"), file.path(extra, "a.csv"))
+  writeBin(charToRaw("b\r\n"), file.path(extra, "b.csv"))
+  processx::run("bsdtar", c("--format", "zip", "-cf", two, "-C", extra, "a.csv", "b.csv"))
+  files[[zip_link(202609)]] <- readBin(two, "raw", file.size(two))
+  httr2::local_mocked_responses(mock_portal(files))
+  expect_error(
+    suppressMessages(download_month(202609, dir = dir, attempts = 1, backoff = no_wait)),
+    "Expected one file in the archive"
+  )
+  expect_length(list.files(dir), 0L)
+})
+
+test_that("a download folder written with ~ is expanded", {
+  home <- withr::local_tempdir()
+  withr::local_envvar(HOME = home)
+  files <- list()
+  files[[zip_link(202609)]] <- zip_body()
+  httr2::local_mocked_responses(mock_portal(files))
+  file <- suppressMessages(download_month(202609, dir = "~/epd", backoff = no_wait))
+  expect_identical(file, file.path(home, "epd", "EPD_SNOMED_202609.zip"))
+  expect_no_error(validate_header("~/epd/EPD_SNOMED_202609.zip"))
 })
 
 test_that("a missing file (404) is not retried", {
