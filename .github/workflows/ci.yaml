@@ -49,13 +49,11 @@ jobs:
     outputs:
       image: ${{ steps.ref.outputs.image }}
       os-refresh: ${{ steps.ref.outputs.os-refresh }}
-      ubuntu-mirror: ${{ steps.ref.outputs.ubuntu-mirror }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The runner's own Ubuntu mirror is passed to the build, because archive.ubuntu.com
-      # can be very slow from GitHub's runners. All image builds must pass the same
-      # build arguments, or they cannot reuse each other's layers.
+      # All image builds must pass the same build arguments, or they cannot reuse each
+      # other's layers.
       - name: Name the CI image after its inputs and the month
         id: ref
         env:
@@ -66,21 +64,12 @@ jobs:
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           month="$(date -u +%Y-%m)"
           tag="${INPUTS_HASH:0:16}-${month}"
-          # The runner lists its mirrors in a file (URIs: mirror+file:/etc/apt/...): take
-          # the first plain http(s) mirror from it. Anything else means default mirrors.
-          uri="$(awk '/^URIs:/ {print $2; exit}' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true)"
-          case "$uri" in
-            mirror+file:*) mirror="$(grep -m1 -oE 'https?://[^[:space:]]+' "${uri#mirror+file:}" 2>/dev/null || true)" ;;
-            *) mirror="$uri" ;;
-          esac
-          [[ "$mirror" =~ ^https?://[A-Za-z0-9.-]+(/[A-Za-z0-9._/-]*)?$ ]] || mirror=""
           {
             echo "image=ghcr.io/${owner}/prexp-ci:${tag}"
             echo "cache=ghcr.io/${owner}/prexp-ci:buildcache"
             echo "os-refresh=${month}"
-            echo "ubuntu-mirror=${mirror}"
           } >> "$GITHUB_OUTPUT"
-          echo "CI image: ghcr.io/${owner}/prexp-ci:${tag} (Ubuntu mirror: ${mirror:-default})" >> "$GITHUB_STEP_SUMMARY"
+          echo "CI image: ghcr.io/${owner}/prexp-ci:${tag}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Log in to the GitHub Container Registry
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
@@ -122,6 +111,16 @@ jobs:
         with:
           driver-opts: image=moby/buildkit:v0.35.1@sha256:baf6138eb8c37644800c7c913fba051e840ebb9ba13eaf92d92ef9a1712d0b4c
 
+      # This runner's own Ubuntu mirror, because archive.ubuntu.com can be very slow from
+      # GitHub's runners. Passed as a build secret, not a build argument: build arguments
+      # are part of the cache key, and the mirror differs from runner to runner.
+      - name: Find this runner's Ubuntu mirror
+        if: steps.check.outputs.exists != 'true'
+        run: |
+          mirror="$(bash .github/scripts/ubuntu-mirror.sh)"
+          printf '%s' "$mirror" > "$RUNNER_TEMP/ubuntu-mirror"
+          echo "Ubuntu mirror for this build: ${mirror:-the default mirrors}"
+
       # Caches: the image itself carries its cache metadata (inline), so the app builds
       # reuse exactly the tested layers with nothing extra stored; and one shared cache,
       # overwritten by each build, lets a build for a new renv.lock reuse the OS layer.
@@ -134,9 +133,8 @@ jobs:
           target: ci
           push: true
           tags: ${{ steps.ref.outputs.image }}
-          build-args: |
-            OS_REFRESH=${{ steps.ref.outputs.os-refresh }}
-            UBUNTU_MIRROR=${{ steps.ref.outputs.ubuntu-mirror }}
+          build-args: OS_REFRESH=${{ steps.ref.outputs.os-refresh }}
+          secret-files: ubuntu_mirror=${{ runner.temp }}/ubuntu-mirror
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.description=prexp CI image: R, system libraries and the locked R packages
@@ -299,6 +297,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # This runner's own Ubuntu mirror, because archive.ubuntu.com can be very slow from
+      # GitHub's runners. Passed as a build secret, not a build argument: build arguments
+      # are part of the cache key, and the mirror differs from runner to runner.
+      - name: Find this runner's Ubuntu mirror
+        run: |
+          mirror="$(bash .github/scripts/ubuntu-mirror.sh)"
+          printf '%s' "$mirror" > "$RUNNER_TEMP/ubuntu-mirror"
+          echo "Ubuntu mirror for this build: ${mirror:-the default mirrors}"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
@@ -314,9 +321,8 @@ jobs:
           target: app
           load: true
           tags: ${{ steps.ref.outputs.image }}:${{ github.sha }}
-          build-args: |
-            OS_REFRESH=${{ needs.image.outputs.os-refresh }}
-            UBUNTU_MIRROR=${{ needs.image.outputs.ubuntu-mirror }}
+          build-args: OS_REFRESH=${{ needs.image.outputs.os-refresh }}
+          secret-files: ubuntu_mirror=${{ runner.temp }}/ubuntu-mirror
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -356,6 +362,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # This runner's own Ubuntu mirror, because archive.ubuntu.com can be very slow from
+      # GitHub's runners. Passed as a build secret, not a build argument: build arguments
+      # are part of the cache key, and the mirror differs from runner to runner.
+      - name: Find this runner's Ubuntu mirror
+        run: |
+          mirror="$(bash .github/scripts/ubuntu-mirror.sh)"
+          printf '%s' "$mirror" > "$RUNNER_TEMP/ubuntu-mirror"
+          echo "Ubuntu mirror for this build: ${mirror:-the default mirrors}"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
@@ -371,9 +386,8 @@ jobs:
           tags: |
             ${{ steps.ref.outputs.image }}:main
             ${{ steps.ref.outputs.image }}:${{ github.sha }}
-          build-args: |
-            OS_REFRESH=${{ needs.image.outputs.os-refresh }}
-            UBUNTU_MIRROR=${{ needs.image.outputs.ubuntu-mirror }}
+          build-args: OS_REFRESH=${{ needs.image.outputs.os-refresh }}
+          secret-files: ubuntu_mirror=${{ runner.temp }}/ubuntu-mirror
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
