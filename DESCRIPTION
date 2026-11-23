@@ -16,11 +16,14 @@ Depends:
     R (>= 4.6.0)
 Imports:
     DBI,
+    httr2,
+    processx,
     RPostgres (>= 1.4.0),
     tools,
     utils
 Suggests:
     covr,
+    dplyr,
     DT,
     htmltools,
     lintr,
