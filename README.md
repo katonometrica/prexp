@@ -28,6 +28,11 @@ All ports listen on 127.0.0.1 only. If one is taken, change `HOST_PORT_DB`,
 `HOST_PORT_RSTUDIO` or `HOST_PORT_APP` in `.env`. For R commands from the host, run them
 as the RStudio user, for example `docker compose exec -u rstudio rstudio R`.
 
+In the RStudio container, R reads the `PREXP_*` settings from the container environment
+when it starts (rocker copies them into `Renviron.site`), so setting a variable on the
+command line does not reach R. To work on another database, pass it as an argument, for
+example `prexp::migrate(prexp::db_connect("owner", dbname = "prexp_test"))`.
+
 ### R packages
 
 `renv.lock` lists every package version. The images install exactly those versions into

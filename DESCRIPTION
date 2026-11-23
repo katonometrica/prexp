@@ -16,7 +16,9 @@ Depends:
     R (>= 4.6.0)
 Imports:
     DBI,
-    RPostgres (>= 1.4.0)
+    RPostgres (>= 1.4.0),
+    tools,
+    utils
 Suggests:
     covr,
     DT,

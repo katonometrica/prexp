@@ -1,0 +1,42 @@
+# Database helpers for tests.
+#
+# local_test_db() connects as one role to PREXP_TEST_DB_NAME, or to another
+# database, and disconnects when the calling test ends. local_temp_db()
+# creates an empty database, owned by prexp_owner and dropped when the calling
+# test ends; migration tests use it because migrations change the schema.
+#
+# When no database is reachable, both skip the test and say why, so pure tests
+# still run anywhere. CI sets PREXP_TEST_DB_REQUIRED=true to fail instead.
+
+local_test_db <- function(role = c("app", "loader", "owner"),
+                          dbname = Sys.getenv("PREXP_TEST_DB_NAME"),
+                          env = parent.frame()) {
+  role <- match.arg(role)
+  if (!nzchar(dbname)) {
+    no_test_db("PREXP_TEST_DB_NAME is not set")
+  }
+  con <- tryCatch(
+    db_connect(role, dbname = dbname, connect_timeout = "5"),
+    error = function(e) no_test_db(conditionMessage(e))
+  )
+  withr::defer(DBI::dbDisconnect(con), envir = env)
+  con
+}
+
+local_temp_db <- function(env = parent.frame()) {
+  admin <- local_test_db("owner", env = env)
+  name <- basename(tempfile("prexp_tmp_"))
+  quoted <- DBI::dbQuoteIdentifier(admin, name)
+  DBI::dbExecute(admin, paste("CREATE DATABASE", quoted, "TEMPLATE template0"), immediate = TRUE)
+  drop <- paste("DROP DATABASE IF EXISTS", quoted, "WITH (FORCE)")
+  withr::defer(DBI::dbExecute(admin, drop, immediate = TRUE), envir = env)
+  name
+}
+
+no_test_db <- function(reason) {
+  msg <- paste0("No test database (", reason, ")")
+  if (identical(tolower(Sys.getenv("PREXP_TEST_DB_REQUIRED")), "true")) {
+    stop(msg, call. = FALSE)
+  }
+  testthat::skip(msg)
+}
