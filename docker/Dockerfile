@@ -42,16 +42,25 @@ ARG DEBIAN_FRONTEND=noninteractive
 #   changes (renv::sysreqs()).
 # - Fonts metric-compatible with Arial, Times New Roman and Courier New for charts and
 #   Office exports, DejaVu for wide Unicode coverage. unzip as a general tool (the
-#   loader reads the monthly archives with bsdtar, added in P1-05).
-# OS_REFRESH: CI passes the ISO week (for example 2026-W48). A new value changes this
-# layer's cache key, so the upgrade and everything after it run again once a week;
+#   loader reads the monthly archives with bsdtar, added in P1-05). tini runs as
+#   process 1 in the app image.
+# OS_REFRESH: CI passes the month (for example 2026-11). A new value changes this
+# layer's cache key, so the upgrade and everything after it run again once a month;
 # otherwise the build cache would keep the first build's OS packages forever. Local
 # builds leave it empty and keep their cache.
+# UBUNTU_MIRROR: CI passes the runner's own Ubuntu mirror, because archive.ubuntu.com
+# can be very slow from GitHub's runners (62 kB/s once). It is used for this layer only:
+# the original sources are put back at the end, so the image's apt setup is standard.
 ARG OS_REFRESH=
+ARG UBUNTU_MIRROR=
 RUN <<'EOF'
 set -eux
 echo "OS packages refreshed for: ${OS_REFRESH:-a local build}"
 . /etc/os-release
+if [ -n "${UBUNTU_MIRROR}" ]; then
+  cp /etc/apt/sources.list.d/ubuntu.sources /tmp/ubuntu.sources.orig
+  sed -E -i "s#https?://(archive|security)\.ubuntu\.com/ubuntu/?#${UBUNTU_MIRROR}#g" /etc/apt/sources.list.d/ubuntu.sources
+fi
 apt-get update
 apt-get -y upgrade
 apt-get install -y --no-install-recommends ca-certificates curl
@@ -73,7 +82,10 @@ apt-get update
 apt-get install -y --no-install-recommends "postgresql-client-${PG_MAJOR}" \
   libpq-dev libxml2-dev libuv1-dev libcurl4-openssl-dev libssl-dev \
   libfontconfig-dev libfreetype-dev libharfbuzz-dev libfribidi-dev libpng-dev \
-  libjpeg-dev libtiff-dev libwebp-dev fonts-liberation fonts-dejavu-core unzip
+  libjpeg-dev libtiff-dev libwebp-dev fonts-liberation fonts-dejavu-core unzip tini
+if [ -f /tmp/ubuntu.sources.orig ]; then
+  mv /tmp/ubuntu.sources.orig /etc/apt/sources.list.d/ubuntu.sources
+fi
 rm -rf /var/lib/apt/lists/*
 EOF
 
@@ -156,14 +168,11 @@ FROM base AS app
 
 # Non-root runtime user. /data/epd is the download directory of the jobs container
 # (spec §7, P1-08); a new named volume mounted there takes this owner.
-# tini runs as process 1: R installs no SIGTERM handler, and the kernel drops unhandled
-# signals for process 1, so without it every stop waits for SIGKILL, and child processes
-# (mirai daemons, the loader's pipes) that exit are never reaped.
+# tini (installed in base) runs as process 1: R installs no SIGTERM handler, and the
+# kernel drops unhandled signals for process 1, so without it every stop waits for
+# SIGKILL, and child processes (mirai daemons, the loader's pipes) are never reaped.
 RUN <<'EOF'
 set -eux
-apt-get update
-apt-get install -y --no-install-recommends tini
-rm -rf /var/lib/apt/lists/*
 useradd --create-home --home-dir /home/prexp --shell /bin/bash --uid 10001 --user-group prexp
 install -d -o prexp -g prexp /data/epd
 EOF
