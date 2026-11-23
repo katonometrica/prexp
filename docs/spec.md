@@ -62,7 +62,7 @@ Prescription Explorer is an R Shiny app, built as the R package `prexp`, for exp
 
 Images in the GitHub Container Registry:
 
-- `ghcr.io/katonometrica/prexp-ci:<hash>`, where the hash covers `docker/Dockerfile` and `renv.lock`, so CI rebuilds it only when either changes
+- `ghcr.io/katonometrica/prexp-ci:<hash>-<month>`, where the hash covers `docker/Dockerfile` and `renv.lock` and the month (for example `2026-11`) refreshes the OS packages. CI rebuilds it only when either file changes or the month turns, and otherwise reuses the stored image
 - `ghcr.io/katonometrica/prexp-app:main` and `:<commit sha>`, pushed from `main` only
 
 ### 2.2 Compose services, local development
