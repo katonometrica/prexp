@@ -232,6 +232,7 @@ prexp/
 │   ├── fct_export_office.R    PowerPoint and Word
 │   ├── fct_export_excel.R     Excel
 │   ├── fct_methods.R          methods content, shared by the About tab and all formats
+│   ├── fct_source.R           the source files and the portal: columns, header, download
 │   ├── fct_loader.R           load_month(), load_latest(), load_window()
 │   ├── fct_plan_check.R       check_plans()
 │   ├── mod_search.R, mod_drug.R, mod_practice.R, mod_region.R, mod_report.R
