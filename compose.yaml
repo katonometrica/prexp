@@ -52,8 +52,9 @@ services:
       db:
         condition: service_healthy
     environment:
-      # RStudio login for user rstudio
-      PASSWORD: ${RSTUDIO_PASSWORD:?set RSTUDIO_PASSWORD in .env}
+      # No sign-in: RStudio opens straight into the IDE as user rstudio. Safe because the
+      # port is bound to 127.0.0.1 below, so only this machine can reach it.
+      DISABLE_AUTH: "true"
       PREXP_DB_HOST: ${PREXP_DB_HOST:-db}
       PREXP_DB_PORT: ${PREXP_DB_PORT:-5432}
       PREXP_DB_NAME: ${PREXP_DB_NAME:-prexp}
