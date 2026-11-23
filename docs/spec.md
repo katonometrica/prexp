@@ -176,7 +176,7 @@ Each rollup row holds the sums of the measures that can be added at its grain (`
 
 ### 3.4 Size estimate
 
-After aggregation about 9.5 million fact rows per month. At about 90 bytes per row including overhead, that is about 0.9 GB of table per month and about 1 GB of indexes. Twelve months: roughly 23 GB, plus 5 to 10 GB while a month is staged, plus the next month being built before the oldest is dropped. **Plan for at least 80 GB free disk for Postgres.** P1-09 replaces this estimate with measured numbers.
+Measured on September 2026 (P1-09, [benchmarks.md](benchmarks.md#one-month-p1-09)): 9,459,744 fact rows after aggregation, a 639 MB table (71 bytes a row) and 1,133 MB for its two indexes, 1.77 GB a month in all; the month's rollup rows and the dimensions add under 40 MB. Twelve months: about 21.5 GB. While a month loads, staging holds 7.1 GB, the month being built beside the live one 1.8 GB, and the write-ahead log peaked at 1.5 GB, so the peak is about 33 GB. **Plan for at least 50 GB free disk for Postgres**, which leaves room for larger months and for any index phase 2 adds.
 
 ### 3.5 Migrations
 
