@@ -17,7 +17,7 @@ position,name,source_type,load_as,description
 16,BNF_CHEMICAL_SUBSTANCE,text,dim_chemical.chemical_name,"Chemical substance name, or appliance type (a code before March 2025)"
 17,BNF_PRESENTATION_CODE,text,dim_presentation.bnf_code,"BNF presentation code: 15 characters, or 11 for appliance chapters 20 to 23"
 18,BNF_PRESENTATION_NAME,text,dim_presentation.bnf_description,"Presentation: name, strength and form, or appliance type"
-19,BNF_CHAPTER_PLUS_CODE,text,dim_presentation.bnf_chapter,"BNF chapter number and name, for example '05: Infections'"
+19,BNF_CHAPTER_PLUS_CODE,text,dim_presentation.bnf_chapter_name,"BNF chapter number and name, for example '05: Infections'; the name is loaded, the number comes from the presentation code"
 20,QUANTITY,numeric,not loaded,"Quantity per item (part of the source grain); summed away on load"
 21,ITEMS,integer,prescribing.items,"Number of prescription items; whole numbers, at least 1"
 22,TOTAL_QUANTITY,numeric,prescribing.total_quantity,"QUANTITY x ITEMS, in the presentation's own unit; up to 2 decimals"
