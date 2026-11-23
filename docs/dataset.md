@@ -53,7 +53,7 @@ The image needs `libarchive-tools` for `bsdtar`; it is added with the loader (P1
 | Practice × BNF presentation × SNOMED code | 9,595,470 |
 | Practice × BNF presentation × SNOMED code × quantity | 18,395,374 |
 
-Even the finest key is not unique: two pairs of rows on the national unidentified practice differ only in their measures. So the source has no natural key.
+Even the finest key is not unique: two pairs of rows on the national unidentified practice differ only in their measures. Across all 71 months the same key repeats in 62 months (1,483 pairs), always on the national unidentified practice, and in 28 months 173 pairs are identical in all 27 columns. They are separate published rows, so the source has no natural key, and the loader never deduplicates: staging has no unique key, and the aggregation sums every row.
 
 **Decision.** The fact table aggregates on load to one row per month × practice × BNF presentation, summing the measures. The app works at presentation level and never needs the SNOMED product or the quantity per item, and the table halves: about 9.5 million rows a month instead of 18.4 million, about 114 million for twelve months. `TOTAL_QUANTITY` can be summed within a presentation, whose unit is fixed. The load check compares row counts and sums against staging (spec §4).
 
@@ -103,7 +103,15 @@ The planned BNF prefixes (spec §10) were checked against 202609. Each captures 
 | Inhaled bronchodilators (`0301`) | 95.4% handheld inhalers; also theophylline (`0301030`, 36,321 items), ephedrine (`0301012`) and nebuliser or oral salbutamol and terbutaline | Exclude `0301030` and `0301012`; nebuliser and oral forms need a name or route rule |
 | Inhaled corticosteroids (`0302`) | All respiratory corticosteroids. ADQ is 0 for 62.6% of items, and one product (WockAIR 160/4.5) inflates the section's ADQ by about 35% | Outcome items (as planned) |
 
-**GLP-1 drugs for weight management** can be told apart only partly, by presentation code: Wegovy, Saxenda and the weight-licensed liraglutide brands have their own codes (for example `0601023AWBD…` for Wegovy), but tirzepatide (Mounjaro and generic, 377,396 items, 65% of the family) uses the same presentations whatever the licence, and so does orforglipron. A rule that labels each GLP-1 presentation as diabetes, weight or ambiguous is in the P0-07 findings and belongs to V2-03. EPD has no indication field, so heart failure, kidney and weight-management use of shared drugs is a stated limitation of the model.
+**GLP-1 drugs for weight management** can be told apart only partly, by presentation code: Wegovy, Saxenda and the weight-licensed liraglutide brands have their own codes (for example `0601023AWBD…` for Wegovy), but tirzepatide (Mounjaro and generic, 377,396 items, 65% of the family) uses the same presentations whatever the licence, and so does orforglipron. Characters 10 and 11 of a presentation code are the brand, and characters 14 and 15 the strength of the generic equivalent, which gives this rule for the GLP-1 family (checked on 202609; V2-03 reviews it, and new presentations need adding as they appear):
+
+| Label | Presentations | Items, 202609 |
+| --- | --- | --- |
+| Weight | Brands Wegovy (`0601023AWBD…`), Saxenda (`0601023ABBC…`), Nevolat (`0601023ABBD…`), Biolide (`0601023ABBG…`) and Plaobes (`0601023ABBH…`); generic semaglutide strengths that exist only as Wegovy: `0601023AWAAAGAG`, `…AWAAAHAH`, `…AWAAAIAI`, `…AWAAAJAJ`, `…AWAAAPAP`, `…AWAAAQAQ`, `…AWAAARAR` | 2,782 |
+| Ambiguous | Tirzepatide (`0601023AZ`) and orforglipron (`0601023BA`), whose presentations serve both licences; generic semaglutide strengths shared by Ozempic or Rybelsus and Wegovy (`0601023AWAAABAB`, `…AWAAAKAK`, `…AWAAALAL`, `…AWAAAMAM`); generic liraglutide (`0601023ABAAAAAA`) | about 400,500 |
+| Diabetes | Everything else in the family: Ozempic, Rybelsus, Victoza, Zegluxen, Diavic, dulaglutide, exenatide, lixisenatide, Xultophy, Suliqua | 175,501 |
+
+EPD has no indication field, so heart failure, kidney and weight-management use of shared drugs is a stated limitation of the model.
 
 ## Reference totals for 202609
 
