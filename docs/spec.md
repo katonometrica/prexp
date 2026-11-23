@@ -92,7 +92,7 @@ Everything else (schemas, tables, extensions, grants) is created by migrations (
 
 ### 2.3 Production
 
-The `app` image runs twice on the Coolify host: as the app, with the app role's credentials, and as the `jobs` container, with the owner's and loader's credentials, for migrations, loads, plan checks and model fits. PostgreSQL 18 runs on the same host from phase 1 and is never exposed outside the Docker network. Details in section 7.
+Until phase 6 everything, the full twelve months included, runs in the local Docker stack: loads run from the `rstudio` container, and the app from the `app` service. The Coolify host comes in P6-02. There the `app` image runs twice: as the app, with the app role's credentials, and as the `jobs` container, with the owner's and loader's credentials, for migrations, loads, plan checks and model fits. PostgreSQL 18 runs on the same host and is never exposed outside the Docker network. Details in section 7.
 
 ## 3. Database
 
@@ -336,14 +336,14 @@ Tests use the `prexp_test` database with all migrations applied and the fixture 
 6. `shinytest2` flows (from phase 6), not counted in coverage
 7. Jobs `app-image` (pull requests, read-only token) and `app-publish` (`main` only): build the `app` image on the tested CI image's own layers and check that `library(prexp)` loads. `app-publish` pushes `:<commit sha>`, and moves `:main` only while the commit is still the tip of `main`, so re-running an old run cannot roll it back; from phase 6 it then calls the Coolify deploy webhook
 
-Triggers: pull requests, pushes to `main`, a monthly schedule on the 1st (which publishes the refreshed image) and manual runs. Third-party actions are pinned to commit SHAs and updated by Dependabot, with a seven-day cooldown on new releases; the BuildKit image is pinned by digest and updated by hand, because the image jobs hold a token that can push packages. The required check is strict: a pull request must be up to date with `main` before it merges. The container packages stay private until P1-08, when the server has to pull them; jobs log in with `GITHUB_TOKEN`.
+Triggers: pull requests, pushes to `main`, a monthly schedule on the 1st (which publishes the refreshed image) and manual runs. Third-party actions are pinned to commit SHAs and updated by Dependabot, with a seven-day cooldown on new releases; the BuildKit image is pinned by digest and updated by hand, because the image jobs hold a token that can push packages. The required check is strict: a pull request must be up to date with `main` before it merges. The container packages stay private until P6-02, when the server has to pull them; jobs log in with `GITHUB_TOKEN`.
 
 ### 6.3 Checks that need the full database
 
-The full database (twelve months, about 114 million fact rows) exists only on the server, from phase 1 on, so these run there, not in GitHub Actions:
+The full database (twelve months, about 114 million fact rows) lives in the local Docker stack, not in GitHub Actions, so these run there; P6-02 runs them again on the server, which is smaller than the development machine:
 
 - `prexp::check_plans()`: during phase 2 by hand, then nightly as a Coolify scheduled task
-- The p95 benchmark: `shinyloadtest` records a session of searches and view changes, `shinycannon` replays it with 5 concurrent users, and p95 comes from the report and from the fetch timing logs. Run at the end of phase 4 against a private staging deployment on the server, and after schema changes. Results go to `docs/benchmarks.md`
+- The p95 benchmark: `shinyloadtest` records a session of searches and view changes, `shinycannon` replays it with 5 concurrent users, and p95 comes from the report and from the fetch timing logs. Run at the end of phase 4 against the `app` service of the local stack with the full database, again on the server in P6-02, and after schema changes. Results go to `docs/benchmarks.md`
 
 A failing scheduled task notifies by email through Coolify's notifications.
 
@@ -351,18 +351,18 @@ A failing scheduled task notifies by email through Coolify's notifications.
 
 | Piece | Where | Schedule |
 | --- | --- | --- |
-| Postgres 18 | Coolify database resource, persistent volume, not publicly exposed | Always on, from phase 1 |
-| `jobs` container | Coolify application from the `prexp-app` image, command `sleep infinity`, owner and loader credentials, `epd-downloads` volume. Runs `migrate()` after each deploy | Always on, from phase 1 |
-| App container | Coolify application from `ghcr.io/katonometrica/prexp-app`, app role credentials only. Private staging in phase 4, then an unlisted subdomain with HTTPS | Redeployed on push to `main` |
+| Postgres 18 | Coolify database resource, persistent volume, not publicly exposed | Always on, from P6-02 |
+| `jobs` container | Coolify application from the `prexp-app` image, command `sleep infinity`, owner and loader credentials, `epd-downloads` volume. Runs `migrate()` after each deploy | Always on, from P6-02 |
+| App container | Coolify application from `ghcr.io/katonometrica/prexp-app`, app role credentials only. From P6-02, on an unlisted subdomain with HTTPS | Redeployed on push to `main` |
 | Loader | Coolify scheduled task in the `jobs` container, `prexp::load_latest()` | Daily from the 18th to the 28th at 02:00, does nothing if no new month is published |
 | Plan check | Coolify scheduled task in the `jobs` container, `prexp::check_plans()` | Nightly at 04:00 |
 | v2 model fit | Called by `load_latest()`, `prexp::fit_variation_all()` | After each successful load |
 
 **Hiding the app.** `X-Robots-Tag: noindex, nofollow` on every response through a proxy middleware, `noindex` in the page head, a `robots.txt` that disallows everything if the proxy can serve it, and no links from the company site, the repository or the issues.
 
-**Backups.** The data can be rebuilt from the source, so there is no database backup. `docs/runbook.md` documents a rebuild from an empty database: `migrate()`, `load_window()`, `check_plans()`. The rebuild time is estimated from the phase 2 load timings.
+**Backups.** The data can be rebuilt from the source, so there is no database backup. `docs/runbook.md` documents a rebuild from an empty database: `migrate()`, `load_window()`, `check_plans()`. The rebuild time comes from the window load on the server in P6-02.
 
-**Server.** Minimum 4 vCPU, 16 GB RAM, 100 GB SSD free for Postgres. Checked in phase 0 (P0-07) and recorded in `docs/benchmarks.md` in P1-08.
+**Server.** Minimum 4 vCPU, 16 GB RAM, 100 GB SSD free for Postgres. Checked when it is provisioned (P6-02) and recorded in `docs/benchmarks.md`. Until then the full database runs locally (P1-08), inside Docker Desktop's virtual disk.
 
 ## 8. Repository conventions
 
@@ -382,16 +382,16 @@ The tickets are this repository's GitHub issues, one [milestone](https://github.
 | Milestone | Tickets | Hours | Days |
 | --- | --- | --- | --- |
 | Phase 0 · Setup | 7 | 18 | 2 |
-| Phase 1 · Data | 9 | 30 | 4 |
+| Phase 1 · Data | 9 | 29 | 4 |
 | Phase 2 · Scale | 6 | 24 | 3 |
 | Phase 3 · Data layer | 4 | 16 | 2 |
 | Phase 4 · App | 8 | 33 | 4 |
 | Phase 5 · Reports | 8 | 32 | 4 |
-| Phase 6 · Ship | 4 | 14 | 2 |
+| Phase 6 · Ship | 4 | 19 | 2 |
 | Phase 7 · Write up | 2 | 8 | 1 |
-| **v1** | **48** | **175** | **22** |
+| **v1** | **48** | **179** | **22** |
 | v2 · Practice variation | 7 | 56 | 7 |
-| **Total** | **55** | **231** | **29** |
+| **Total** | **55** | **235** | **29** |
 
 At 10 hours a week, v1 is about 18 weeks and v2 about 6 more.
 
@@ -399,10 +399,10 @@ At 10 hours a week, v1 is about 18 weeks and v2 about 6 more.
 
 - P0-07 can start on day one and must finish before P1-01
 - P1-03 and P1-04 run alongside P1-01 and P1-02
-- P2-03 and P2-04 can be written against the fixtures while P2-02 loads data on the server
+- P2-03 and P2-04 can be written against the fixtures while P2-02 loads the full window locally
 - P3-01 can start as soon as P0-05 is done
 - P5-01 and P5-04 are pure functions and can start once P4-01 exists
-- v2 starts after phase 6; V2-01 and V2-02 need only the server database (P1-08)
+- v2 starts after phase 6; V2-01 and V2-02 need only the full local database (P1-08)
 
 ## 10. v2: practice variation model
 

@@ -19,7 +19,7 @@
 #
 # Needs PREXP_LOADER_PASSWORD and PREXP_APP_PASSWORD. Optional: PREXP_TEST_DB_NAME
 # (default prexp_test). The role prexp_owner must exist: the postgres image creates it as
-# POSTGRES_USER; on the server it is created first (P1-08).
+# POSTGRES_USER; on the server it is created first (P6-02).
 # psql reads the passwords from the environment (\getenv) and quotes them itself
 # (:'name'). They never appear on a command line or in SQL assembled by the shell.
 # Committed with the executable bit: git add --chmod=+x docker/db/init/01-roles.sh
@@ -38,7 +38,7 @@ prexp_init_roles() (
     export PGUSER="${PGUSER:-$POSTGRES_USER}"
     export PGDATABASE="${PGDATABASE:-${POSTGRES_DB:-$POSTGRES_USER}}"
     # Only in this project's db container is POSTGRES_PASSWORD prexp_owner's password;
-    # in other postgres containers (Coolify, P1-08) it belongs to another superuser.
+    # in other postgres containers (Coolify, P6-02) it belongs to another superuser.
     if [ "${POSTGRES_USER}" = "prexp_owner" ] && [ -n "${POSTGRES_PASSWORD:-}" ]; then
       reset_owner=on
     fi
