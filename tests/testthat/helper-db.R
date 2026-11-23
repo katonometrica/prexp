@@ -33,6 +33,14 @@ local_temp_db <- function(env = parent.frame()) {
   name
 }
 
+# A new database with every migration applied, dropped when the calling test ends.
+local_migrated_db <- function(env = parent.frame()) {
+  dbname <- local_temp_db(env = env)
+  owner <- local_test_db("owner", dbname = dbname, env = env)
+  suppressMessages(migrate(owner))
+  dbname
+}
+
 no_test_db <- function(reason) {
   msg <- paste0("No test database (", reason, ")")
   if (identical(tolower(Sys.getenv("PREXP_TEST_DB_REQUIRED")), "true")) {

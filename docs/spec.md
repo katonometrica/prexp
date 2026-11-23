@@ -139,9 +139,9 @@ Indexes, defined on the parent so each attached partition's matching indexes are
 
 Both are covering indexes, so lookups are index-only scans. That only works once the visibility map is set, which is why the loader runs `VACUUM (ANALYZE)` on each new partition.
 
-**`core.dim_chemical`**: `chemical_id` (identity), `chemical_code` (unique, the source's `BNF_CHEMICAL_SUBSTANCE_CODE`: 9 characters, or 4 for appliance chapters 20 to 23), `chemical_name`. Trigram GIN index on `chemical_name`.
+**`core.dim_chemical`**: `chemical_id` (identity), `chemical_code` (unique, the source's `BNF_CHEMICAL_SUBSTANCE_CODE`: 9 characters, or 4 for appliance chapters 20 to 23), `chemical_name`, `first_seen`, `last_seen`. Trigram GIN index on `chemical_name`.
 
-**`core.dim_presentation`**: `presentation_id` (identity), `bnf_code` (unique), `bnf_description`, `chemical_id`, `bnf_chapter`, `bnf_section`, `bnf_paragraph`, `is_generic` (characters 10 and 11 of the BNF code are `AA`; null for appliance chapters 20 to 23), `first_seen`, `last_seen`. No SNOMED code: a presentation can have several. Trigram GIN index on `bnf_description`.
+**`core.dim_presentation`**: `presentation_id` (identity), `bnf_code` (unique), `bnf_description`, `chemical_id`, `bnf_chapter` (`05`), `bnf_chapter_name` (`Infections`, from `BNF_CHAPTER_PLUS_CODE`), `bnf_section` (`0501`), `bnf_paragraph` (`050101`), `is_generic` (characters 10 and 11 of the BNF code are `AA`; null for appliance chapters 20 to 23), `first_seen`, `last_seen`. No SNOMED code: a presentation can have several. Trigram GIN index on `bnf_description`.
 
 **`core.dim_practice`**: `practice_id` (identity), `practice_code` (unique), `practice_name`, `address`, `postcode`, `icb_code`, `icb_name`, `region_code`, `region_name`, `is_unidentified`, `first_seen`, `last_seen`. Trigram GIN index on `practice_name`. Name, ICB and region take the latest month's values, so every month shows today's geography (ICBs were reorganised in April 2026). `is_unidentified` marks the 'UNIDENTIFIED DOCTORS' codes, including the national code `-`; their rows stay in the fact table so totals reconcile.
 
@@ -153,9 +153,11 @@ Both are covering indexes, so lookups are index-only scans. That only works once
 | `core.agg_chemical_month` | Chemical × region × month | Drug series at chemical level, regional comparison |
 | `core.agg_practice_month` | Practice × month | Practice monthly totals |
 
-**`core.load_log`**: `year_month`, `source_url`, `source_sha256`, `source_rows`, `loaded_rows`, `file_bytes`, `started_at`, `finished_at`, `status` (`running`, `loaded`, `failed`, `dropped`), `error`. The current window is the first and last month with status `loaded`.
+Each rollup row holds the sums of the measures that can be added at its grain (`total_quantity` only per presentation, `adq_usage` not across substances), and the number of practices, or for a practice the number of presentations, behind it. `region_code` is the practice's region when the month was loaded (`-` when unknown).
 
-**`raw.epd_staging`**: unlogged, every column `text`, matching the source header exactly. Truncated at the start of each load.
+**`core.load_log`**: one row per load attempt: `load_id`, `year_month`, `source_url` (the resource's stable CSV link, never the signed ZIP link), `source_sha256`, `source_rows`, `loaded_rows`, `file_bytes`, `started_at`, `finished_at`, `status` (`running`, `loaded`, `failed`, `replaced`, `dropped`), `error`. A month has at most one `loaded` row, the data that is live (a unique index): a successful reload marks the previous one `replaced` in the same transaction as the swap, and a failed reload leaves it alone. The current window is the months with a `loaded` row.
+
+**`raw.epd_staging`**: unlogged, with autovacuum off, every column `text`, named as the source header in lower case and in its order. Truncated at the start of each load.
 
 ### 3.3 App views
 
@@ -165,6 +167,7 @@ Both are covering indexes, so lookups are index-only scans. That only works once
 | `app.v_chemical` | `dim_chemical` | Search, labels |
 | `app.v_presentation` | `dim_presentation` + `dim_chemical` | Search, labels |
 | `app.v_practice` | `dim_practice` | Search, labels |
+| `app.v_region` | `dim_practice` | Region names for the rollups' `region_code` |
 | `app.v_presentation_month` | `agg_presentation_month` + dimensions | Drug view, presentation level |
 | `app.v_chemical_month` | `agg_chemical_month` + dimensions | Drug view, chemical level; region view |
 | `app.v_practice_month` | `agg_practice_month` | Practice view, totals |
