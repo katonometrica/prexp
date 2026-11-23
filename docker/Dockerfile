@@ -48,18 +48,21 @@ ARG DEBIAN_FRONTEND=noninteractive
 # layer's cache key, so the upgrade and everything after it run again once a month;
 # otherwise the build cache would keep the first build's OS packages forever. Local
 # builds leave it empty and keep their cache.
-# UBUNTU_MIRROR: CI passes the runner's own Ubuntu mirror, because archive.ubuntu.com
-# can be very slow from GitHub's runners (62 kB/s once). It is used for this layer only:
-# the original sources are put back at the end, so the image's apt setup is standard.
+# The Ubuntu mirror: CI passes its runner's own mirror as the build secret ubuntu_mirror,
+# because archive.ubuntu.com can be very slow from GitHub's runners (62 kB/s once). A
+# secret, not a build argument, because secrets are not part of the cache key and the
+# mirror differs from runner to runner. It is used for this layer only: the original
+# sources are put back at the end, so the image's apt setup is standard. Local builds
+# pass no secret and use the default mirrors.
 ARG OS_REFRESH=
-ARG UBUNTU_MIRROR=
-RUN <<'EOF'
+RUN --mount=type=secret,id=ubuntu_mirror <<'EOF'
 set -eux
 echo "OS packages refreshed for: ${OS_REFRESH:-a local build}"
 . /etc/os-release
-if [ -n "${UBUNTU_MIRROR}" ]; then
+mirror="$(cat /run/secrets/ubuntu_mirror 2>/dev/null || true)"
+if [ -n "${mirror}" ]; then
   cp /etc/apt/sources.list.d/ubuntu.sources /tmp/ubuntu.sources.orig
-  sed -E -i "s#https?://(archive|security)\.ubuntu\.com/ubuntu/?#${UBUNTU_MIRROR}#g" /etc/apt/sources.list.d/ubuntu.sources
+  sed -E -i "s#https?://(archive|security)\.ubuntu\.com/ubuntu/?#${mirror}#g" /etc/apt/sources.list.d/ubuntu.sources
 fi
 apt-get update
 apt-get -y upgrade
@@ -167,7 +170,7 @@ CMD ["/init"]
 FROM base AS app
 
 # Non-root runtime user. /data/epd is the download directory of the jobs container
-# (spec §7, P1-08); a new named volume mounted there takes this owner.
+# (spec §7, P6-02); a new named volume mounted there takes this owner.
 # tini (installed in base) runs as process 1: R installs no SIGTERM handler, and the
 # kernel drops unhandled signals for process 1, so without it every stop waits for
 # SIGKILL, and child processes (mirai daemons, the loader's pipes) are never reaped.
