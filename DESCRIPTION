@@ -1,0 +1,30 @@
+Package: prexp
+Title: Prescription Explorer for the English Prescribing Dataset
+Version: 0.0.0.9000
+Authors@R: c(
+    person("Marcelo", "Katogui", , "60530366+mkatogui@users.noreply.github.com", role = c("aut", "cre")),
+    person("Katonométrica", role = c("cph", "fnd"))
+  )
+Description: A 'shiny' app over the English Prescribing Dataset, published
+    monthly by the NHS Business Services Authority, backed by 'PostgreSQL'.
+    It loads the monthly files, serves read-only queries to the app and
+    exports reports.
+License: MIT + file LICENSE
+URL: https://github.com/katonometrica/prexp
+BugReports: https://github.com/katonometrica/prexp/issues
+Depends:
+    R (>= 4.6.0)
+Imports:
+    DBI,
+    RPostgres (>= 1.4.0)
+Suggests:
+    covr,
+    DT,
+    htmltools,
+    lintr,
+    testthat (>= 3.0.0),
+    withr
+Config/roxygen2/markdown: TRUE
+Config/roxygen2/version: 8.1.1
+Config/testthat/edition: 3
+Encoding: UTF-8
