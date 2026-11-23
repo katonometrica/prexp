@@ -6,7 +6,7 @@ The source data's format and grain were checked in phase 0; the findings are in 
 
 ## Goal and scope
 
-Prescription Explorer is an R Shiny app, built as the R package `prexp`, for exploring a rolling twelve months of NHS England prescribing data, about 200 million source rows (about 114 million after aggregation), with lookups answered in under 300 ms. Users explore through guided views, pin what they find, add notes, and export a report as PowerPoint, Word or Excel. The data is the English Prescribing Dataset (EPD) with SNOMED Code from the NHS Business Services Authority (NHSBSA), published monthly under the Open Government Licence 3.0.
+Prescription Explorer is an R Shiny app, built as the R package `prexp`, for exploring a rolling twelve months of NHS England prescribing data, about 220 million source rows (about 114 million after aggregation), with lookups answered in under 300 ms. Users explore through guided views, pin what they find, add notes, and export a report as PowerPoint, Word or Excel. The data is the English Prescribing Dataset (EPD) with SNOMED Code from the NHS Business Services Authority (NHSBSA), published monthly under the Open Government Licence 3.0.
 
 **In scope for v1**
 
@@ -31,7 +31,7 @@ Prescription Explorer is an R Shiny app, built as the R package `prexp`, for exp
 | Each app query in psql | Under 50 ms, no sequential scan on the fact table |
 | Report export, any format | Under 10 s, run as a background task |
 | Test coverage | 85% or more, enforced in CI |
-| Rows loaded | About 200 million source rows for twelve months, about 114 million after aggregation |
+| Rows loaded | About 220 million source rows for twelve months, about 114 million after aggregation |
 
 ## 1. Versions
 

@@ -68,9 +68,10 @@ R's site library, and renv is never switched on inside a container.
 - To reset only the database: `docker compose down`, then `docker volume rm prexp_pgdata`,
   then `docker compose up -d --wait`.
 - The passwords in `.env` are set when the database volume is created. After changing
-  them, apply them to the existing database with
-  `docker compose exec db bash /docker-entrypoint-initdb.d/01-roles.sh`, then
-  `docker compose up -d` so the other containers get them too.
+  them, first run `docker compose up -d`, which recreates the containers with the new
+  values, then apply them to the existing database with
+  `docker compose exec db bash /docker-entrypoint-initdb.d/01-roles.sh`. In Git Bash,
+  prefix that command with `MSYS_NO_PATHCONV=1`, or Git Bash rewrites the path.
 
 ## Data
 

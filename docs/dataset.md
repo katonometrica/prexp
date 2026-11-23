@@ -109,7 +109,7 @@ The planned BNF prefixes (spec §10) were checked against 202609. Each captures 
 | --- | --- | --- |
 | Weight | Brands Wegovy (`0601023AWBD…`), Saxenda (`0601023ABBC…`), Nevolat (`0601023ABBD…`), Biolide (`0601023ABBG…`) and Plaobes (`0601023ABBH…`); generic semaglutide strengths that exist only as Wegovy: `0601023AWAAAGAG`, `…AWAAAHAH`, `…AWAAAIAI`, `…AWAAAJAJ`, `…AWAAAPAP`, `…AWAAAQAQ`, `…AWAAARAR` | 2,782 |
 | Ambiguous | Tirzepatide (`0601023AZ`) and orforglipron (`0601023BA`), whose presentations serve both licences; generic semaglutide strengths shared by Ozempic or Rybelsus and Wegovy (`0601023AWAAABAB`, `…AWAAAKAK`, `…AWAAALAL`, `…AWAAAMAM`); generic liraglutide (`0601023ABAAAAAA`) | about 400,500 |
-| Diabetes | Everything else in the family: Ozempic, Rybelsus, Victoza, Zegluxen, Diavic, dulaglutide, exenatide, lixisenatide, Xultophy, Suliqua | 175,501 |
+| Diabetes | Everything else in the family: Ozempic, Rybelsus, Victoza, Zegluxen, Diavic, dulaglutide, exenatide, lixisenatide, Xultophy; and Suliqua, though it is coded with the insulins (`0601012AB`) | 175,501 |
 
 EPD has no indication field, so heart failure, kidney and weight-management use of shared drugs is a stated limitation of the model.
 

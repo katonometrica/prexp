@@ -166,6 +166,9 @@ jobs:
       PREXP_DB_NAME: prexp
       PREXP_TEST_DB_NAME: prexp_test
       PREXP_TEST_DB_REQUIRED: "true"
+      # Without it testthat assumes a CRAN check and silently skips snapshot tests, such as
+      # the one guarding the applied migrations' checksums
+      NOT_CRAN: "true"
       # Throwaway passwords for the throwaway service database
       PREXP_OWNER_PASSWORD: ci-owner-not-secret
       PREXP_LOADER_PASSWORD: ci-loader-not-secret
