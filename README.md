@@ -16,9 +16,8 @@ in Docker volumes, not in the bind mount.
    ignored by git; never commit it.
 2. From the repository root run `docker compose up -d --build --wait`. The first build
    downloads R packages and RStudio and takes several minutes.
-3. Open <http://localhost:8787>. RStudio opens without a sign-in, as user `rstudio`; it
-   listens on 127.0.0.1 only, so no other machine can reach it. The repository is at
-   `~/prexp`.
+3. Open <http://localhost:8787>. RStudio opens without a sign-in, as user `rstudio`.
+   Open the project with File > Open Project > `~/prexp/prexp.Rproj`.
 4. In the RStudio terminal `psql` reaches the database (`db:5432`), for example
    `PGPASSWORD="$PREXP_APP_PASSWORD" psql -U prexp_app -c 'show statement_timeout'`.
    From the host it is `localhost:5432`.
@@ -28,6 +27,18 @@ in Docker volumes, not in the bind mount.
 All ports listen on 127.0.0.1 only. If one is taken, change `HOST_PORT_DB`,
 `HOST_PORT_RSTUDIO` or `HOST_PORT_APP` in `.env`. For R commands from the host, run them
 as the RStudio user, for example `docker compose exec -u rstudio rstudio R`.
+
+**No sign-in, and what that means.** Other machines cannot reach RStudio, but any
+program on this machine can, including a malicious web page in your browser through a
+DNS-rebinding attack (most current browsers block this). RStudio holds the database
+passwords and can write to the repository. Stop it when you are not using it
+(`docker compose stop rstudio`), or bring the sign-in back: in `compose.yaml`, replace
+`DISABLE_AUTH: "true"` with `PASSWORD: ${RSTUDIO_PASSWORD}` and set `RSTUDIO_PASSWORD`
+in `.env`.
+
+**On Linux** (Docker Engine, not Docker Desktop), set `HOST_UID` and `HOST_GID` in `.env`
+to the output of `id -u` and `id -g`, so RStudio can write to the bind-mounted
+repository.
 
 In the RStudio container, R reads the `PREXP_*` settings from the container environment
 when it starts (rocker copies them into `Renviron.site`), so setting a variable on the
@@ -39,9 +50,9 @@ example `prexp::migrate(prexp::db_connect("owner", dbname = "prexp_test"))`.
 `renv.lock` lists every package version. The images install exactly those versions into
 R's site library, and renv is never switched on inside a container.
 
-- To add a package: add it to `DESCRIPTION` (`usethis::use_package("pkg")`, or
-  `usethis::use_package("pkg", "Suggests")` for test and CI tools), install it with
-  `install.packages("pkg")`, then run
+- To add a package, with the project open: install it with `install.packages("pkg")`,
+  add it to `DESCRIPTION` with `usethis::use_package("pkg")` (or
+  `usethis::use_package("pkg", "Suggests")` for test and CI tools), then run
   `renv::snapshot(project = "~/prexp", library = .libPaths(), prompt = FALSE)`. Commit
   `DESCRIPTION` and `renv.lock` together and rebuild: `docker compose build`. If
   `renv::sysreqs()` lists a system library that `docker/Dockerfile` lacks, add it in the
@@ -56,6 +67,11 @@ R's site library, and renv is never switched on inside a container.
   The next `up` creates a new database.
 - To reset only the database: `docker compose down`, then `docker volume rm prexp_pgdata`,
   then `docker compose up -d --wait`.
+- The passwords in `.env` are set when the database volume is created. After changing
+  them, first run `docker compose up -d`, which recreates the containers with the new
+  values, then apply them to the existing database with
+  `docker compose exec db bash /docker-entrypoint-initdb.d/01-roles.sh`. In Git Bash,
+  prefix that command with `MSYS_NO_PATHCONV=1`, or Git Bash rewrites the path.
 
 ## Data
 

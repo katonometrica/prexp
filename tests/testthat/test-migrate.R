@@ -10,6 +10,14 @@ write_sql <- function(dir, name, sql) {
   writeBin(charToRaw(sql), file.path(dir, name))
 }
 
+# Advisory locks this session holds. A session can take a lock it already holds again,
+# so a leaked lock would not show up as a failure of a second migrate() call.
+held_advisory_locks <- function(con) {
+  DBI::dbGetQuery(con, "
+    SELECT count(*)::int AS n FROM pg_locks
+    WHERE locktype = 'advisory' AND pid = pg_backend_pid()")$n
+}
+
 test_that("migration files are ordered by their number (no database)", {
   dir <- withr::local_tempdir()
   for (name in c("10_c.sql", "2_b.sql", "001_a.sql")) {
@@ -109,6 +117,7 @@ test_that("a second migrate() applies nothing", {
   expect_silent(applied <- migrate(con))
   expect_identical(applied, integer())
   expect_identical(DBI::dbGetQuery(con, ledger), before)
+  expect_identical(held_advisory_locks(con), 0L)
 })
 
 test_that("editing an applied file stops migrate() with the file's name", {
@@ -146,6 +155,7 @@ test_that("a failing migration is rolled back, and the error names its file", {
            (SELECT count(*) FROM meta.schema_migrations)::int AS recorded")
   expect_true(state$no_table)
   expect_identical(state$recorded, 0L)
+  expect_identical(held_advisory_locks(con), 0L)
 })
 
 test_that("migrate() refuses to run while another session holds its lock", {
@@ -205,4 +215,36 @@ test_that("every statement after a row-returning one is applied", {
   ))
   suppressMessages(migrate(con, dir))
   expect_identical(DBI::dbGetQuery(con, "SELECT x FROM after_rows")$x, 42L)
+})
+
+test_that("the shipped migration files never change once released (no database)", {
+  # Applied files are never edited (spec section 3.5). An edit changes a checksum here and
+  # fails CI; a new migration adds a line, accepted with testthat::snapshot_accept().
+  files <- installed_migrations()
+  expect_snapshot(cat(paste(files$file, files$checksum), sep = "\n"))
+})
+
+test_that("migrate() closes the connection it opens", {
+  dbname <- local_temp_db()
+  withr::local_envvar(PREXP_DB_NAME = dbname)
+  opened <- NULL
+  real_connect <- db_connect
+  local_mocked_bindings(db_connect = function(...) {
+    opened <<- real_connect(...)
+    opened
+  })
+  suppressMessages(migrate())
+  expect_false(DBI::dbIsValid(opened))
+})
+
+test_that("row-returning statements with different columns stop the file, naming it", {
+  # RPostgres reads a multi-statement file as one result, so every row-returning
+  # statement in it must return the same columns (spec section 3.5).
+  dbname <- local_temp_db()
+  con <- local_test_db("owner", dbname = dbname)
+  dir <- withr::local_tempdir()
+  write_sql(dir, "001_shapes.sql", "SELECT 1 AS a;\nSELECT 'x' AS b;\n")
+  expect_error(migrate(con, dir), "001_shapes.sql", fixed = TRUE)
+  recorded <- DBI::dbGetQuery(con, "SELECT count(*)::int AS n FROM meta.schema_migrations")$n
+  expect_identical(recorded, 0L)
 })

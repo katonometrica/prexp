@@ -89,8 +89,10 @@ db_connect <- function(role = c("app", "loader", "owner"), dbname = NULL, ...) {
 #' default privileges in the migrations only cover objects `prexp_owner`
 #' creates. A migration file must not contain transaction control (`BEGIN`,
 #' `COMMIT`) or commands that cannot run in a transaction, such as
-#' `CREATE INDEX CONCURRENTLY`. Checksums ignore line endings and a byte-order
-#' mark, so Windows and Linux checkouts of a file agree.
+#' `CREATE INDEX CONCURRENTLY`. Its row-returning statements must all return the
+#' same columns, because the file is read as one result; wrap calls whose result is
+#' not needed in `DO $$ BEGIN PERFORM ...; END $$`. Checksums ignore line endings
+#' and a byte-order mark, so Windows and Linux checkouts of a file agree.
 #'
 #' @param con A single connection (not a pool) as the owner role. By default
 #'   `migrate()` opens one with `db_connect("owner")` and closes it when done.

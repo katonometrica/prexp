@@ -6,7 +6,7 @@ The source data's format and grain were checked in phase 0; the findings are in 
 
 ## Goal and scope
 
-Prescription Explorer is an R Shiny app, built as the R package `prexp`, for exploring a rolling twelve months of NHS England prescribing data, about 200 million rows, with lookups answered in under 300 ms. Users explore through guided views, pin what they find, add notes, and export a report as PowerPoint, Word or Excel. The data is the English Prescribing Dataset (EPD) with SNOMED Code from the NHS Business Services Authority (NHSBSA), published monthly under the Open Government Licence 3.0.
+Prescription Explorer is an R Shiny app, built as the R package `prexp`, for exploring a rolling twelve months of NHS England prescribing data, about 220 million source rows (about 114 million after aggregation), with lookups answered in under 300 ms. Users explore through guided views, pin what they find, add notes, and export a report as PowerPoint, Word or Excel. The data is the English Prescribing Dataset (EPD) with SNOMED Code from the NHS Business Services Authority (NHSBSA), published monthly under the Open Government Licence 3.0.
 
 **In scope for v1**
 
@@ -31,7 +31,7 @@ Prescription Explorer is an R Shiny app, built as the R package `prexp`, for exp
 | Each app query in psql | Under 50 ms, no sequential scan on the fact table |
 | Report export, any format | Under 10 s, run as a background task |
 | Test coverage | 85% or more, enforced in CI |
-| Rows loaded | About 200 million (twelve months) |
+| Rows loaded | About 220 million source rows for twelve months, about 114 million after aggregation |
 
 ## 1. Versions
 
@@ -58,7 +58,7 @@ Prescription Explorer is an R Shiny app, built as the R package `prexp`, for exp
 | `dev` | `base` | RStudio Server, `git`, and the development tools (`devtools`, `usethis`, `roxygen2`) from the same snapshot. The tools are never in `renv.lock` | Local development |
 | `app` | `base` | The installed `prexp` package, port 3838, the non-root user `prexp`, `/data/epd` for downloads, `CMD Rscript -e "prexp::run_app()"` | The app and the `jobs` container in production, local smoke tests |
 
-**Packages.** `renv.lock` is the only list of package versions. Every stage installs exactly those versions into R's site library, where every R process finds them, so the repository's renv files never switch libraries inside a container. To add a package: add it to `DESCRIPTION`, install it in the dev container, run `renv::snapshot()`, commit `DESCRIPTION` and `renv.lock`, and rebuild the images.
+**Packages.** `renv.lock` is the only list of package versions. Every stage installs exactly those versions into R's site library, where every R process finds them, so the repository's renv files never switch libraries inside a container. To add a package: install it in the dev container, add it to `DESCRIPTION`, run `renv::snapshot(project = "~/prexp", library = .libPaths(), prompt = FALSE)`, commit `DESCRIPTION` and `renv.lock`, and rebuild the images.
 
 Images in the GitHub Container Registry:
 
@@ -72,16 +72,16 @@ Images in the GitHub Container Registry:
 | Service | Image or build | Ports (host only) | Volumes | Notes |
 | --- | --- | --- | --- | --- |
 | `db` | `postgres:18.7-trixie`, pinned by digest | `127.0.0.1:5432` | `pgdata:/var/lib/postgresql`, `./docker/db/init` as init scripts, `./docker/db/postgresql.dev.conf` | Health check `pg_isready -h 127.0.0.1`, which only passes once the init scripts have finished (they run against a socket-only server). The PostgreSQL 18 image keeps data under `/var/lib/postgresql`, not `.../data` as in older versions. `shm_size: 1gb` for parallel queries |
-| `rstudio` | build `docker/Dockerfile`, target `dev` | `127.0.0.1:8787` | Repository bind mount at `/home/rstudio/prexp`, `epd-downloads` at `/data/epd` | Starts after `db` is healthy. Gets database settings and all three role passwords from `.env`. Opens without a sign-in (`DISABLE_AUTH`), which is safe because the port is bound to `127.0.0.1` |
+| `rstudio` | build `docker/Dockerfile`, target `dev` | `127.0.0.1:8787` | Repository bind mount at `/home/rstudio/prexp`, `epd-downloads` at `/data/epd` | Starts after `db` is healthy. Gets database settings and all three role passwords from `.env`. Opens without a sign-in (`DISABLE_AUTH`): other machines cannot reach it, because the port is bound to `127.0.0.1`, but software on this machine can (the README explains the trade-off). The `rstudio` user takes the host's UID and GID from `HOST_UID` and `HOST_GID` on Linux |
 | `app` | build `docker/Dockerfile`, target `app` | `127.0.0.1:3838` | none | Compose profile `app`, so it only starts with `docker compose --profile app up`. Gets the app role's credentials only |
 
 Named volumes: `pgdata`, `epd-downloads`. Monthly files (several GB each) go in `epd-downloads`, not the bind mount, because a Windows bind mount is slow for large files. Host ports can be changed in `.env` (`HOST_PORT_DB`, `HOST_PORT_RSTUDIO`, `HOST_PORT_APP`); they are always bound to `127.0.0.1`.
 
-**Configuration.** `.env` holds the passwords and is in `.gitignore`. `.env.example` is committed with placeholder values. Variables: `POSTGRES_PASSWORD`, `PREXP_LOADER_PASSWORD`, `PREXP_APP_PASSWORD`, `PREXP_DB_HOST`, `PREXP_DB_PORT`, `PREXP_DB_NAME`, `PREXP_TEST_DB_NAME`, and the optional `HOST_PORT_*`. Passwords use letters and digits only, so they need no quoting anywhere. R reads the owner's password as `PREXP_OWNER_PASSWORD`, which Compose maps from `POSTGRES_PASSWORD`; CI and Coolify set it directly.
+**Configuration.** `.env` holds the passwords and is in `.gitignore`. `.env.example` is committed with placeholder values. Variables: `POSTGRES_PASSWORD`, `PREXP_LOADER_PASSWORD`, `PREXP_APP_PASSWORD`, `PREXP_DB_HOST`, `PREXP_DB_PORT`, `PREXP_DB_NAME`, `PREXP_TEST_DB_NAME`, and the optional `HOST_PORT_*`, `HOST_UID` and `HOST_GID`. Passwords use letters and digits only, so they need no quoting anywhere. R reads the owner's password as `PREXP_OWNER_PASSWORD`, which Compose maps from `POSTGRES_PASSWORD`; CI and Coolify set it directly.
 
 **Init scripts** in `docker/db/init/`, run once when `pgdata` is empty. CI runs the same scripts against its database service, with `bash` and `psql`.
 
-1. `01-roles.sh`: creates the login roles `prexp_loader` and `prexp_app` with passwords from the environment, and the test database `prexp_test` owned by `prexp_owner`. Idempotent: a rerun only resets the passwords. It works whether the image's entrypoint executes or sources it, and by hand through the `PG*` variables. Passwords are passed as psql variables, never spliced into SQL. Committed with the executable bit
+1. `01-roles.sh`: creates the login roles `prexp_loader` and `prexp_app` with passwords from the environment, and the test database `prexp_test` owned by `prexp_owner`. Idempotent: a rerun only resets the passwords; run in the db container it also resets `prexp_owner`'s, which is how `.env` changes reach an existing volume. It turns statement logging off for its session before sending any password. It works whether the image's entrypoint executes or sources it, and by hand through the `PG*` variables. Passwords are passed as psql variables, never spliced into SQL. Committed with the executable bit
 2. `02-database.sql`: sets `prexp_app` to read-only transactions, a 5 second `statement_timeout` and `jit = off`, as role settings, so they apply in every database
 
 Everything else (schemas, tables, extensions, grants) is created by migrations (section 3.5), so local, CI and production databases are built the same way.
@@ -183,7 +183,8 @@ Numbered SQL files in `inst/sql/migrations/` (`001_schemas.sql`, `002_dimensions
 - A per-database advisory lock stops two runs at once
 - Checksums ignore line endings and a byte-order mark, so Windows and Linux checkouts agree
 - Before applying anything, it stops if an applied file has changed or is missing, or if a pending file is numbered below the last applied one
-- Each file is sent in one call (RPostgres's simple query protocol) inside its own transaction, so files must not contain `BEGIN`, `COMMIT` or commands that cannot run in a transaction
+- Each file is sent in one call (RPostgres's simple query protocol) inside its own transaction, so files must not contain `BEGIN`, `COMMIT` or commands that cannot run in a transaction. Row-returning statements in one file must all return the same columns; wrap calls whose result is not needed in `DO $$ BEGIN PERFORM ...; END $$`
+- A test records every shipped migration's checksum (a testthat snapshot), so editing an applied file fails CI; adding a migration means accepting the new snapshot (`testthat::snapshot_accept()`), which reviewers see in the diff
 
 ## 4. Monthly loader
 
@@ -339,7 +340,7 @@ Triggers: pull requests, pushes to `main`, a weekly schedule on Mondays (which p
 
 ### 6.3 Checks that need the full database
 
-The 200 million row database exists only on the server, from phase 1 on, so these run there, not in GitHub Actions:
+The full database (twelve months, about 114 million fact rows) exists only on the server, from phase 1 on, so these run there, not in GitHub Actions:
 
 - `prexp::check_plans()`: during phase 2 by hand, then nightly as a Coolify scheduled task
 - The p95 benchmark: `shinyloadtest` records a session of searches and view changes, `shinycannon` replays it with 5 concurrent users, and p95 comes from the report and from the fetch timing logs. Run at the end of phase 4 against a private staging deployment on the server, and after schema changes. Results go to `docs/benchmarks.md`
