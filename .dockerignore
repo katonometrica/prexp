@@ -1,0 +1,25 @@
+# The images restore packages from renv.lock alone and never activate renv,
+# so renv's project files stay out. Secrets, VCS data and outputs never enter a build.
+.git
+.github
+.Rproj.user
+.Rhistory
+.RData
+.Rprofile
+renv
+.env
+.env.*
+!.env.example
+.Renviron
+*.zip
+*.part
+*.tar.gz
+*.Rcheck
+coverage
+coverage.html
+docs
+data-raw
+docker
+compose.yaml
+.claude
+tests
