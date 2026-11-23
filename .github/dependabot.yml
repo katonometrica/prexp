@@ -1,0 +1,13 @@
+# Updates for the SHA-pinned actions in .github/workflows. The R packages are locked by
+# renv.lock and the base images by digest on purpose, so they are not listed here.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
