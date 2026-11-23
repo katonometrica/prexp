@@ -1,0 +1,39 @@
+# Line endings: LF in the repository and in every working tree, Windows included,
+# because the containers read the working tree through the bind mount.
+# Must be in the first commit: Git for Windows often has core.autocrlf=true.
+* text=auto eol=lf
+
+# Read by bash, psql, R and Docker inside Linux containers: always LF
+*.sh        text eol=lf
+*.sql       text eol=lf
+*.conf      text eol=lf
+*.R         text eol=lf
+*.Rmd       text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.json      text eol=lf
+*.csv       text eol=lf
+Dockerfile  text eol=lf
+.Rprofile   text eol=lf
+.env*       text eol=lf
+
+# Binary: never converted
+*.rds    binary
+*.rda    binary
+*.RData  binary
+*.zip    binary
+*.gz     binary
+*.png    binary
+*.jpg    binary
+*.gif    binary
+*.ico    binary
+*.pdf    binary
+*.docx   binary
+*.pptx   binary
+*.xlsx   binary
+*.odt    binary
+
+# Executable bit: Git for Windows ignores file modes (core.fileMode=false), so set it
+# in the index when adding a script:   git add --chmod=+x docker/db/init/01-roles.sh
+# For a file already tracked:          git update-index --chmod=+x <file>
+# Check:                               git ls-files -s <file>   (mode 100755)
