@@ -72,12 +72,12 @@ Images in the GitHub Container Registry:
 | Service | Image or build | Ports (host only) | Volumes | Notes |
 | --- | --- | --- | --- | --- |
 | `db` | `postgres:18.7-trixie`, pinned by digest | `127.0.0.1:5432` | `pgdata:/var/lib/postgresql`, `./docker/db/init` as init scripts, `./docker/db/postgresql.dev.conf` | Health check `pg_isready -h 127.0.0.1`, which only passes once the init scripts have finished (they run against a socket-only server). The PostgreSQL 18 image keeps data under `/var/lib/postgresql`, not `.../data` as in older versions. `shm_size: 1gb` for parallel queries |
-| `rstudio` | build `docker/Dockerfile`, target `dev` | `127.0.0.1:8787` | Repository bind mount at `/home/rstudio/prexp`, `epd-downloads` at `/data/epd` | Starts after `db` is healthy. Gets database settings and all three role passwords from `.env` |
+| `rstudio` | build `docker/Dockerfile`, target `dev` | `127.0.0.1:8787` | Repository bind mount at `/home/rstudio/prexp`, `epd-downloads` at `/data/epd` | Starts after `db` is healthy. Gets database settings and all three role passwords from `.env`. Opens without a sign-in (`DISABLE_AUTH`), which is safe because the port is bound to `127.0.0.1` |
 | `app` | build `docker/Dockerfile`, target `app` | `127.0.0.1:3838` | none | Compose profile `app`, so it only starts with `docker compose --profile app up`. Gets the app role's credentials only |
 
 Named volumes: `pgdata`, `epd-downloads`. Monthly files (several GB each) go in `epd-downloads`, not the bind mount, because a Windows bind mount is slow for large files. Host ports can be changed in `.env` (`HOST_PORT_DB`, `HOST_PORT_RSTUDIO`, `HOST_PORT_APP`); they are always bound to `127.0.0.1`.
 
-**Configuration.** `.env` holds the passwords and is in `.gitignore`. `.env.example` is committed with placeholder values. Variables: `POSTGRES_PASSWORD`, `PREXP_LOADER_PASSWORD`, `PREXP_APP_PASSWORD`, `RSTUDIO_PASSWORD`, `PREXP_DB_HOST`, `PREXP_DB_PORT`, `PREXP_DB_NAME`, `PREXP_TEST_DB_NAME`, and the optional `HOST_PORT_*`. Passwords use letters and digits only, so they need no quoting anywhere. R reads the owner's password as `PREXP_OWNER_PASSWORD`, which Compose maps from `POSTGRES_PASSWORD`; CI and Coolify set it directly.
+**Configuration.** `.env` holds the passwords and is in `.gitignore`. `.env.example` is committed with placeholder values. Variables: `POSTGRES_PASSWORD`, `PREXP_LOADER_PASSWORD`, `PREXP_APP_PASSWORD`, `PREXP_DB_HOST`, `PREXP_DB_PORT`, `PREXP_DB_NAME`, `PREXP_TEST_DB_NAME`, and the optional `HOST_PORT_*`. Passwords use letters and digits only, so they need no quoting anywhere. R reads the owner's password as `PREXP_OWNER_PASSWORD`, which Compose maps from `POSTGRES_PASSWORD`; CI and Coolify set it directly.
 
 **Init scripts** in `docker/db/init/`, run once when `pgdata` is empty. CI runs the same scripts against its database service, with `bash` and `psql`.
 

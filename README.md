@@ -16,8 +16,9 @@ in Docker volumes, not in the bind mount.
    ignored by git; never commit it.
 2. From the repository root run `docker compose up -d --build --wait`. The first build
    downloads R packages and RStudio and takes several minutes.
-3. Open <http://localhost:8787> and sign in as `rstudio` with `RSTUDIO_PASSWORD`. The
-   repository is at `~/prexp`.
+3. Open <http://localhost:8787>. RStudio opens without a sign-in, as user `rstudio`; it
+   listens on 127.0.0.1 only, so no other machine can reach it. The repository is at
+   `~/prexp`.
 4. In the RStudio terminal `psql` reaches the database (`db:5432`), for example
    `PGPASSWORD="$PREXP_APP_PASSWORD" psql -U prexp_app -c 'show statement_timeout'`.
    From the host it is `localhost:5432`.
