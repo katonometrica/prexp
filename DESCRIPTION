@@ -28,6 +28,7 @@ Imports:
     reactable,
     RPostgres (>= 1.4.0),
     shiny,
+    systemfonts,
     tibble,
     tools,
     utils
