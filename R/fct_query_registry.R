@@ -42,7 +42,7 @@ query_registry <- function() {
     search_drugs = list(
       params = c("q", "limit"),
       samples = list(
-        large = list(q = "ba", limit = 20L), small = list(q = "pitolisant", limit = 20L)
+        large = list(q = "co", limit = 20L), small = list(q = "pitolisant", limit = 20L)
       )
     ),
     search_practices = list(

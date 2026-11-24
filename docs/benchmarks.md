@@ -33,38 +33,78 @@ Measurements of the loader and, from phase 2, of the app's queries (spec §6.3).
 
 ### Tuned against the twelve months (P2-05)
 
-On the full window, `check_plans()` found nothing to fix. No sequential scan of the fact table, no heap fetches, partitions pruned, and every query under 50 ms. Migration 008 widens the margin where the first timings were weakest:
+On 24 November 2026 `check_plans()` was run against the full window with its worst-case samples, which are picked from the data: the chemical with the most presentations (2127, lymphoedema garments, 2,089 of them) and the practice with the most prescribing rows (B83033). Two checks failed. Every two-letter drug search that matched thousands of names took 50 to 67 ms ('le' matches 14,199). `drug_presentations` for that chemical took 61 ms, 82 ms as a generic plan. Four changes fix them and widen the margin elsewhere:
 
-- **A `text_pattern_ops` index on each code.** With the trigram index on the name, a search for three characters or more is a `BitmapOr` of two index scans, not a scan of the dimension. The collation is not C, so the codes' unique indexes cannot serve `LIKE 'ABC%'`.
-- **`app.v_practice_presentation` with a `LEFT JOIN`.** The planner can remove that join when no presentation column is used. With the inner join, it probed the presentations for every fact row: 50,000 for the largest practice, with a hash join in a custom plan and row by row in a generic one.
+- **Migration 008, a `text_pattern_ops` index on each code.** With the trigram index on the name, a search for three characters or more is a `BitmapOr` of two index scans, not a scan of the dimension. The collation is not C, so the codes' unique indexes cannot serve `LIKE 'ABC%'`.
+- **Migration 008, `app.v_practice_presentation` with a `LEFT JOIN`.** The planner removes that join when no presentation column is used. With the inner join, it probed the presentations for every fact row: 50,000 for the largest practice, with a hash join in a custom plan and row by row in a generic one.
+- **Migration 009, the presentation rollup's primary key carries its measures.** A chemical's presentations become an index-only scan of their 70,000 rollup rows, in key order, instead of one heap page each. Index-only scans need the visibility map set, so the loader now vacuums the three rollups after each swap.
+- **Short searches match the start of a word.** One or two characters match names with a word starting with them; three or more match anywhere, as before. Nearly every name contains a pair of letters ('le' is in every "tablets"), so short searches had to rank thousands of names with `similarity()`, which was most of their time.
 
-| Query (sample) | Before, ms (one run) | After, ms (median of 5) |
+| Query (sample) | Before (ms) | After (ms) |
 | --- | ---: | ---: |
-| `search_drugs` ('pitolisant') | 13.47 | 0.43 |
-| `search_practices` ('N81655') | 3.33 | 0.19 |
-| `practice_top_drugs` (B83033, twelve months) | 22.66 | 15.48 |
-| The same as a generic plan | 40.21 | 15.93 |
+| `search_drugs` ('le') | 60 | 15 |
+| `search_drugs` ('co', now the worst two letters) | 41 | 31 |
+| `search_drugs` ('pitolisant') | 13.5 | 0.5 |
+| `search_practices` ('N81655') | 3.3 | 0.2 |
+| `drug_presentations` (2127, twelve months) | 61 | 19 |
+| The same as a generic plan | 82 | 30 |
+| `practice_top_drugs` (B83033, twelve months) | 22.7 | 15.1 |
+| The same as a generic plan | 40.2 | 14.0 |
 
-Then each planner setting was changed in turn, and the 21 checks were timed three times each:
+"Before" is one run; "after" is the median of five. The worst three-letter searches, such as 'sto' and 'tom' (over 5,000 matches among the appliances' "colostomy" and "stoma" products), take about 30 ms and are unchanged.
 
-| Setting changed | Sum of the 21 medians (ms) |
-| --- | ---: |
-| None: the full settings above | 87.9 |
-| `max_parallel_workers_per_gather = 0` | 85.7 |
-| `max_parallel_workers_per_gather = 2` | 84.4 |
-| `work_mem = '4MB'` | 84.1 |
-| `work_mem = '16MB'` | 91.7 |
-| `work_mem = '256MB'` | 87.2 |
-| `random_page_cost = 4` | 88.6 |
-| `effective_cache_size = '4GB'` | 86.0 |
-| `jit = on` | 87.1 |
+Every check now passes with a plan made with the values, as the app's are. These are the medians of five runs on a quiet database:
 
-**No check failed, and the differences are noise.**
-- **Why.** Every app query is an index lookup of a few thousand rows at most, which these settings do not affect.
-- **work_mem.** The largest hash, a practice's top drugs over twelve months, needs 9.5 MB. It fits in hash memory even at 4MB, because `hash_mem_multiplier` is 2.
-- **JIT.** No app query costs enough to trigger it, so turning it on changed nothing; one that did would pay the compile time on every call.
+| Query | Sample | Months | Custom (ms) | Slowest of 5 | Generic (ms) | Partitions read, pruned (generic) |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `window` | window |  | 0.04 | 0.06 | 0.01 |  |
+| `search_drugs` | large: co |  | 30.79 | 30.98 | 45.28 |  |
+| `search_drugs` | small: pitolisant |  | 0.44 | 0.70 | 15.82 |  |
+| `search_practices` | large: he |  | 3.45 | 3.53 | 8.45 |  |
+| `search_practices` | small: N81655 |  | 0.16 | 0.18 | 4.44 |  |
+| `drug_series_chemical` | large: 2127 | 12 | 0.12 | 0.29 | 0.08 |  |
+| `drug_series_chemical` | small: 0404000W0 | 3 | 0.08 | 0.10 | 0.03 |  |
+| `drug_series_presentation` | large: 0212000B0AAABAB | 12 | 0.11 | 0.12 | 0.08 |  |
+| `drug_series_presentation` | small: 0404000W0BBAAAA | 3 | 0.08 | 0.12 | 0.02 |  |
+| `drug_presentations` | large: 2127 | 12 | 19.74 | 20.26 | 30.83 |  |
+| `drug_presentations` | small: 0404000W0 | 3 | 0.16 | 0.18 | 0.04 |  |
+| `practice_profile` | large: B83033 |  | 0.02 | 0.04 | 0.01 |  |
+| `practice_profile` | small: Y03965 |  | 0.02 | 0.03 | 0.01 |  |
+| `practice_series` | large: B83033 | 12 | 0.03 | 0.09 | 0.01 |  |
+| `practice_series` | small: Y03965 | 3 | 0.03 | 0.07 | 0.01 |  |
+| `practice_top_drugs` | large: B83033 | 12 | 15.48 | 15.58 | 14.05 | 12, 0 |
+| `practice_top_drugs` | small: Y03965 | 3 | 0.59 | 0.90 | 0.31 | 3, 9 |
+| `region_comparison_chemical` | large: 2127 | 12 | 7.00 | 7.02 | 6.96 |  |
+| `region_comparison_chemical` | small: 0404000W0 | 3 | 6.76 | 8.45 | 6.69 |  |
+| `region_comparison_presentation` | large: 0212000B0AAABAB | 12 | 7.08 | 7.89 | 6.80 |  |
+| `region_comparison_presentation` | small: 0404000W0BBAAAA | 3 | 6.63 | 12.58 | 6.47 |  |
 
-The settings therefore stay as they are. They serve the loads and keep the indexes cached, and P6-02 derives the server's settings from them.
+The slowest single run was 31.0 ms: the two-letter search 'co', whose 5,235 word-prefix matches are ranked by `similarity()`. **Generic plans** still prune partitions when the plan starts: the small top-drugs sample reads 3 partitions, and the other 9 are removed. But a generic plan cannot use the code prefix index, and it builds the search patterns for every row, so the searches are slower that way: 'co' takes 45 ms, close to the limit. The app is not affected, since RPostgres sends unnamed statements, which the server plans with the values.
+
+**Settings.** Each planner setting was then changed in turn, and the 21 checks were timed three times each:
+
+| Setting changed | Sum of the 21 medians (ms) | Plans that differ |
+| --- | ---: | --- |
+| None: the full settings above | 100.6 | |
+| `max_parallel_workers_per_gather = 0` | 100.0 | none |
+| `max_parallel_workers_per_gather = 2` | 99.1 | none |
+| `work_mem = '4MB'` | 97.3 | 1: `drug_presentations` (large) |
+| `work_mem = '16MB'` | 98.0 | 1: the same |
+| `work_mem = '256MB'` | 99.5 | none |
+| `random_page_cost = 4` | 99.7 | 6, among them the two-letter search and the series |
+| `effective_cache_size = '4GB'` | 100.3 | none |
+| `jit = on` | 98.9 | none |
+
+No setting changed a time beyond noise, and none made a check fail.
+- **What the time goes on.** CPU work on pages already in shared buffers, which these settings do not touch:
+  - the searches' `ILIKE` and `similarity()`;
+  - the hash aggregate of a practice's rows, 49,902 for the largest;
+  - the scan and sort of the 10,230 practices behind `app.v_region`, about 7 ms of every region comparison.
+- **Parallel workers.** No app plan uses them.
+- **`work_mem`.** The largest hash, the top drugs of the largest practice, reports 9.5 MB at 64MB, because PostgreSQL counts whole memory blocks, whose size grows with the limit. At 4MB the same hash reports 6.7 MB and still fits in hash memory (8 MB, with `hash_mem_multiplier` 2), in one batch.
+- **JIT.** No app query costs enough to trigger it.
+
+So the settings stay as they are: they serve the loads and keep the indexes cached, and P6-02 derives the server's from them. The two-letter search is the query with least margin, at about 31 ms on this machine. If the server's cores are much slower, P3-02 can require three characters.
 
 ## One month (P1-09)
 
@@ -87,7 +127,7 @@ The real September 2026 month (`EPD_SNOMED_202609`), loaded on 23 November 2026 
 | Clean | 0.6 | 0.5 |
 | **Total** | **335** (112 without the download) | **120** |
 
-The download depends on the connection: the same ZIP took 112 s in P0-07. The full settings change little for one month, since each step is one large query; they matter for the twelve months' queries, which phase 2 tunes.
+The download depends on the connection: the same ZIP took 112 s in P0-07. The full settings change little for one month, since each step is one large query. Nor do the planner settings change the app's queries over the twelve months ([P2-05](#tuned-against-the-twelve-months-p2-05)); `shared_buffers` keeps their indexes cached.
 
 Every total matches the reference figures in [dataset.md](dataset.md#reference-totals-for-202609): 18,395,376 source rows, 9,459,744 rows after aggregation, 110,562,925 items, NIC £1,040,583,068.38, actual cost £999,891,865.68296, total quantity 8,778,983,306.46, ADQ usage 2,442,227,120.64017, and 9,308 prescribers, 21,565 presentations and 1,790 chemical substances.
 

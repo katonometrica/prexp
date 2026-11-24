@@ -128,7 +128,7 @@ test_that("check_plans() reports every query and sample on the fixture months", 
   expect_identical(
     presentations$n[presentations$chemical_code == large_chemical], max(presentations$n)
   )
-  expect_identical(res$codes[res$query == "search_drugs"], c("ba", "pitolisant"))
+  expect_identical(res$codes[res$query == "search_drugs"], c("co", "pitolisant"))
   # Every sample found, every plan read, every query returning rows
   expect_false(any(grepl("has no data", res$problems)))
   expect_false(any(is.na(res$ms)))
