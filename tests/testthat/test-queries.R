@@ -291,30 +291,33 @@ test_that("a practice's top drugs join the presentations to the page only", {
   expect_identical(sum(top$relation %in% "dim_presentation"), 1L)
 })
 
-test_that("one or two characters match the start of a word; three or more, anywhere", {
+test_that("two characters match the start of the name or of a word; three or more, anywhere", {
   dbname <- local_loaded_db(202609L)
   app <- local_test_db("app", dbname = dbname)
   owner <- local_test_db("owner", dbname = dbname)
-  names <- DBI::dbGetQuery(owner, "
-    SELECT presentation_id AS id, bnf_description AS name FROM core.dim_presentation")
-  for (q in c("ta", "T")) {
-    found <- run_query(app, "search_drugs", q, 100000L)
-    found <- found[found$level == "presentation", ]
-    word_start <- grepl(paste0("(^| )", q), names$name, ignore.case = TRUE)
-    expect_setequal(found$id, names$id[word_start])
+  drugs <- DBI::dbGetQuery(owner, "
+    SELECT 'chemical' AS level, chemical_id AS id, chemical_name AS name FROM core.dim_chemical
+    UNION ALL
+    SELECT 'presentation', presentation_id, bnf_description FROM core.dim_presentation")
+  key <- function(rows) paste(rows$level, rows$id)
+  # 'ta' starts words ("Tablets") and sits inside others ("Atorvastatin"); "ine"
+  # ends many names ("Amlodipine"), chemicals and presentations alike
+  for (q in c("ta", "ine")) {
+    pattern <- if (nchar(q) < 3) paste0("(^| )", q) else q
+    expected <- drugs[grepl(pattern, drugs$name, ignore.case = TRUE), ]
+    expect_setequal(key(run_query(app, "search_drugs", q, 100000L)), key(expected))
+    expect_true(any(expected$level == "chemical"), label = q)
   }
-  # Three characters match anywhere: "abl" is inside every "tablets"
-  found <- run_query(app, "search_drugs", "abl", 100000L)
-  found <- found[found$level == "presentation", ]
-  expect_setequal(found$id, names$id[grepl("abl", names$name, ignore.case = TRUE)])
-  # The same rule for practices
+  # Practices: 'er' sits inside names ("CENTER", "SURGERY") more often than it
+  # starts a word
   practices <- DBI::dbGetQuery(owner, "
     SELECT practice_code AS code, practice_name AS name FROM core.dim_practice
     WHERE NOT is_unidentified")
-  found <- run_query(app, "search_practices", "me", 100L)
-  expect_setequal(
-    found$practice_code, practices$code[grepl("(^| )me", practices$name, ignore.case = TRUE)]
-  )
+  inside <- grepl("er", practices$name, ignore.case = TRUE)
+  word_start <- grepl("(^| )er", practices$name, ignore.case = TRUE)
+  expect_gt(sum(inside), sum(word_start))
+  found <- run_query(app, "search_practices", "er", 100L)
+  expect_setequal(found$practice_code, practices$code[word_start])
 })
 
 test_that("a chemical's presentations read the rollup's covering key, index-only", {
@@ -325,6 +328,7 @@ test_that("a chemical's presentations read the rollup's covering key, index-only
   maps <- DBI::dbGetQuery(owner, "
     SELECT relname, relpages, relallvisible FROM pg_class
     WHERE relname IN ('agg_presentation_month', 'agg_chemical_month', 'agg_practice_month')")
+  expect_true(all(maps$relpages > 0))
   expect_identical(maps$relallvisible, maps$relpages)
   # The fixture's rollup is small enough for any scan: forbid the heap ones
   for (scan in c("seqscan", "bitmapscan")) {

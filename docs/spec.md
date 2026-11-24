@@ -263,7 +263,7 @@ Every function takes `con` (a pool or connection) first, validates its arguments
 | Function | Arguments | Returns | Reads |
 | --- | --- | --- | --- |
 | `fetch_window()` | none | First and last month | `v_window` |
-| `fetch_search_drugs()` | `q`, `limit = 20` | Chemicals and presentations whose name contains `q` (for one or two characters, has a word starting with it) or whose BNF code starts with it | `v_chemical`, `v_presentation` |
+| `fetch_search_drugs()` | `q` (two characters or more), `limit = 20` | Chemicals and presentations whose name contains `q` (for two characters: starts with it, or has a word after a space that does) or whose BNF code starts with it; names that contain `q` ranked by similarity | `v_chemical`, `v_presentation` |
 | `fetch_search_practices()` | `q`, `limit = 20` | Practices matched by name, the same way, or by code | `v_practice` |
 | `fetch_drug_series()` | `level` (chemical or presentation), `id`, `months`, `measure` | Monthly national totals | `v_chemical_month` or `v_presentation_month` |
 | `fetch_drug_presentations()` | `chemical_id`, `months` | Totals per presentation, brand or generic | `v_presentation_month` |

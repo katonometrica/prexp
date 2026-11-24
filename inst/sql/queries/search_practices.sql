@@ -2,20 +2,19 @@
 -- code starts with it, best match first (spec section 5.2). Leaves out the
 -- unidentified prescribers, and practices with no data in the window.
 --
--- $1 q, the search text; $2 limit, the number of matches, a positive whole
--- number (NULL would mean no limit). In q, \ is LIKE's escape character and %
--- and _ its wildcards: the fetch function escapes the three, \ first, and
--- refuses empty text, which would match every name.
+-- $1 q, the search text, two characters or more; $2 limit, the number of
+-- matches, a positive whole number (NULL would mean no limit). In q, \ is
+-- LIKE's escape character and % and _ its wildcards: the fetch function
+-- refuses shorter text and escapes the three, \ first.
 --
--- A name matches when it contains q, or for one or two characters when one of
--- its words starts with q, as in the drug search. A code typed in full ranks
--- first, then names by trigram similarity to q; a practice without a name
--- ranks last.
+-- A name matches as in the drug search: it contains q, or, for two
+-- characters, starts with q or has a word, after a space, that does. A code
+-- typed in full ranks first, then names that contain q, by trigram similarity
+-- to q; then matches by code alone, and practices without a name.
 --
--- In a plan made with the value, as the app's are, three characters or more
--- use an index on each side of the match: the trigram index on the name for
--- ILIKE, the code prefix index (migration 008) for LIKE. Shorter text scans
--- the practices, and so does a generic plan.
+-- In a plan made with the value, as the app's are, each side of the match uses
+-- an index: the trigram index on the name for ILIKE, the code prefix index
+-- (migration 008) for LIKE. A generic plan scans the practices.
 SELECT practice_id, practice_code, practice_name, postcode, icb_name, region_name
 FROM app.v_practice
 WHERE (CASE WHEN length($1) < 3
@@ -25,6 +24,7 @@ WHERE (CASE WHEN length($1) < 3
   AND NOT is_unidentified
   AND last_seen >= (SELECT first_month FROM app.v_window)
 ORDER BY CASE WHEN practice_code = upper($1) THEN 2
+              WHEN strpos(lower(practice_name), lower($1)) = 0 THEN 0
               ELSE coalesce(similarity(practice_name, $1), 0) END DESC,
          practice_name, practice_id
 LIMIT $2;

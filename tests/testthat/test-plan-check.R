@@ -113,7 +113,8 @@ test_that("check_plans() reports every query and sample on the fixture months", 
   expect_identical(nrow(res), sum(lengths(lapply(registry, `[[`, "samples"))))
   expect_setequal(unique(res$query), names(registry))
   # The large samples are the worst cases in the data: the practice with the
-  # most prescribing rows, the chemical with the most presentations
+  # most prescribing rows, the chemical with the most presentation rollup rows,
+  # the two characters that start the most names' words
   large_practice <- res$codes[res$query == "practice_series" & res$sample == "large"]
   prescribing <- DBI::dbGetQuery(con, "
     SELECT p.practice_code, sum(m.presentations)::int AS n FROM app.v_practice_month m
@@ -122,13 +123,19 @@ test_that("check_plans() reports every query and sample on the fixture months", 
     prescribing$n[prescribing$practice_code == large_practice], max(prescribing$n)
   )
   large_chemical <- res$codes[res$query == "drug_presentations" & res$sample == "large"]
-  presentations <- DBI::dbGetQuery(con, "
-    SELECT c.chemical_code, count(*)::int AS n FROM app.v_presentation p
+  rollup <- DBI::dbGetQuery(con, "
+    SELECT c.chemical_code, count(*)::int AS n FROM app.v_presentation_month m
     JOIN app.v_chemical c USING (chemical_id) GROUP BY 1")
-  expect_identical(
-    presentations$n[presentations$chemical_code == large_chemical], max(presentations$n)
-  )
-  expect_identical(res$codes[res$query == "search_drugs"], c("co", "pitolisant"))
+  expect_identical(rollup$n[rollup$chemical_code == large_chemical], max(rollup$n))
+  # The search texts: two characters picked from the data, then fixed ones
+  searches <- res$codes[res$query %in% c("search_drugs", "search_practices")]
+  expect_identical(nchar(searches[c(1, 3)]), c(2L, 2L))
+  expect_identical(searches[c(2, 4)], c("pitolisant", "N81655"))
+  drugs <- DBI::dbGetQuery(con, "
+    SELECT chemical_name AS name FROM app.v_chemical
+    UNION ALL SELECT bnf_description FROM app.v_presentation")$name
+  matches <- function(q) sum(grepl(paste0("(^| )", q), drugs, ignore.case = TRUE))
+  expect_true(matches(searches[1]) >= max(vapply(c("ta", "co", "ca", "so"), matches, 0L)))
   # Every sample found, every plan read, every query returning rows
   expect_false(any(grepl("has no data", res$problems)))
   expect_false(any(is.na(res$ms)))
