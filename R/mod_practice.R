@@ -19,7 +19,7 @@ mod_practice_ui <- function(id) {
       )
     ),
     bslib::card(
-      bslib::card_header(shiny::textOutput(ns("title"), inline = TRUE)),
+      view_header(ns),
       bslib::card_body(shiny::uiOutput(ns("body")))
     )
   )
@@ -223,7 +223,7 @@ mod_practice_server <- function(id, fetches, window, page_size = 25L) {
     })
 
     # As the body: nothing to download unless it shows the practice's totals
-    shiny::reactive({
+    current <- shiny::reactive({
       pick <- picked()
       if (is.null(pick) || is.null(months())) {
         return(NULL)
@@ -236,10 +236,18 @@ mod_practice_server <- function(id, fetches, window, page_size = 25L) {
       }
       list(
         view = "practice",
-        params = list(id = pick$id, label = pick$label, months = months(), measure = measure()),
-        data = rows
+        params = list(
+          id = pick$id, code = pick$code, label = pick$label, months = months(),
+          measure = measure()
+        ),
+        # Every month, as the chart draws it: a month without prescribing at 0
+        data = complete_months(
+          rows, months(), list(presentations = 0L, items = 0, nic = 0, actual_cost = 0)
+        )
       )
     })
+    csv_download(output, ns, current, "Download the monthly totals of every measure, as CSV")
+    current
   })
 }
 

@@ -19,7 +19,7 @@ mod_region_ui <- function(id) {
       )
     ),
     bslib::card(
-      bslib::card_header(shiny::textOutput(ns("title"), inline = TRUE)),
+      view_header(ns),
       bslib::card_body(shiny::uiOutput(ns("body")))
     )
   )
@@ -132,7 +132,7 @@ mod_region_server <- function(id, fetches, window) {
       )
     })
 
-    shiny::reactive({
+    current <- shiny::reactive({
       pick <- picked()
       rows <- if (is.null(pick) || is.null(months())) NULL else shown()
       if (is.null(rows) || inherits(rows, "error") || nrow(rows) == 0L ||
@@ -142,12 +142,14 @@ mod_region_server <- function(id, fetches, window) {
       list(
         view = "region",
         params = list(
-          level = pick$level, id = pick$id, label = pick$label, months = months(),
-          measure = measure()
+          level = pick$level, id = pick$id, code = pick$code, label = pick$label,
+          months = months(), measure = measure()
         ),
         data = rows
       )
     })
+    csv_download(output, ns, current, "Download the totals by region, as CSV")
+    current
   })
 }
 

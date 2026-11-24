@@ -7,12 +7,17 @@
 run_app(
   host = getOption("shiny.host", "127.0.0.1"),
   port = getOption("shiny.port", 3838L),
+  workers = 2L,
   ...
 )
 }
 \arguments{
 \item{host, port}{Where the app listens. The \code{app} container listens on
 \verb{0.0.0.0}, port 3838.}
+
+\item{workers}{How many background workers to start. None when the
+package runs from its source (\code{devtools::load_all()}), which the workers,
+new R processes, could not load.}
 
 \item{...}{Other options for \code{\link[shiny:runApp]{shiny::runApp()}}, such as \code{launch.browser}.}
 }
@@ -22,8 +27,11 @@ A Shiny app object. Printing it runs the app, as
 }
 \description{
 Builds the Shiny app. When it starts, it opens the app's pool of read-only
-connections with \code{\link[=db_pool]{db_pool()}}, once for the process; when it stops, it closes
-the pool. A login that can write stops the app from starting.
+connections with \code{\link[=db_pool]{db_pool()}}, a cache of fetch results of 200 MB shared by
+every session, and the background workers (mirai daemons, each with its own
+connection), all once for the process; when it stops, it closes them. A
+login that can write, or a worker that cannot connect, stops the app from
+starting.
 }
 \examples{
 \dontrun{

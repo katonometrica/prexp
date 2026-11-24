@@ -93,11 +93,12 @@ test_that("the dropdown gets the matches in the fetch's order, with level and co
     list(
       list(
         value = "chemical:57", label = "Atorvastatin", meta = "Chemical substance \u00b7 0212000B0",
-        level = "chemical", id = 57L
+        level = "chemical", id = 57L, code = "0212000B0"
       ),
       list(
         value = "presentation:300", label = "Atorvastatin 20mg tablets",
-        meta = "Presentation \u00b7 0212000B0AAABAB", level = "presentation", id = 300L
+        meta = "Presentation \u00b7 0212000B0AAABAB", level = "presentation", id = 300L,
+        code = "0212000B0AAABAB"
       )
     )
   )
@@ -108,7 +109,7 @@ test_that("the dropdown gets the matches in the fetch's order, with level and co
     practices,
     list(list(
       value = "practice:12", label = "THE SURGERY", meta = "N81655 \u00b7 NHS TEST ICB",
-      level = "practice", id = 12L
+      level = "practice", id = 12L, code = "N81655"
     ))
   )
 })
@@ -142,7 +143,9 @@ test_that("a practice search answers with practices, and returns the one picked"
     session$setInputs(pick = "practice:12")
     expect_identical(
       session$returned(),
-      list(type = "practice", id = 12L, label = "THE SURGERY", level = "practice")
+      list(
+        type = "practice", id = 12L, label = "THE SURGERY", level = "practice", code = "N81655"
+      )
     )
   })
   expect_identical(sent$options[[length(sent$options)]][[1]]$value, "practice:12")
@@ -157,7 +160,10 @@ test_that("the pick is returned as type, id, label and level", {
     session$setInputs(pick = "presentation:300")
     expect_identical(
       session$returned(),
-      list(type = "drug", id = 300L, label = "Atorvastatin 20mg tablets", level = "presentation")
+      list(
+        type = "drug", id = 300L, label = "Atorvastatin 20mg tablets", level = "presentation",
+        code = "0212000B0AAABAB"
+      )
     )
     session$setInputs(pick = "")
     expect_null(session$returned())

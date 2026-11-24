@@ -198,8 +198,9 @@ test_that("current_view() carries the view, its parameters and the totals shown"
       list(
         view = "region",
         params = list(
-          level = "presentation", id = 300L, label = "Atorvastatin 20mg tablets",
-          months = c(202510L, 202609L), measure = "total_quantity"
+          level = "presentation", id = 300L, code = "0212000B0AAABAB",
+          label = "Atorvastatin 20mg tablets", months = c(202510L, 202609L),
+          measure = "total_quantity"
         ),
         data = region_rows_filled("total_quantity")
       )
@@ -333,4 +334,19 @@ test_that("without a window, the region view says why", {
       expect_null(session$returned())
     }
   )
+})
+
+test_that("the CSV is the drug's totals by region", {
+  fake <- fake_region_fetches()
+  shiny::testServer(mod_region_server, args = region_args(fake), {
+    pick_region_drug(session, "chemical:57")
+    path <- output$csv
+    expect_identical(
+      basename(path), "prexp-region-0212000B0-atorvastatin-items-202510-202609.csv"
+    )
+    expect_equal(
+      utils::read.csv(path, na.strings = ""), as.data.frame(session$returned()$data),
+      ignore_attr = TRUE
+    )
+  })
 })

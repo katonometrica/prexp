@@ -190,10 +190,16 @@ test_that("current_view() carries the view, its parameters and the data shown", 
         list(
           view = "drug",
           params = list(
-            level = "chemical", id = 57L, label = "Atorvastatin",
+            level = "chemical", id = 57L, code = "0212000B0", label = "Atorvastatin",
             months = c(202510L, 202609L), measure = "actual_cost"
           ),
-          data = drug_series_rows
+          # Every month of the range: those without a row at 0, as the chart
+          # draws them
+          data = tibble::tibble(
+            year_month = c(202510:202512, 202601:202609),
+            measure = c(rep("actual_cost", 10L), "items", "items"),
+            value = c(rep(0, 10L), 120, 130), practices = c(rep(0L, 10L), 4L, 5L)
+          )
         )
       )
     }
@@ -377,4 +383,89 @@ test_that("table columns are wide enough for their longest figures", {
   expect_identical(measure_column("ADQ usage", "adq_usage")$minWidth, 125)
   expect_identical(measure_column("Cost", "nic")$format$cell$prefix, "\u00a3")
   expect_equal(measure_column("Items", "items")$format$cell$digits, 0)
+})
+
+test_that("the CSV is the current view's data, named by view, subject and months", {
+  fake <- fake_drug_fetches()
+  shiny::testServer(
+    mod_drug_server,
+    args = list(fetches = fake$fetches, window = shiny::reactive(drug_window)),
+    {
+      expect_null(output$csv_ui)
+      pick_drug(session, "chemical:57")
+      expect_match(output$csv_ui$html, "id=\"[a-z0-9]+-csv\"")
+      path <- output$csv
+      expect_identical(basename(path), "prexp-drug-0212000B0-atorvastatin-items-202510-202609.csv")
+      expect_equal(
+        utils::read.csv(path), as.data.frame(session$returned()$data), ignore_attr = TRUE
+      )
+    }
+  )
+})
+
+test_that("a CSV's name has the subject's code, name and measure, in letters and digits", {
+  view <- function(label, code = "0407010F0", type = "region", measure = "nic") {
+    list(view = type, params = list(
+      label = label, id = 7L, code = code, months = c(202601L, 202609L), measure = measure
+    ))
+  }
+  expect_identical(
+    csv_name(view("Co-codamol 30mg/500mg tablets")),
+    "prexp-region-0407010F0-co-codamol-30mg-500mg-tablets-nic-202601-202609.csv"
+  )
+  # The name to 40 characters; the practice's file holds every measure
+  long <- csv_name(view(
+    "ST WERBURGH'S MEDICAL PRACTICE FOR THE HOMELESS PEOPLE OF CHESTER", "N81655", "practice"
+  ))
+  expect_identical(
+    long, "prexp-practice-N81655-st-werburgh-s-medical-practice-for-the-h-202601-202609.csv"
+  )
+  # A name of no letters or digits, a missing name, and no code
+  expect_identical(
+    csv_name(view(intToUtf8(c(0xb5, 0xb5)))), "prexp-region-0407010F0-nic-202601-202609.csv"
+  )
+  expect_identical(
+    csv_name(view(NA_character_, code = NA_character_)), "prexp-region-7-nic-202601-202609.csv"
+  )
+  # Two subjects of the same name differ by their codes
+  expect_false(identical(
+    csv_name(view("High Street Surgery", "N81013")), csv_name(view("High Street Surgery", "Y00001"))
+  ))
+})
+
+test_that("a CSV writes every number in full, never as 4e+05", {
+  path <- withr::local_tempfile(fileext = ".csv")
+  withr::local_options(scipen = 0)
+  view <- list(data = tibble::tibble(
+    region_code = c("-", "Y61", "Y62", "Y63"), measure = "items",
+    value = c(NA, 4e5, 2e-4, 1234.5678)
+  ))
+  write_view_csv(view, path)
+  expect_identical(readLines(path), c(
+    "\"region_code\",\"measure\",\"value\"", "\"-\",\"items\",",
+    "\"Y61\",\"items\",400000", "\"Y62\",\"items\",0.0002", "\"Y63\",\"items\",1234.5678"
+  ))
+  expect_equal(getOption("scipen"), 0)
+})
+
+test_that("a CSV holds every month of the range, those without a row at 0", {
+  rows <- tibble::tibble(year_month = c(202602L, 202604L), value = c(5, 7), practices = 2L)
+  filled <- complete_months(rows, c(202601L, 202605L), list(value = 0, practices = 0L))
+  expect_identical(filled$year_month, 202601:202605)
+  expect_identical(filled$value, c(0, 5, 0, 7, 0))
+  expect_identical(filled$practices, c(0L, 2L, 0L, 2L, 0L))
+})
+
+test_that("the CSV button reads Download CSV to a screen reader, and says what the file holds", {
+  fake <- fake_drug_fetches()
+  shiny::testServer(
+    mod_drug_server,
+    args = list(fetches = fake$fetches, window = shiny::reactive(drug_window)),
+    {
+      pick_drug(session, "chemical:57")
+      button <- output$csv_ui$html
+      expect_match(button, "<span class=\"visually-hidden\">Download</span>", fixed = TRUE)
+      expect_match(button, "title=\"Download the monthly totals, as CSV\"", fixed = TRUE)
+    }
+  )
 })

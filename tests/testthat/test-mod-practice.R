@@ -271,9 +271,16 @@ test_that("current_view() carries the view, its parameters and the totals shown"
       list(
         view = "practice",
         params = list(
-          id = 12L, label = "THE SURGERY", months = c(202510L, 202609L), measure = "actual_cost"
+          id = 12L, code = "N81655", label = "THE SURGERY", months = c(202510L, 202609L),
+          measure = "actual_cost"
         ),
-        data = practice_series_rows
+        # Every month of the range: those without a row at 0, as the chart
+        # draws them
+        data = tibble::tibble(
+          year_month = c(202510:202512, 202601:202609),
+          presentations = c(rep(0L, 10L), 40L, 42L), items = c(rep(0, 10L), 900, 950),
+          nic = c(rep(0, 10L), 5000.5, 5100.25), actual_cost = c(rep(0, 10L), 4700, 4800)
+        )
       )
     )
   })
@@ -449,4 +456,17 @@ test_that("without a window, the practice view says why", {
       expect_null(session$returned())
     }
   )
+})
+
+test_that("the CSV is the practice's monthly totals", {
+  fake <- fake_practice_fetches()
+  shiny::testServer(mod_practice_server, args = practice_args(fake), {
+    pick_practice(session)
+    path <- output$csv
+    expect_identical(basename(path), "prexp-practice-N81655-the-surgery-202510-202609.csv")
+    expect_equal(
+      utils::read.csv(path), as.data.frame(session$returned()$data), ignore_attr = TRUE
+    )
+    expect_identical(nrow(utils::read.csv(path)), 12L)
+  })
 })
