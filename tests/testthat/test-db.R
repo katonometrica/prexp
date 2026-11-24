@@ -87,6 +87,18 @@ test_that("the app refuses a login that can write, even one the client made read
           c(PGOPTIONS = read_only),
           expect_error(db_connect("app", dbname = dbname), client, fixed = TRUE)
         )
+        # Acting as the app's role is not being its login: RESET ROLE undoes it.
+        # Only a superuser may act as a role it is not a member of.
+        if (role == "owner") {
+          as_app <- "-c role=prexp_app"
+          expect_error(
+            db_pool(dbname = dbname, options = as_app), paste0(refused, "has "), fixed = TRUE
+          )
+          expect_error(
+            db_connect("app", dbname = dbname, options = paste(as_app, read_only)),
+            paste0(refused, "is read-only only because the client asked"), fixed = TRUE
+          )
+        }
       }
     )
   }
