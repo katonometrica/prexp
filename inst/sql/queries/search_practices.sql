@@ -10,8 +10,9 @@
 --
 -- A name matches as in the drug search: it contains q, or, for two
 -- characters, starts with q or has a word, after a space, that does. A code
--- typed in full ranks first, then names that contain q, by trigram similarity
--- to q; then matches by code alone, and practices without a name.
+-- typed in full ranks first, then names that start with q, then names that
+-- contain q further on, each by trigram similarity to q; then matches by code
+-- alone, and practices without a name.
 --
 -- In a plan made with the value, as the app's are, the search CTE is inlined,
 -- its pattern folded into a constant, and each side of the match uses an
@@ -31,8 +32,10 @@ WHERE (CASE WHEN length(s.q) < 3
        OR p.practice_code LIKE upper(s.pattern) || '%')
   AND NOT p.is_unidentified
   AND p.last_seen >= (SELECT first_month FROM app.v_window)
-ORDER BY CASE WHEN p.practice_code = upper(s.q) THEN 2
+ORDER BY CASE WHEN p.practice_code = upper(s.q) THEN 3
               WHEN strpos(lower(p.practice_name), lower(s.q)) = 0 THEN 0
+              WHEN strpos(lower(p.practice_name), lower(s.q)) = 1
+                THEN 1 + coalesce(similarity(p.practice_name, s.q), 0)
               ELSE coalesce(similarity(p.practice_name, s.q), 0) END DESC,
          p.practice_name, p.practice_id
 LIMIT $2;

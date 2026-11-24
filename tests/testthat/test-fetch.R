@@ -207,6 +207,17 @@ test_that("a search matches %, _ and \\ as themselves", {
     expect_identical(nrow(fetch_search_drugs(con, q, limit = 100)), 0L, label = q)
     expect_identical(nrow(fetch_search_practices(con, q, limit = 100)), 0L, label = q)
   }
+  # Names that start with the text come first: "Metformin hydrochloride"
+  # before "Sitagliptin/metformin", which is shorter and more similar to it;
+  # within each group, by similarity
+  for (q in c("metformin", "sodium")) {
+    res <- fetch_search_drugs(con, q, limit = 100)
+    starts <- startsWith(tolower(res$name), q)
+    expect_true(any(starts) && !all(starts), label = q)
+    expect_identical(starts, sort(starts, decreasing = TRUE), label = q)
+  }
+  practices <- fetch_search_practices(con, "st", limit = 100)
+  expect_identical(practices$practice_name[1], "ST WERBURGH'S MEDICAL PRACTICE HOMELESS")
   # A name that contains the text is ranked by similarity, with q as typed
   res <- fetch_search_drugs(con, "0.1% cream", limit = 100)
   expect_gt(nrow(res), 1L)

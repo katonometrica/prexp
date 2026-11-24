@@ -14,9 +14,11 @@
 -- with q or has a word, after a space, that does: nearly every name contains a
 -- pair of letters ('le' is in every "tablets"), so a short search lists the
 -- names that begin like it. A code typed in full ranks first, then names that
--- contain q, by trigram similarity to q; then the matches by code alone, and
--- rows without a name. similarity() is not computed for a name without q in
--- it: a code prefix such as '23' matches thousands of appliances by code.
+-- start with q, then names that contain q further on, each by trigram
+-- similarity to q (which alone would put "Sitagliptin/metformin" before
+-- "Metformin hydrochloride", being shorter); then the matches by code alone,
+-- and rows without a name. similarity() is not computed for a name without q
+-- in it: a code prefix such as '23' matches thousands of appliances by code.
 --
 -- In a plan made with the value, as the app's are (RPostgres sends unnamed
 -- statements), the search CTE is inlined, its pattern folded into a constant,
@@ -35,8 +37,10 @@ FROM (
   SELECT 'chemical' AS level, c.chemical_id AS id, c.chemical_code AS code,
          c.chemical_name AS name, c.chemical_id, c.chemical_name,
          NULL::boolean AS is_generic,
-         CASE WHEN c.chemical_code = upper(s.q) THEN 2
+         CASE WHEN c.chemical_code = upper(s.q) THEN 3
               WHEN strpos(lower(c.chemical_name), lower(s.q)) = 0 THEN 0
+              WHEN strpos(lower(c.chemical_name), lower(s.q)) = 1
+                THEN 1 + coalesce(similarity(c.chemical_name, s.q), 0)
               ELSE coalesce(similarity(c.chemical_name, s.q), 0) END AS score
   FROM app.v_chemical c, search s
   WHERE (CASE WHEN length(s.q) < 3
@@ -48,8 +52,10 @@ FROM (
   UNION ALL
   SELECT 'presentation', p.presentation_id, p.bnf_code, p.bnf_description,
          p.chemical_id, p.chemical_name, p.is_generic,
-         CASE WHEN p.bnf_code = upper(s.q) THEN 2
+         CASE WHEN p.bnf_code = upper(s.q) THEN 3
               WHEN strpos(lower(p.bnf_description), lower(s.q)) = 0 THEN 0
+              WHEN strpos(lower(p.bnf_description), lower(s.q)) = 1
+                THEN 1 + coalesce(similarity(p.bnf_description, s.q), 0)
               ELSE coalesce(similarity(p.bnf_description, s.q), 0) END
   FROM app.v_presentation p, search s
   WHERE (CASE WHEN length(s.q) < 3
