@@ -72,6 +72,8 @@ services:
       PREXP_APP_PASSWORD: ${PREXP_APP_PASSWORD:?set PREXP_APP_PASSWORD in .env}
       PREXP_DOWNLOAD_DIR: /data/epd
       PREXP_WINDOW_MONTHS: ${PREXP_WINDOW_MONTHS:-12}
+      PREXP_LOG: ${PREXP_LOG:-on}
+      PREXP_LOG_KEY: ${PREXP_LOG_KEY:-}
       # defaults for psql in the RStudio terminal (always pass -U)
       PGHOST: ${PREXP_DB_HOST:-db}
       PGPORT: ${PREXP_DB_PORT:-5432}
@@ -105,6 +107,8 @@ services:
       PREXP_DB_PORT: ${PREXP_DB_PORT:-5432}
       PREXP_DB_NAME: ${PREXP_DB_NAME:-prexp}
       PREXP_APP_PASSWORD: ${PREXP_APP_PASSWORD:?set PREXP_APP_PASSWORD in .env}
+      PREXP_LOG: ${PREXP_LOG:-on}
+      PREXP_LOG_KEY: ${PREXP_LOG_KEY:-}
     ports:
       - "127.0.0.1:${HOST_PORT_APP:-3838}:3838"
 
