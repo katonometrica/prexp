@@ -1,6 +1,6 @@
 # Benchmarks
 
-Measurements of the loader and, from phase 2, of the app's queries (spec §6.3). Until the server arrives in P6-02, everything runs in the local Docker stack, on the machine below.
+Measurements of the loader, of the app's queries (from phase 2) and of the app under load (from phase 4); see spec §6.3. Until the server arrives in P6-02, everything runs in the local Docker stack, on the machine below.
 
 **Units.** Database and disk sizes are in PostgreSQL's units, 1 GB = 1,024 MB, which is also what Windows and `df -h` show. The sizes of the portal's files, ZIP and CSV, are in millions of bytes, as the portal and the loader's messages give them.
 
@@ -23,7 +23,7 @@ The full window, 202510 to 202609, in the local Docker stack on the machine belo
 
 | | |
 | --- | --- |
-| Host | Windows 11 Pro, 137 GB of memory, 732 GB free on the system drive (23 November 2026) |
+| Host | Windows 11 Pro on an Intel Core Ultra 9 285H, a laptop processor with 16 cores; 128 GB of memory, 732 GB free on the system drive (23 November 2026) |
 | Docker | Docker Desktop with WSL 2. Its virtual machine has 16 CPUs, 100 GB of memory and 32 GB of swap (`.wslconfig`). Its virtual disk grows on the system drive, which is the real limit on space |
 | PostgreSQL | 18.7 (`postgres:18.7-trixie`) in the Compose stack |
 | R | 4.6.1, in the `rstudio` container, which runs the loads |
@@ -260,3 +260,102 @@ Eight checks take more than a millisecond:
 - **The four region comparisons.** About 7 ms of each one's 7 to 9 ms is `app.v_region` naming the regions from every prescriber.
 
 The other thirteen read a few rows through an index: the series and the profiles by primary key, the window, the small searches, the small chemical's presentations and the small practice's top drugs through the indexes the table names. The checks run nightly in the jobs container from P6-02 (spec §6.3), so a plan that changes as the window moves will show up there.
+
+## The app under load (P4-08)
+
+The app image as it runs in production: `prexp-app:local`, built from the tree of `main` after P4-07 (`d2e459f`). It ran on the full database with its settings for this machine (`full`), connected as the app role only, with its two background workers. On the machine above, otherwise idle, 24 November 2026.
+
+**The sessions**, recorded through `shinyloadtest`'s proxy:
+- **`bench/recording.log`**, 1 min 43 s, ordinary lookups:
+  1. Drug: search "atorva", pick Atorvastatin; change From to Jan 2026.
+  2. Practice: search "N81655", pick the practice; Next, then Previous.
+  3. Region: search "metformin hydro", pick Metformin hydrochloride.
+- **`bench/recording-largest.log`**, 56 s, the chemical with the most presentations: 2003 Wound Management & Other Dressings, with 2,068 over the twelve months. In the Drug view: search "2003", pick it; change From to Jan 2026; change the measure to Actual cost.
+
+**What is measured.**
+- **A lookup** is a user's action and the app's messages that answer it, up to the one that brings the view's table or chart. The action can be the page's first load, a search, a pick, or a change of month, measure, tab or page. The lookup's time is the sum of its messages' waits.
+- **A pick's view comes in two or three messages:** its frame, a drug's CSV link, then its table and chart. `shinycannon` times each message as it waits for it, on the same machine, from the event before it.
+- **Not counted:**
+  - the browser's own work between and after the messages: loading the chart and table libraries on the first pick, laying out and drawing the view;
+  - a chart drawn again after the view (below).
+- **A search's answer includes a wait.** The server waits 300 ms after the last keystroke before it looks anything up (spec §5.4). That pause comes before the lookup, so the figures leave it out, and also give the figure with it counted.
+
+**The runs.** `shinycannon` 1.1.3 replays a session for 5 users, each starting it again as soon as it ends, for 5 minutes once all five are running (`bench/replay.sh`). The figures are from `bench/report.R`: end to end over the sessions run while all five users were, and in the database over the whole run.
+- **Run 1: ordinary lookups, as deployed.** The app container, restarted after the recording, with its 200 MB cache. Every session asks the same things, so after the first one the cache answers every lookup but the window's: the run's timing log has 32 fetches, 19 of them the window's.
+- **Run 2: ordinary lookups, no cache.** Every lookup goes to the database, as when each user asks for something not yet in the cache. The database stays warm, though: every session sends it the same 15 queries. This is the same image, started with `app_cache()` giving `NULL`, which the server takes as no cache.
+- **Run 3: the largest chemical, as deployed.** The cache keeps the fetch, not the table drawn from it, so every session builds the table again.
+
+| | Run 1: ordinary, cache | Run 2: ordinary, no cache | Run 3: the largest chemical |
+| --- | ---: | ---: | ---: |
+| Sessions, and in the steady part | 19, 11 | 19, 11 | 32, 24 |
+| **Lookups, the searches' wait aside: p50, p95, max** | **39, 191, 411 ms** | **39, 195, 228 ms** | **144, 864, 1,148 ms** |
+| Lookups counted | 132 | 132 | 120 |
+| Messages, the searches' wait aside: p95 | 164 ms | 164 ms | 624 ms |
+| Messages, the searches' wait counted: p95 | 318 ms | 322 ms | 634 ms |
+| Search results, the wait included: p50, p95, max | 317, 322, 325 ms | 320, 330, 330 ms | 318, 580, 661 ms |
+| The page itself: p50, max | 124, 162 ms | 120, 149 ms | 141, 1,215 ms |
+
+The page's files took 12 ms at most in every run.
+
+**In the database**, from run 2's timing log (`timing_summary()`): all 19 sessions' 285 fetches, with no errors.
+
+| Fetch | Count | p50 (ms) | p95 (ms) |
+| --- | ---: | ---: | ---: |
+| `fetch_window` | 19 | 3.02 | 19.4 |
+| `fetch_search_drugs` | 38 | 4.51 | 5.56 |
+| `fetch_search_practices` | 19 | 3.78 | 4.35 |
+| `fetch_drug_series` | 38 | 3.38 | 4.08 |
+| `fetch_drug_presentations` | 38 | 2.53 | 4.67 |
+| `fetch_practice_profile` | 19 | 2.45 | 2.98 |
+| `fetch_practice_series` | 19 | 1.70 | 6.52 |
+| `fetch_practice_top_drugs` | 57 | 5.84 | 6.72 |
+| `fetch_regions` | 19 | 9.15 | 10.3 |
+| `fetch_region_comparison` | 19 | 10.8 | 11.8 |
+
+In run 3, the largest chemical's presentations took 24 and 32 ms to fetch. Those are its two fetches before the cache had them.
+
+What the runs show:
+- **Ordinary lookups are under the 300 ms target, with the search's wait left out.**
+  - Their p95 is 191 ms with the cache and 195 ms without.
+  - The search's wait comes before the lookup and is not part of it, so the target is read without it.
+  - Counting the wait, the p95 of all messages is 318 and 322 ms. That is because 3 of the session's 18 messages are search results, and each takes the wait plus 8 to 30 ms (17 and 20 ms at p50).
+- **The largest chemical's lookups are over the target: p95 864 ms.**
+  - Its Drug view sends the table every presentation: 2,068 rows, in a message of 235 KB (240,682 bytes). R writes the table's Quantity and ADQ usage cells one call per row.
+  - The table-and-chart message takes 543 ms at p50 in the pick's view and 585 ms after the change of month, each timed from the event before it; the worst is 1,148 ms. With one user, in the recording, timed the same way, it took 718 and 869 ms.
+  - One R process answers every session, so every other answer waits while a table is built. In this run, search results took up to 661 ms, and the page up to 1.2 s.
+  - Issue #101 has the cause and the ways to fix it.
+- **The database is a small part.**
+  - In runs 1 and 2 every fetch's p95 is under 20 ms, and the cache saves only those few milliseconds: the two runs have the same p95 per message, and are 4 ms apart per lookup. In run 3 the largest chemical's presentations took 24 and 32 ms to fetch, against its lookups' p95 of 864 ms.
+  - Most of an answer's time is the app's R process drawing the tables and charts. An ordinary update with a chart takes 105 to 165 ms at p50.
+- **The slowest ordinary lookup took 411 ms:** run 1's region pick.
+  - Its frame took 39 ms, then a region chart 372 ms; that chart's p50 is 115 ms.
+  - The chart's message came while no other session was waiting for an answer, and these data do not show its cause.
+  - Run 2's slowest lookup took 228 ms. P6-02 measures again on the server, which is smaller than this machine.
+- **A chart drawn twice.** Picking a drug or a practice draws its chart twice.
+  - Once the table below it has drawn, the page's scroll bar takes 10 px off the width (1,222 to 1,212 px). The browser reports the new width, and the app draws the chart again, which takes 120 to 135 ms at p50.
+  - The user sees the first drawing straight away. A chart that kept its width through a change that small would save the second.
+- **The page's files.**
+  - `bench/recording.log`'s page load is a returning visitor's. The browser had most of the files from earlier visits, so it asks for the page and 16 files, 10 of them only revalidated.
+  - `bench/recording-largest.log`'s is a first visit: the page and 32 files.
+- **Sessions reported as failed.**
+  - `shinycannon` reported 9 of 19, 10 of 19 and 19 of 32 of the runs' sessions as failed. Each failed after its last event, as it closed the socket: its `onDisconnected` handler expects the server's close frame, and threw an exception when given none (`null`).
+  - Every session replayed every event of its recording, up to the close, so the figures count all of them. The app's logs have no errors.
+
+**The workers' timing lines.** No view fetches on the workers yet: none takes 100 ms, so in every run each fetch ran in the app's own process. Their timing lines reach the container's log as the app's do. This was checked in a container of the app image with two workers:
+- a fetch on a worker (`fetch_window`) and one in the app's process (`fetch_regions`) each left one whole line in `docker logs`;
+- the two lines carry the same hash for the same arguments, so they share the app's key;
+- `timing_summary()` read both.
+
+The package's tests check the same on every CI run (`tests/testthat/test-workers.R`).
+
+**To run it again** (P6-02 does, on the server). Each script's header gives its commands. In Git Bash, put `MSYS_NO_PATHCONV=1` before them, or Git Bash turns their container paths into Windows paths.
+1. Build the app image from the commit to measure, from a clean working tree, since the build copies it: `docker compose --profile app up -d --build app`. Note the commit, as this section does: nothing in a run's output says which build answered.
+2. `bench/setup.sh` installs the tools in the rstudio container: a Java runtime, `shinycannon` 1.1.3 from Posit's release on GitHub, checked against its SHA-256, and `shinyloadtest`.
+3. `bench/record.R` records a session through `shinyloadtest`'s proxy. `bench/tidy.R` then keeps the last session the proxy saw, and ends it with the socket's close if the proxy left that out.
+4. `bench/replay.sh` replays the session, against one of:
+   - the app container, restarted after the recording so that its cache starts empty (runs 1 and 3);
+   - a container of the app image without the cache (run 2).
+5. Save the app's log over the run as `app.log` in the run's folder:
+   - for the app container, use `docker compose logs` from the replay's start;
+   - for the container without the cache, use `docker logs` before it stops. `docker compose logs` leaves out containers made by `docker compose run`, and `--rm` deletes the log with the container.
+6. `bench/report.R` gives the figures above, each message's figures by its line in the recording, and writes `shinyloadtest`'s report into the run's folder. That report shows each session's slowest message, which in runs 1 and 2 is always over 300 ms, since every session has three searches.
