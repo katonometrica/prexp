@@ -133,16 +133,27 @@ most_prescribing <- function(con, first, last) {
 
 #' The SQL of one of the app's queries
 #'
+#' Each file is read once per process and kept: every fetch needs its SQL, and
+#' the installed files do not change while the app runs.
+#'
 #' @param query A name in [query_registry()].
 #' @return The text of `inst/sql/queries/<query>.sql`.
 #' @noRd
 query_sql <- function(query) {
+  named <- is.character(query) && length(query) == 1L && !is.na(query) && nzchar(query)
+  if (named && !is.null(query_text[[query]])) {
+    return(query_text[[query]])
+  }
   if (!is.character(query) || length(query) != 1L || !query %in% names(query_registry())) {
     stop("Unknown query: ", paste(format(query), collapse = ", "), ".", call. = FALSE)
   }
   path <- system.file("sql", "queries", paste0(query, ".sql"), package = "prexp", mustWork = TRUE)
-  paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+  query_text[[query]] <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+  query_text[[query]]
 }
+
+# The query files read so far, by name
+query_text <- new.env(parent = emptyenv())
 
 # The id of the first of the codes with data from `first` on, or NA. Dimension
 # rows are never deleted, so a code that has left the window still has one.

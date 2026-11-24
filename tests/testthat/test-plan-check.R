@@ -21,6 +21,15 @@ test_that("every query in the registry has its file, and every file its entry", 
     expect_true(length(entry$samples) >= 1L, label = query)
   }
   expect_error(query_sql("drop_everything"), "Unknown query: drop_everything.")
+  expect_error(query_sql(""), "Unknown query")
+  expect_error(query_sql(NA_character_), "Unknown query")
+  expect_error(query_sql(c("window", "window")), "Unknown query")
+  # Each file is read once and kept, as its text
+  path <- system.file("sql", "queries", "window.sql", package = "prexp")
+  text <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+  expect_identical(query_sql("window"), text)
+  expect_identical(query_text[["window"]], text)
+  expect_identical(query_sql("window"), text)
 })
 
 test_that("months count across the turn of the year", {
