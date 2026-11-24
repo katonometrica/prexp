@@ -9,9 +9,10 @@
 #'
 #' The charts draw their marks in blue (5.2 to 1 on white) and mark a
 #' selection in vermillion (3.9 to 1), above the 3 to 1 that WCAG asks of a
-#' chart's marks. Orange, sky and yellow are under it (2.3, 2.3 and 1.3): a
-#' chart that draws marks in them needs a second cue, such as a label or a
-#' darker outline.
+#' chart's marks; a selected mark also has a dark outline, since vermillion and
+#' blue are only 1.3 to 1 apart. Orange, sky and yellow are under 3 to 1 on
+#' white (2.3, 2.3 and 1.3): a chart that draws marks in them needs a second
+#' cue, such as a label or a darker outline.
 #'
 #' @return A named character vector of hex colours, in the order charts use
 #'   them.

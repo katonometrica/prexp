@@ -63,3 +63,13 @@ test_that("format_month_range() refuses months that are not a range", {
   expect_error(format_month_range(202613L, 202609L), class = "prexp_invalid_argument")
   expect_identical(format_month_range("202510", 202609), "Oct 2025 \u2013 Sep 2026")
 })
+
+test_that("quantity and ADQ usage keep three significant figures; items are whole", {
+  expect_identical(
+    format_measure(c(0.496, 0.008, 1.624, 0, NA), "adq_usage"),
+    c("0.496", "0.008", "1.62", "0", "\u2013")
+  )
+  expect_identical(format_measure(c(2.5, 123456.7), "total_quantity"), c("2.5", "123,457"))
+  expect_identical(format_measure(2.5, "items"), "2")
+  expect_identical(format_significant(c(-0, Inf)), c("0", "\u2013"))
+})

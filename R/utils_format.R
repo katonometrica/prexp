@@ -33,7 +33,11 @@ format_pounds <- function(x, digits = 2L, na = "\u2013") {
   out
 }
 
-#' A value in its measure's form: pounds for the costs, a number otherwise
+#' A value in its measure's form
+#'
+#' Pounds and pence for the costs, whole numbers for items, and three
+#' significant figures for quantity and ADQ usage, which can be fractions: a
+#' whole number would write 0.496 ADQs as 0.
 #'
 #' @inheritParams format_number
 #' @param measure A measure's name, as in [measure_info()].
@@ -42,9 +46,26 @@ format_pounds <- function(x, digits = 2L, na = "\u2013") {
 format_measure <- function(x, measure, na = "\u2013") {
   if (measure %in% c("nic", "actual_cost")) {
     format_pounds(x, digits = 2L, na = na)
-  } else {
+  } else if (measure == "items") {
     format_number(x, digits = 0L, na = na)
+  } else {
+    format_significant(x, na = na)
   }
+}
+
+#' A number to some significant figures
+#'
+#' @inheritParams format_number
+#' @param digits Significant figures; a number with more whole digits keeps
+#'   them all.
+#' @return A character vector: `"0.496"`, `"1.62"`, `"123"`, `"1,234"`.
+#' @noRd
+format_significant <- function(x, digits = 3L, na = "\u2013") {
+  x <- suppressWarnings(as.numeric(x))
+  x[!is.na(x) & x == 0] <- 0
+  out <- trimws(formatC(x, format = "fg", digits = digits, big.mark = ","))
+  out[!is.finite(x)] <- na
+  out
 }
 
 #' A month as its label
