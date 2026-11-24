@@ -27,7 +27,7 @@ app_ui <- function(request) {
     ),
     bslib::nav_panel("Drug", value = "drug", view_heading("Drug"), mod_drug_ui("drug")),
     bslib::nav_panel(
-      "Practice", value = "practice", view_heading("Practice"), search_view("practice", "P4-05")
+      "Practice", value = "practice", view_heading("Practice"), mod_practice_ui("practice")
     ),
     bslib::nav_panel(
       "Region", value = "region", view_heading("Region"), coming_view("Region", "P4-06")
@@ -57,17 +57,6 @@ main_landmark <- function(page) {
   structure(
     main,
     class = class(page), lang = attr(page, "lang"), bs_theme = attr(page, "bs_theme")
-  )
-}
-
-# A tab with its search, whose view is still to come: it shows what was picked
-search_view <- function(type, ticket) {
-  bslib::card(
-    bslib::card_body(
-      mod_search_ui(paste0(type, "_search"), type),
-      shiny::p(shiny::textOutput(paste0(type, "_picked"), inline = TRUE)),
-      shiny::p(class = "text-muted", paste0("The view comes next (", ticket, ")."))
-    )
   )
 }
 
