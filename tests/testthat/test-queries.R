@@ -9,18 +9,13 @@ query_files <- function() {
              full.names = TRUE)
 }
 
-read_query <- function(query) {
-  path <- system.file("sql", "queries", paste0(query, ".sql"), package = "prexp", mustWork = TRUE)
-  paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
-}
-
 # Runs a query file with these values bound, as RPostgres sends them
 run_query <- function(con, query, ...) {
   params <- list(...)
   if (length(params) == 0L) {
-    return(DBI::dbGetQuery(con, read_query(query)))
+    return(DBI::dbGetQuery(con, query_sql(query)))
   }
-  DBI::dbGetQuery(con, read_query(query), params = params)
+  DBI::dbGetQuery(con, query_sql(query), params = params)
 }
 
 # The id of a chemical, presentation or practice code
