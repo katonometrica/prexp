@@ -3,7 +3,8 @@
 -- (spec section 5.2), from the presentation x region x month rollup. Most
 -- items first.
 --
--- $1 chemical_id; $2 and $3 the first and last month (YYYYMM).
+-- $1 chemical_id; $2 and $3 the first and last month (YYYYMM), $2 <= $3:
+-- reversed, they match no month, which would read as no prescribing.
 SELECT presentation_id, bnf_code, bnf_description, is_generic,
        sum(items)::int8 AS items,
        sum(total_quantity) AS total_quantity,

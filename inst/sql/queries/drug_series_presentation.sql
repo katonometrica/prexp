@@ -4,7 +4,8 @@
 -- too, since one presentation has one unit; the fetch function picks one. A
 -- month with no prescribing has no row.
 --
--- $1 presentation_id; $2 and $3 the first and last month (YYYYMM).
+-- $1 presentation_id; $2 and $3 the first and last month (YYYYMM), $2 <= $3:
+-- reversed, they match no month, which would read as no prescribing.
 SELECT year_month,
        sum(practices)::int4 AS practices,
        sum(items)::int8 AS items,

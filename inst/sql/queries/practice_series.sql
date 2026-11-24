@@ -2,7 +2,8 @@
 -- (spec section 5.2), from the practice x month rollup. A month with no
 -- prescribing has no row.
 --
--- $1 practice_id; $2 and $3 the first and last month (YYYYMM).
+-- $1 practice_id; $2 and $3 the first and last month (YYYYMM), $2 <= $3:
+-- reversed, they match no month, which would read as no prescribing.
 SELECT year_month, presentations, items, nic, actual_cost
 FROM app.v_practice_month
 WHERE practice_id = $1

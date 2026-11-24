@@ -2,16 +2,21 @@
 -- code starts with it, best match first (spec section 5.2). Leaves out the
 -- unidentified prescribers, and practices with no data in the window.
 --
--- $1 q, the search text; $2 limit, the number of matches.
+-- $1 q, the search text; $2 limit, the number of matches, a positive whole
+-- number (NULL would mean no limit). In q, \ is LIKE's escape character and %
+-- and _ its wildcards: the fetch function escapes the three, \ first, and
+-- refuses empty text, which would match every name.
 --
--- The name match (ILIKE) can use the trigram index on the name. A code typed
--- in full ranks first, then names by trigram similarity to q. q's % and _ are
--- wildcards: the fetch function deals with them.
+-- A code typed in full ranks first, then names by trigram similarity to q; a
+-- practice without a name ranks last. The name match alone could use the
+-- trigram index on the name, but OR'ed with the code prefix, which no index
+-- serves until migration 008 (P2-05), each search scans the practices.
 SELECT practice_id, practice_code, practice_name, postcode, icb_name, region_name
 FROM app.v_practice
 WHERE (practice_name ILIKE '%' || $1 || '%' OR practice_code LIKE upper($1) || '%')
   AND NOT is_unidentified
   AND last_seen >= (SELECT first_month FROM app.v_window)
-ORDER BY CASE WHEN practice_code = upper($1) THEN 2 ELSE similarity(practice_name, $1) END DESC,
+ORDER BY CASE WHEN practice_code = upper($1) THEN 2
+              ELSE coalesce(similarity(practice_name, $1), 0) END DESC,
          practice_name, practice_id
 LIMIT $2;

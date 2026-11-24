@@ -3,7 +3,8 @@
 -- rollup summed over the regions. Every measure is returned; the fetch
 -- function picks one. A month with no prescribing has no row.
 --
--- $1 chemical_id; $2 and $3 the first and last month (YYYYMM).
+-- $1 chemical_id; $2 and $3 the first and last month (YYYYMM), $2 <= $3:
+-- reversed, they match no month, which would read as no prescribing.
 SELECT year_month,
        sum(practices)::int4 AS practices,
        sum(items)::int8 AS items,

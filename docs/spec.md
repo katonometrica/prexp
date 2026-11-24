@@ -269,7 +269,7 @@ Every function takes `con` (a pool or connection) first, validates its arguments
 | `fetch_drug_presentations()` | `chemical_id`, `months` | Totals per presentation, brand or generic | `v_presentation_month` |
 | `fetch_practice_profile()` | `practice_id` | Name, address, ICB, region | `v_practice` |
 | `fetch_practice_series()` | `practice_id`, `months` | Monthly totals | `v_practice_month` |
-| `fetch_practice_top_drugs()` | `practice_id`, `months`, `by` (items or cost), `limit`, `after` (keyset) | Top presentations, paged | `v_practice_presentation` |
+| `fetch_practice_top_drugs()` | `practice_id`, `months`, `by` (items, NIC or actual cost), `limit`, `after` (the last presentation of the previous page; keyset paging on the total and the presentation) | Top presentations, paged | `v_practice_presentation` |
 | `fetch_region_comparison()` | `level`, `id`, `months`, `measure`, `per` (total, or per 1,000 patients in v2) | Totals per region | `v_chemical_month` or `v_presentation_month` |
 | `fetch_variation()` (v2) | `group`, `icb_code` | Observed, expected, ratio, interval per practice | `v_variation` |
 

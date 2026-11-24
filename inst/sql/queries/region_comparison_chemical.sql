@@ -3,7 +3,8 @@
 -- region x month rollup. Region '-' holds prescribers with no region, such as
 -- the national unidentified prescriber.
 --
--- $1 chemical_id; $2 and $3 the first and last month (YYYYMM).
+-- $1 chemical_id; $2 and $3 the first and last month (YYYYMM), $2 <= $3:
+-- reversed, they match no month, which would read as no prescribing.
 SELECT a.region_code, r.region_name,
        sum(a.items)::int8 AS items,
        sum(a.adq_usage) AS adq_usage,
