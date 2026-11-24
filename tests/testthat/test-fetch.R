@@ -128,23 +128,37 @@ test_that("an unknown id returns no rows, with the same columns", {
   con <- fixture_app()
   months <- c(202609L, 202609L)
   unknown <- 2147483647L
-  calls <- list(
-    fetch_drug_series(con, "chemical", unknown, months, "items"),
-    fetch_drug_presentations(con, unknown, months),
-    fetch_practice_profile(con, unknown),
-    fetch_practice_series(con, unknown, months),
-    fetch_practice_top_drugs(con, unknown, months),
-    fetch_region_comparison(con, "presentation", unknown, months, "nic")
+  chemical <- id_of(con, "chemical", "0212000B0")
+  presentation <- id_of(con, "presentation", "0212000B0AAABAB")
+  practice <- id_of(con, "practice", "N81655")
+  other <- id_of(con, "practice", "Y03965")
+  # Each call with an unknown id, beside the same call with a known one
+  pairs <- list(
+    function(id) fetch_drug_series(con, "chemical", id, months, "items"),
+    function(id) fetch_drug_series(con, "presentation", id, months, "items"),
+    function(id) fetch_drug_presentations(con, id, months),
+    function(id) fetch_practice_profile(con, id),
+    function(id) fetch_practice_series(con, id, months),
+    function(id) fetch_practice_top_drugs(con, id, months),
+    function(id) fetch_region_comparison(con, "chemical", id, months, "nic"),
+    function(id) fetch_region_comparison(con, "presentation", id, months, "nic")
   )
-  for (res in calls) {
-    expect_s3_class(res, "tbl_df")
-    expect_identical(nrow(res), 0L)
-    expect_gt(ncol(res), 0L)
+  known <- list(chemical, presentation, chemical, practice, practice, practice, chemical,
+                presentation)
+  for (i in seq_along(pairs)) {
+    found <- pairs[[i]](known[[i]])
+    none <- pairs[[i]](unknown)
+    expect_gt(nrow(found), 0L, label = i)
+    expect_identical(nrow(none), 0L, label = i)
+    expect_identical(col_types(none), col_types(found), label = i)
   }
-  expect_identical(
-    col_types(fetch_drug_series(con, "chemical", unknown, months, "items")),
-    c(year_month = int, measure = chr, value = dbl, practices = int)
-  )
+  # An `after` that is not in the ranking: unknown, or from another practice's
+  expect_identical(nrow(fetch_practice_top_drugs(con, practice, months, after = unknown)), 0L)
+  theirs <- fetch_practice_top_drugs(con, other, months, limit = 1000)
+  ours <- fetch_practice_top_drugs(con, practice, months, limit = 1000)
+  foreign <- setdiff(theirs$presentation_id, ours$presentation_id)[1]
+  expect_false(is.na(foreign))
+  expect_identical(nrow(fetch_practice_top_drugs(con, practice, months, after = foreign)), 0L)
 })
 
 test_that("every fetch checks its arguments before it queries", {

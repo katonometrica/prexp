@@ -163,7 +163,7 @@ oracle_practices <- function(months = fixture_months()) {
       icb_name = first("ICB_NAME"),
       region_code = first("REGIONAL_OFFICE_CODE"),
       region_name = first("REGIONAL_OFFICE_NAME"),
-      is_unidentified = any(df$UNIDENTIFIED == "Y"),
+      is_unidentified = any(latest$UNIDENTIFIED == "Y"),
       first_seen = min(df$year_month),
       last_seen = max(df$year_month)
     )
@@ -189,8 +189,9 @@ oracle_presentations <- function(months = fixture_months()) {
   )
 }
 
-# Each region's name in the latest month. Prescribers with no region are
-# counted under '-', which has no name.
+# Each region's name in the latest month. The source codes the national
+# unidentified prescriber's region '-' and names it UNIDENTIFIED; prescribers
+# with no region code at all are counted under '-' too.
 oracle_region_names <- function(months = fixture_months()) {
   rows <- fixture_rows(months)
   rows <- rows[rows$year_month == max(rows$year_month) & nzchar(rows$REGIONAL_OFFICE_CODE), ]

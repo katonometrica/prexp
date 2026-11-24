@@ -48,6 +48,23 @@ spread <- function(codes, n) {
   codes[unique(round(seq(1, length(codes), length.out = min(n, length(codes)))))]
 }
 
+# A sample of a rollup's codes: n spread over the list, and the first code
+# with each case the queries must get right, which no spread is sure to reach:
+# two practices of one region in one month, no ADQ at all, an appliance, and
+# prescribing under region '-'
+sample_codes <- function(agg, key, n) {
+  first <- function(rows) sort(unique(rows[[key]]), method = "radix")[1]
+  no_adq <- vapply(split(agg$adq_usage, agg[[key]]), function(x) all(x == 0), logical(1))
+  cases <- c(
+    shared = first(agg[agg$practices > 1L, ]),
+    no_adq = sort(names(no_adq)[no_adq], method = "radix")[1],
+    appliance = first(agg[substr(agg[[key]], 1L, 2L) %in% c("20", "21", "22", "23"), ]),
+    no_region = first(agg[agg$region_code == "-", ])
+  )
+  stopifnot(!anyNA(cases))
+  unique(c(spread(agg[[key]], n), unname(cases)))
+}
+
 # Month ranges: the whole window, its last three months, one month, and the
 # month the window dropped, which has no rows left
 ranges <- function() {
@@ -67,6 +84,13 @@ drug_measures <- function(level) {
     c("items", "total_quantity", "adq_usage", "nic", "actual_cost")
   }
 }
+
+test_that("the fixture database is read-only for every login, once loaded", {
+  owner <- local_test_db("owner", dbname = local_fixture_db())
+  expect_error(
+    DBI::dbExecute(owner, "CREATE TABLE public.not_allowed (x int)"), "read-only transaction"
+  )
+})
 
 test_that("fetch_window() gives the twelve months the loads left", {
   con <- fixture_app()
@@ -111,7 +135,7 @@ test_that("fetch_drug_series() gives the oracle's national monthly totals", {
     agg <- if (level == "chemical") chemical_month() else presentation_month()
     key <- if (level == "chemical") "chemical_code" else "bnf_code"
     measures <- drug_measures(level)
-    for (code in spread(agg[[key]], 12)) {
+    for (code in sample_codes(agg, key, 12)) {
       id <- id_of(con, level, code)
       got <- list()
       expected <- list()
@@ -146,7 +170,7 @@ test_that("fetch_drug_presentations() gives each presentation's totals, most ite
   agg$chemical_code <- info$chemical_code[match(agg$bnf_code, info$bnf_code)]
   measures <- drug_measures("presentation")
   columns <- c("range", "presentation_id", "bnf_code", "bnf_description", "is_generic", measures)
-  for (code in spread(agg$chemical_code, 15)) {
+  for (code in sample_codes(agg, "chemical_code", 15)) {
     id <- id_of(con, "chemical", code)
     got <- list()
     expected <- list()
@@ -206,19 +230,22 @@ test_that("fetch_practice_top_drugs() pages through the oracle's ranking, no row
   con <- fixture_app()
   info <- presentations()
   ids <- DBI::dbGetQuery(con, "SELECT bnf_code, presentation_id FROM app.v_presentation")
+  chemical_ids <- DBI::dbGetQuery(con, "SELECT chemical_code, chemical_id FROM app.v_chemical")
   rows <- fact()
   measures <- c("items", "adq_usage", "nic", "actual_cost")
   columns <- c(
-    "key", "presentation_id", "bnf_code", "bnf_description", "chemical_name", "is_generic",
+    "key", "presentation_id", "bnf_code", "bnf_description", "chemical_id", "chemical_name",
+    "is_generic",
     measures, "total"
   )
-  # Every page, the last one short or empty
-  walk <- function(id, r, by) {
+  # Every page, the last one short or empty. At most one page more than the
+  # ranking needs: a paging that ignored `after` must fail here, not loop.
+  walk <- function(id, r, by, n) {
     pages <- list()
     after <- NULL
-    repeat {
+    for (i in seq_len(n %/% 25L + 2L)) {
       page <- fetch_practice_top_drugs(con, id, r, by = by, limit = 25L, after = after)
-      pages[[length(pages) + 1L]] <- page
+      pages[[i]] <- page
       if (nrow(page) < 25L) break
       after <- page$presentation_id[nrow(page)]
     }
@@ -235,11 +262,14 @@ test_that("fetch_practice_top_drugs() pages through the oracle's ranking, no row
       totals$presentation_id <- ids$presentation_id[match(totals$bnf_code, ids$bnf_code)]
       described <- info[match(totals$bnf_code, info$bnf_code), ]
       totals$bnf_description <- described$bnf_description
+      totals$chemical_id <- chemical_ids$chemical_id[
+        match(described$chemical_code, chemical_ids$chemical_code)
+      ]
       totals$chemical_name <- described$chemical_name
       totals$is_generic <- described$is_generic
       for (by in c("items", "nic", "actual_cost")) {
         key <- paste(range, by)
-        pages <- walk(id, r, by)
+        pages <- walk(id, r, by, nrow(totals))
         sizes[[key]] <- vapply(pages, nrow, integer(1))
         res <- as_oracle(do.call(rbind, pages), measures)
         res$total <- in_units(res$total, by)
@@ -276,18 +306,18 @@ test_that("fetch_region_comparison() gives each region's totals, with its name",
     agg <- if (level == "chemical") chemical_month() else presentation_month()
     key <- if (level == "chemical") "chemical_code" else "bnf_code"
     measures <- drug_measures(level)
-    for (code in spread(agg[[key]], 10)) {
+    for (code in sample_codes(agg, key, 10)) {
       id <- id_of(con, level, code)
       got <- list()
       expected <- list()
       for (range in names(ranges())) {
         r <- ranges()[[range]]
         sums <- oracle_sum(within(agg[agg[[key]] == code, ], r), "region_code", measures)
-        # The database orders the regions by its collation: compare in one order
+        # In order of region_code, as documented: the codes ('-' and Y56 to
+        # Y63) sort the same in the database's collation as byte by byte
         sums <- sums[order(sums$region_code, method = "radix"), ]
         for (measure in measures) {
           res <- fetch_region_comparison(con, level, id, r, measure)
-          res <- res[order(res$region_code, method = "radix"), ]
           got[[length(got) + 1L]] <- data.frame(
             range = rep(range, nrow(res)), region_code = res$region_code,
             region_name = res$region_name, measure = res$measure,
@@ -305,32 +335,71 @@ test_that("fetch_region_comparison() gives each region's totals, with its name",
   }
 })
 
+# The ids the database gave each code, the only values the search tests take
+# from it: the rest of each expected row comes from the fixture files
+code_ids <- function(con) {
+  list(
+    chemical = with(
+      DBI::dbGetQuery(con, "SELECT chemical_code, chemical_id FROM app.v_chemical"),
+      structure(chemical_id, names = chemical_code)
+    ),
+    presentation = with(
+      DBI::dbGetQuery(con, "SELECT bnf_code, presentation_id FROM app.v_presentation"),
+      structure(presentation_id, names = bnf_code)
+    ),
+    practice = with(
+      DBI::dbGetQuery(con, "SELECT practice_code, practice_id FROM app.v_practice"),
+      structure(practice_id, names = practice_code)
+    )
+  )
+}
+
+# Rows in one order, with plain row names: a repeated row still shows
+in_order <- function(df, keys) {
+  df <- as.data.frame(df)
+  df <- df[do.call(order, c(unname(as.list(df[keys])), method = "radix")), , drop = FALSE]
+  rownames(df) <- NULL
+  df
+}
+
 test_that("fetch_search_drugs() matches names and code prefixes, whatever the case", {
   con <- fixture_app()
   info <- presentations()
+  ids <- code_ids(con)
+  chemicals <- unique(info[c("chemical_code", "chemical_name")])
   drugs <- rbind(
-    unique(data.frame(level = "chemical", code = info$chemical_code, name = info$chemical_name)),
-    data.frame(level = "presentation", code = info$bnf_code, name = info$bnf_description)
+    data.frame(
+      level = "chemical", id = unname(ids$chemical[chemicals$chemical_code]),
+      code = chemicals$chemical_code, name = chemicals$chemical_name,
+      chemical_id = unname(ids$chemical[chemicals$chemical_code]),
+      chemical_name = chemicals$chemical_name, is_generic = NA
+    ),
+    data.frame(
+      level = "presentation", id = unname(ids$presentation[info$bnf_code]),
+      code = info$bnf_code, name = info$bnf_description,
+      chemical_id = unname(ids$chemical[info$chemical_code]),
+      chemical_name = info$chemical_name, is_generic = info$is_generic
+    )
   )
-  key <- function(df) paste(df$level, df$code)
   matching <- function(q) {
     in_name <- grepl(tolower(q), tolower(drugs$name), fixed = TRUE)
     drugs[in_name | startsWith(drugs$code, toupper(q)), ]
   }
-  # A name that contains the text, ignoring case
+  keys <- c("level", "code")
+  # A name that contains the text, ignoring case: every column of every row
   for (q in c("atorva", "ATORVA", "AtOrVa", "cream")) {
     expected <- matching(q)
     expect_gt(nrow(expected), 0L)
     expect_lte(nrow(expected), 100L)
-    expect_setequal(key(fetch_search_drugs(con, q, limit = 100)), key(expected))
+    got <- fetch_search_drugs(con, q, limit = 100)
+    expect_identical(in_order(got, keys), in_order(expected, keys), label = q)
   }
   expect_identical(fetch_search_drugs(con, "ATORVA"), fetch_search_drugs(con, "atorva"))
   # A code prefix, in either case: the chemical typed in full comes first
   for (q in c("0212000B0", "0212000b0")) {
     got <- fetch_search_drugs(con, q, limit = 100)
     expect_identical(got$code[1], "0212000B0")
-    expect_setequal(key(got), key(matching(q)))
-    expect_true(all(startsWith(got$code, "0212000B0")))
+    expect_identical(in_order(got, keys), in_order(matching(q), keys), label = q)
   }
   # The limit takes the best matches
   all_rows <- fetch_search_drugs(con, "tablets", limit = 100)
@@ -345,24 +414,34 @@ test_that("fetch_search_drugs() matches names and code prefixes, whatever the ca
 
 test_that("fetch_search_practices() matches names and codes, never the unidentified", {
   con <- fixture_app()
+  ids <- code_ids(con)
   known <- practices()[!practices()$is_unidentified, ]
+  rows <- data.frame(
+    practice_id = unname(ids$practice[known$practice_code]),
+    known[c("practice_code", "practice_name", "postcode", "icb_name", "region_name")]
+  )
   matching <- function(q) {
-    in_name <- grepl(tolower(q), tolower(known$practice_name), fixed = TRUE)
-    known$practice_code[in_name | startsWith(known$practice_code, toupper(q))]
+    in_name <- grepl(tolower(q), tolower(rows$practice_name), fixed = TRUE)
+    rows[in_name | startsWith(rows$practice_code, toupper(q)), ]
   }
-  # A word of four letters or more matches anywhere in a name
+  # A word of four letters or more matches anywhere in a name: every column
   words <- unlist(strsplit(known$practice_name, " ", fixed = TRUE))
   name_word <- words[nchar(words) >= 4L][1]
   for (q in c(name_word, tolower(name_word), substr(known$practice_code[1], 1L, 3L))) {
     expected <- matching(q)
-    expect_gt(length(expected), 0L)
-    expect_setequal(fetch_search_practices(con, q, limit = 100)$practice_code, expected)
+    expect_gt(nrow(expected), 0L)
+    got <- fetch_search_practices(con, q, limit = 100)
+    expect_identical(
+      in_order(got, "practice_code"), in_order(expected, "practice_code"), label = q
+    )
   }
   code <- known$practice_code[1]
   expect_identical(fetch_search_practices(con, tolower(code))$practice_code[1], code)
-  prefix <- substr(code, 1L, 2L)
-  all_rows <- fetch_search_practices(con, prefix, limit = 100)
-  expect_identical(fetch_search_practices(con, prefix, limit = 1), all_rows[1, ])
+  # The limit takes the best matches, of a word several names share
+  common <- names(sort(table(tolower(words[nchar(words) >= 4L])), decreasing = TRUE))[1]
+  all_rows <- fetch_search_practices(con, common, limit = 100)
+  expect_gt(nrow(all_rows), 1L)
+  expect_identical(fetch_search_practices(con, common, limit = 1), all_rows[1, ])
   # The national unidentified prescriber's code, '-', is too short to search for
   unidentified <- practices()$practice_code[practices()$is_unidentified]
   expect_gt(sum(nchar(unidentified) >= 2L), 0L)
@@ -371,6 +450,65 @@ test_that("fetch_search_practices() matches names and codes, never the unidentif
     expect_false(any(found %in% unidentified), label = q)
   }
   expect_error(fetch_search_practices(con, "N"), "it has 1", fixed = TRUE)
+})
+
+# The fixture months repeat one month's codes, names and regions, so two rules
+# need a database of their own, changed by hand: a region is named after its
+# most recently seen practice, and the searches leave out codes last seen
+# before the window
+test_that("a region takes its name from its most recently seen practice", {
+  dbname <- local_loaded_db(c(202608L, 202609L))
+  owner <- local_test_db("owner", dbname = dbname)
+  con <- local_test_db("app", dbname = dbname)
+  shared <- DBI::dbGetQuery(owner, "
+    SELECT region_code, array_agg(practice_id ORDER BY practice_id) AS ids
+    FROM core.dim_practice WHERE region_code IS NOT NULL AND region_code <> '-'
+    GROUP BY region_code HAVING count(*) >= 2 ORDER BY region_code LIMIT 1")
+  expect_identical(nrow(shared), 1L)
+  first <- as.integer(strsplit(gsub("[{}]", "", shared$ids), ",")[[1]][1:2])
+  chemical <- DBI::dbGetQuery(
+    owner, "SELECT chemical_id FROM core.agg_chemical_month WHERE region_code = $1 LIMIT 1",
+    params = list(shared$region_code)
+  )$chemical_id
+  name_of <- function() {
+    res <- fetch_region_comparison(con, "chemical", chemical, c(202608L, 202609L), "items")
+    res$region_name[res$region_code == shared$region_code]
+  }
+  original <- name_of()
+  # A later name on the second practice: a tie on last_seen keeps the first's
+  DBI::dbExecute(
+    owner, "UPDATE core.dim_practice SET region_name = 'RENAMED' WHERE practice_id = $1",
+    params = list(first[2])
+  )
+  expect_identical(name_of(), original)
+  # Seen more recently than the first, the second practice names the region
+  DBI::dbExecute(
+    owner, "UPDATE core.dim_practice SET last_seen = 202608 WHERE practice_id = $1",
+    params = list(first[1])
+  )
+  expect_identical(name_of(), "RENAMED")
+})
+
+test_that("the searches leave out codes last seen before the window", {
+  dbname <- local_loaded_db(c(202608L, 202609L))
+  owner <- local_test_db("owner", dbname = dbname)
+  con <- local_test_db("app", dbname = dbname)
+  expect_true("0212000B0AAABAB" %in% fetch_search_drugs(con, "0212000B0", limit = 100)$code)
+  expect_true("0212000B0" %in% fetch_search_drugs(con, "0212000B0", limit = 100)$code)
+  expect_identical(fetch_search_practices(con, "N81655")$practice_code, "N81655")
+  DBI::dbExecute(owner, "
+    UPDATE core.dim_presentation SET first_seen = 202607, last_seen = 202607
+    WHERE bnf_code = '0212000B0AAABAB'")
+  DBI::dbExecute(owner, "
+    UPDATE core.dim_chemical SET first_seen = 202607, last_seen = 202607
+    WHERE chemical_code = '0212000B0'")
+  DBI::dbExecute(owner, "
+    UPDATE core.dim_practice SET first_seen = 202607, last_seen = 202607
+    WHERE practice_code = 'N81655'")
+  codes <- fetch_search_drugs(con, "0212000B0", limit = 100)$code
+  expect_false("0212000B0AAABAB" %in% codes)
+  expect_false("0212000B0" %in% codes)
+  expect_identical(nrow(fetch_search_practices(con, "N81655")), 0L)
 })
 
 test_that("a refused argument says what it must be, before any query", {
@@ -393,7 +531,19 @@ test_that("a refused argument says what it must be, before any query", {
     fetch_practice_profile(NULL, "abc"),
     "`practice_id` must be one id, a whole number from 1 to 2147483647, not \"abc\"."
   )
+  refused(fetch_practice_series(NULL, "abc", months), "`practice_id` must be one id")
+  refused(fetch_practice_top_drugs(NULL, "abc", months), "`practice_id` must be one id")
+  refused(fetch_drug_presentations(NULL, "abc", months), "`chemical_id` must be one id")
+  refused(fetch_drug_series(NULL, "chemical", "abc", months, "items"), "`id` must be one id")
   refused(fetch_search_drugs(NULL, "a"), "`q` must be 2 to 100 characters")
+  refused(
+    fetch_search_drugs(NULL, "atorva", limit = 101),
+    "`limit` must be a whole number from 1 to 100, not 101."
+  )
+  refused(
+    fetch_search_practices(NULL, "atorva", limit = 101),
+    "`limit` must be a whole number from 1 to 100, not 101."
+  )
   refused(
     fetch_practice_top_drugs(NULL, 1, months, by = "quantity"),
     "`by` must be one of \"items\", \"nic\", \"actual_cost\", not \"quantity\"."
