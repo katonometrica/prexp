@@ -182,3 +182,16 @@ test_that("no SQL is built from strings in fct_queries.R", {
   code <- code[!grepl("^\\s*#", code)]
   expect_false(any(grepl("\\b(paste0?|sprintf|glue|str_c|str_glue)\\s*\\(", code)))
 })
+
+test_that("the fetch functions take the app's pool as well as a connection", {
+  dbname <- local_loaded_db(202609L)
+  pool <- local_test_pool(dbname)
+  con <- local_test_db("app", dbname = dbname)
+  months <- c(202609L, 202609L)
+  practice <- id_of(con, "practice", "N81655")
+  expect_identical(fetch_window(pool), fetch_window(con))
+  expect_identical(
+    fetch_practice_series(pool, practice, months), fetch_practice_series(con, practice, months)
+  )
+  expect_identical(fetch_search_drugs(pool, "atorva"), fetch_search_drugs(con, "atorva"))
+})
