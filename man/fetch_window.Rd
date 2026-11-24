@@ -34,6 +34,7 @@ Other fetch functions:
 \code{\link[=fetch_practice_series]{fetch_practice_series()}},
 \code{\link[=fetch_practice_top_drugs]{fetch_practice_top_drugs()}},
 \code{\link[=fetch_region_comparison]{fetch_region_comparison()}},
+\code{\link[=fetch_regions]{fetch_regions()}},
 \code{\link[=fetch_search_drugs]{fetch_search_drugs()}},
 \code{\link[=fetch_search_practices]{fetch_search_practices()}}
 }

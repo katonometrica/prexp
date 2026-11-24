@@ -41,6 +41,7 @@ query_registry <- function() {
   first_page <- list(limit = 25L, after_id = NA)
   list(
     window = list(params = character(), samples = list(window = list())),
+    regions = list(params = character(), samples = list(regions = list())),
     search_drugs = list(
       params = c("q", "limit"),
       samples = list(

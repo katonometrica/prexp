@@ -22,6 +22,7 @@ app_server <- function(con) {
     })
     mod_drug_server("drug", fetches, window)
     mod_practice_server("practice", fetches, window)
+    mod_region_server("region", fetches, window)
     output$window <- shiny::renderText({
       if (is.null(window())) "Data window unavailable" else window_text(window())
     })

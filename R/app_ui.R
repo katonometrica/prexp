@@ -30,7 +30,7 @@ app_ui <- function(request) {
       "Practice", value = "practice", view_heading("Practice"), mod_practice_ui("practice")
     ),
     bslib::nav_panel(
-      "Region", value = "region", view_heading("Region"), coming_view("Region", "P4-06")
+      "Region", value = "region", view_heading("Region"), mod_region_ui("region")
     ),
     bslib::nav_panel(
       "Report", value = "report", view_heading("Report"), coming_view("Report", "P5-02")
