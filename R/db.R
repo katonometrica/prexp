@@ -103,12 +103,18 @@ db_connect <- function(role = c("app", "loader", "owner"), dbname = NULL, ...) {
 #' the app refuses to start with the loader's or the owner's login rather than
 #' failing at its first query.
 #'
+#' A connection is checked when a fetch borrows it, never in the background
+#' (`validationInterval = 0`). pool would otherwise check idle connections in
+#' a timer, and when the database cannot be reached the timer's error escapes
+#' into Shiny's event loop and stops the app. At a fetch, the error is the
+#' fetch's own, and the view says so.
+#'
 #' Close the pool with [pool::poolClose()] when the app stops.
 #'
 #' @param dbname Database name. Defaults to `PREXP_DB_NAME`.
 #' @param ... Other arguments to [pool::dbPool()], such as `maxSize` or
-#'   `idleTimeout`, and libpq connection parameters, as strings. `onCreate` is
-#'   taken: it runs the read-only check.
+#'   `idleTimeout`, and libpq connection parameters, as strings. `onCreate`
+#'   (the read-only check) and `validationInterval` are taken.
 #' @return A pool, which DBI functions such as [DBI::dbGetQuery()] accept in
 #'   place of a connection.
 #' @export
@@ -123,6 +129,7 @@ db_pool <- function(dbname = NULL, ...) {
     password = cfg$password,
     application_name = "prexp-app",
     onCreate = check_read_only,
+    validationInterval = 0,
     ...
   )
   # The checkout is its own step: as poolReturn()'s argument, its error would

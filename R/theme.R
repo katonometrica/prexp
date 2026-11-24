@@ -19,9 +19,12 @@ prexp_palette <- function() {
 
 #' The app's Bootstrap theme
 #'
-#' Bootstrap 5, whose default font is the system font stack (each platform's
-#' own interface font, so no web font is loaded), with the palette's blue as
-#' the primary colour.
+#' Bootstrap 5 with bslib's "shiny" preset, its web fonts (Open Sans and
+#' Source Code Pro) swapped for Bootstrap's system font stacks: each
+#' platform's own interface font, so no font is downloaded. The palette's blue
+#' is the primary colour and the navbar's; the navbar's tab names are white,
+#' for contrast enough on that blue (WCAG AA: 4.5 to 1), and the open tab is
+#' marked by its underline and weight.
 #'
 #' @return A [bslib::bs_theme()].
 #' @noRd
@@ -36,6 +39,14 @@ prexp_theme <- function() {
     danger = palette[["vermillion"]],
     info = palette[["sky"]],
     "navbar-bg" = palette[["blue"]],
-    "link-color" = palette[["blue"]]
+    "navbar-light-color" = "#FFFFFF",
+    "navbar-light-hover-color" = "#FFFFFF",
+    "link-color" = palette[["blue"]],
+    "font-family-base" = "var(--bs-font-sans-serif)",
+    "font-family-monospace" = paste(
+      "SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\",",
+      "monospace"
+    ),
+    "web-font-path" = FALSE
   )
 }

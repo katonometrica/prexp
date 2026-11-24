@@ -25,7 +25,15 @@ run_app <- function(host = getOption("shiny.host", "127.0.0.1"),
     },
     onStart = function() {
       state$pool <- db_pool()
-      shiny::onStop(function() pool::poolClose(state$pool))
+      # Errors reach the page without their details, which can name the
+      # database's host; the app's log keeps them. A session that has set the
+      # option (to debug) keeps its setting; either way the app puts it back
+      # when it stops.
+      old <- options(shiny.sanitize.errors = getOption("shiny.sanitize.errors", TRUE))
+      shiny::onStop(function() {
+        pool::poolClose(state$pool)
+        options(old)
+      })
     },
     options = list(host = host, port = port, ...),
     enableBookmarking = "url"

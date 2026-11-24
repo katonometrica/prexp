@@ -9,12 +9,23 @@
 #' @noRd
 app_server <- function(con) {
   function(input, output, session) {
-    window <- shiny::reactive(fetch_window(con))
+    # The window, or NULL when it cannot be fetched: the footer says so, and the
+    # cause goes to the app's log, not to the page
+    window <- shiny::reactive({
+      tryCatch(fetch_window(con), error = function(e) {
+        message("The data window could not be fetched: ", conditionMessage(e))
+        NULL
+      })
+    })
     output$window <- shiny::renderText({
-      tryCatch(
-        window_text(window()),
-        error = function(e) "Data window unavailable"
-      )
+      if (is.null(window())) "Data window unavailable" else window_text(window())
+    })
+    # A bookmark can name a tab that does not exist, or no longer does: bslib
+    # then shows no tab at all, so open the Drug tab
+    shiny::onRestored(function(state) {
+      if (!known_tab(state$input$tab)) {
+        bslib::nav_select("tab", "drug", session = session)
+      }
     })
   }
 }
@@ -25,4 +36,9 @@ window_text <- function(window) {
     return("No data loaded yet")
   }
   paste("Data:", format_month_range(window$first_month, window$last_month))
+}
+
+# Whether a restored tab is one of the app's
+known_tab <- function(tab) {
+  is.character(tab) && length(tab) == 1L && tab %in% app_tabs
 }

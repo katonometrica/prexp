@@ -2,13 +2,16 @@
 # attribution in a footer on every tab, and a head that asks search engines
 # not to index the app.
 
+# The tabs' values, which URL bookmarks name
+app_tabs <- c("drug", "practice", "region", "report", "about")
+
 #' The app's user interface
 #'
 #' @param request The request, for URL bookmarking: the UI is a function of it.
 #' @return A Shiny UI.
 #' @noRd
 app_ui <- function(request) {
-  bslib::page_navbar(
+  page <- bslib::page_navbar(
     title = "Prescription Explorer",
     id = "tab",
     theme = prexp_theme(),
@@ -21,12 +24,40 @@ app_ui <- function(request) {
       shiny::tags$meta(name = "robots", content = "noindex, nofollow"),
       shiny::tags$link(rel = "stylesheet", href = "prexp/prexp.css")
     ),
-    bslib::nav_panel("Drug", value = "drug", coming_view("Drug", "P4-04")),
-    bslib::nav_panel("Practice", value = "practice", coming_view("Practice", "P4-05")),
-    bslib::nav_panel("Region", value = "region", coming_view("Region", "P4-06")),
-    bslib::nav_panel("Report", value = "report", coming_view("Report", "P5-02")),
-    bslib::nav_panel("About", value = "about", about_ui()),
+    bslib::nav_panel(
+      "Drug", value = "drug", view_heading("Drug"), coming_view("Drug", "P4-04")
+    ),
+    bslib::nav_panel(
+      "Practice", value = "practice", view_heading("Practice"), coming_view("Practice", "P4-05")
+    ),
+    bslib::nav_panel(
+      "Region", value = "region", view_heading("Region"), coming_view("Region", "P4-06")
+    ),
+    bslib::nav_panel(
+      "Report", value = "report", view_heading("Report"), coming_view("Report", "P5-02")
+    ),
+    bslib::nav_panel("About", value = "about", view_heading("About the data"), about_ui()),
     footer = footer_ui()
+  )
+  main_landmark(page)
+}
+
+# A tab's heading: the page's h1 while the tab shows, for screen readers (the
+# navbar shows the tab's name)
+view_heading <- function(text) {
+  shiny::tags$h1(class = "visually-hidden", text)
+}
+
+# The tabs as the page's main landmark, between the navbar and the footer, so
+# a screen reader can skip to them. Only the first .tab-content is the tabs':
+# a view's own tabs add another. tagQuery() returns a bare tag list, so the
+# page's class, language and theme are put back.
+main_landmark <- function(page) {
+  tabs <- htmltools::tagQuery(page)$find(".tab-content")$filter(function(x, i) i == 1L)
+  main <- tabs$addAttrs(role = "main")$allTags()
+  structure(
+    main,
+    class = class(page), lang = attr(page, "lang"), bs_theme = attr(page, "bs_theme")
   )
 }
 
@@ -57,21 +88,15 @@ about_ui <- function() {
             shiny::tags$li(shiny::tags$strong(paste0(point$term, ".")), " ", point$text)
           }
         }))
+      },
+      if (length(section$links) > 0L) {
+        shiny::tags$ul(lapply(section$links, function(link) {
+          shiny::tags$li(shiny::tags$a(href = link$url, link$text))
+        }))
       }
     )
   })
-  attribution <- data_attribution()
-  bslib::card(
-    class = "prexp-about",
-    bslib::card_body(
-      sections,
-      shiny::tags$p(
-        shiny::tags$a(href = attribution$source_url, "The dataset on the NHSBSA portal"),
-        " \u00b7 ",
-        shiny::tags$a(href = attribution$licence_url, "Open Government Licence v3.0")
-      )
-    )
-  )
+  bslib::card(class = "prexp-about", bslib::card_body(sections))
 }
 
 #' The footer on every tab: the data window and the attribution
@@ -88,7 +113,10 @@ footer_ui <- function() {
     " \u00b7 ",
     shiny::span(
       "Contains public sector information licensed under the ",
-      shiny::tags$a(href = attribution$licence_url, "Open Government Licence v3.0"),
+      # No space between the link and the full stop
+      shiny::tags$a(
+        href = attribution$licence_url, "Open Government Licence v3.0", .noWS = "after"
+      ),
       "."
     )
   )

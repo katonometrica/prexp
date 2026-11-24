@@ -98,6 +98,8 @@ services:
       dockerfile: docker/Dockerfile
       target: app
     image: prexp-app:local
+    # The app process ends on an error it cannot recover from; start it again
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy

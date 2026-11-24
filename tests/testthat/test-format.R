@@ -31,3 +31,35 @@ test_that("format_month() and format_month_range() write months in English", {
   expect_identical(format_month_range(202601L, 202609L), "Jan \u2013 Sep 2026")
   expect_identical(format_month_range(202609L, 202609L), "Sep 2026")
 })
+
+test_that("format_number() and format_pounds() read text, and drop the sign of a zero", {
+  expect_identical(format_number(c("1234", "abc")), c("1,234", "\u2013"))
+  expect_identical(format_number(c(-0.4, -0.0001)), c("0", "0"))
+  expect_identical(format_number(-0.004, digits = 2), "0.00")
+  expect_identical(format_pounds(c(-0.001, 0)), c("\u00a30.00", "\u00a30.00"))
+  expect_identical(format_pounds("abc"), "\u2013")
+})
+
+test_that("format_measure() passes its placeholder for a missing value", {
+  expect_identical(format_measure(NA, "nic", na = "n/a"), "n/a")
+  expect_identical(format_measure(NA, "items", na = "n/a"), "n/a")
+})
+
+test_that("format_month() gives NA for what is not a month, and leaves the others alone", {
+  expect_identical(
+    format_month(c(202600L, 202609L, 202613L, 202610L)), c(NA, "Sep 2026", NA, "Oct 2026")
+  )
+  expect_identical(format_month(c(-202609L, 0L)), c(NA_character_, NA_character_))
+  expect_identical(format_month("abc"), NA_character_)
+})
+
+test_that("numbers that are not finite show as missing", {
+  expect_identical(format_number(c(Inf, -Inf, NaN)), rep("\u2013", 3L))
+  expect_identical(format_pounds(c(-Inf, 1)), c("\u2013", "\u00a31.00"))
+})
+
+test_that("format_month_range() refuses months that are not a range", {
+  expect_error(format_month_range(202609L, 202510L), class = "prexp_invalid_argument")
+  expect_error(format_month_range(202613L, 202609L), class = "prexp_invalid_argument")
+  expect_identical(format_month_range("202510", 202609), "Oct 2025 \u2013 Sep 2026")
+})

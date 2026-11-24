@@ -10,8 +10,8 @@ db_pool(dbname = NULL, ...)
 \item{dbname}{Database name. Defaults to \code{PREXP_DB_NAME}.}
 
 \item{...}{Other arguments to \code{\link[pool:dbPool]{pool::dbPool()}}, such as \code{maxSize} or
-\code{idleTimeout}, and libpq connection parameters, as strings. \code{onCreate} is
-taken: it runs the read-only check.}
+\code{idleTimeout}, and libpq connection parameters, as strings. \code{onCreate}
+(the read-only check) and \code{validationInterval} are taken.}
 }
 \value{
 A pool, which DBI functions such as \code{\link[DBI:dbGetQuery]{DBI::dbGetQuery()}} accept in
@@ -30,5 +30,11 @@ the app refuses to start with the loader's or the owner's login rather than
 failing at its first query.
 }
 \details{
+A connection is checked when a fetch borrows it, never in the background
+(\code{validationInterval = 0}). pool would otherwise check idle connections in
+a timer, and when the database cannot be reached the timer's error escapes
+into Shiny's event loop and stops the app. At a fetch, the error is the
+fetch's own, and the view says so.
+
 Close the pool with \code{\link[pool:poolClose]{pool::poolClose()}} when the app stops.
 }
