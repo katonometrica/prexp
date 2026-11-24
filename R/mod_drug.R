@@ -158,13 +158,18 @@ no_rows_text <- function(pick, measure, months) {
   }
 }
 
-# A chemical substance's presentations, most items first
+# A chemical substance's presentations, most items first. A chemical can have
+# thousands (2003, dressings, has 2,068), so quantity and ADQ usage are written
+# once for each whole column, into hidden columns whose text measure_column()
+# shows in their cells
 presentations_table <- function(rows) {
   data <- data.frame(
     presentation = rows$bnf_description, code = rows$bnf_code,
     kind = brand_or_generic(rows$is_generic),
     items = rows$items, total_quantity = rows$total_quantity, adq_usage = rows$adq_usage,
-    nic = rows$nic, actual_cost = rows$actual_cost
+    nic = rows$nic, actual_cost = rows$actual_cost,
+    quantity_text = format_measure(rows$total_quantity, "total_quantity"),
+    adq_text = format_measure(rows$adq_usage, "adq_usage")
   )
   reactable::reactable(
     data,
@@ -173,10 +178,12 @@ presentations_table <- function(rows) {
       code = reactable::colDef(name = "BNF code", minWidth = 160, style = nowrap),
       kind = reactable::colDef(name = "Brand or generic", minWidth = 90),
       items = count_column("Items"),
-      total_quantity = measure_column("Quantity", "total_quantity"),
-      adq_usage = measure_column("ADQ usage", "adq_usage"),
+      total_quantity = measure_column("Quantity", "total_quantity", label = "quantity_text"),
+      adq_usage = measure_column("ADQ usage", "adq_usage", label = "adq_text"),
       nic = pounds_column("Net ingredient cost"),
-      actual_cost = pounds_column("Actual cost")
+      actual_cost = pounds_column("Actual cost"),
+      quantity_text = reactable::colDef(show = FALSE),
+      adq_text = reactable::colDef(show = FALSE)
     ),
     defaultPageSize = 10, compact = TRUE, striped = TRUE, highlight = TRUE,
     defaultSorted = list(items = "desc")

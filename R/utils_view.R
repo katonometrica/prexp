@@ -274,17 +274,26 @@ pounds_column <- function(name, ..., min_width = 140) {
 # A column of a measure in its form: pounds for the costs, whole numbers for
 # items, and three significant figures for quantity and ADQ usage, as
 # format_measure() writes them (a whole number would show 0.4 ADQs as 0). The
-# cells sort by their values.
-measure_column <- function(name, measure, ...) {
+# cells sort by their values. Quantity and ADQ usage are written by an R
+# function, once per row, unless `label` names a column of the table's data
+# that holds them already, written for the whole column at once: the browser
+# then shows that column's text. A long table needs it, as those calls took
+# most of the time of a chemical's 2,068 presentations (#101).
+measure_column <- function(name, measure, ..., label = NULL) {
   if (measure %in% c("nic", "actual_cost")) {
     return(pounds_column(name, ...))
   }
   if (measure == "items") {
     return(count_column(name, ...))
   }
+  cell <- if (is.null(label)) {
+    function(value) format_measure(value, measure)
+  } else {
+    js <- sprintf("function(cell) { return cell.row[%s] }", encodeString(label, quote = "\""))
+    reactable::JS(js)
+  }
   reactable::colDef(
-    name = name, ..., minWidth = 125, style = nowrap, align = "right",
-    cell = function(value) format_measure(value, measure)
+    name = name, ..., minWidth = 125, style = nowrap, align = "right", cell = cell
   )
 }
 

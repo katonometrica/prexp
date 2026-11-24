@@ -348,13 +348,46 @@ test_that("without a window, the view says why, and has nothing to download", {
 
 test_that("quantity and ADQ usage keep their fractions in the table, and no cell wraps", {
   rows <- transform(drug_presentation_rows, adq_usage = 0.496, total_quantity = 2.5)
-  columns <- presentations_table(rows)$x$tag$attribs$columns
+  table <- presentations_table(rows)
+  columns <- table$x$tag$attribs$columns
   names(columns) <- vapply(columns, function(column) column$id, "")
-  expect_identical(unlist(columns$adq_usage$cell), "0.496")
-  expect_identical(unlist(columns$total_quantity$cell), "2.5")
+  data <- jsonlite::fromJSON(as.character(table$x$tag$attribs$data))
+  # The cells show the text written for the whole column, kept in hidden
+  # columns, and sort by the values
+  expect_identical(data$adq_text, "0.496")
+  expect_identical(data$quantity_text, "2.5")
+  expect_identical(
+    as.character(columns$adq_usage$cell), "function(cell) { return cell.row[\"adq_text\"] }"
+  )
+  expect_identical(
+    as.character(columns$total_quantity$cell),
+    "function(cell) { return cell.row[\"quantity_text\"] }"
+  )
+  expect_false(columns$adq_text$show)
+  expect_false(columns$quantity_text$show)
+  expect_identical(c(data$adq_usage, data$total_quantity), c(0.496, 2.5))
   for (id in c("code", "items", "nic", "adq_usage")) {
     expect_identical(columns[[id]]$style, list(whiteSpace = "nowrap"), label = id)
   }
+  # A table that gives no label writes its cells in R, as the short tables do
+  expect_identical(measure_column("ADQ usage", "adq_usage")$cell(0.496), "0.496")
+})
+
+test_that("a chemical's thousands of presentations are written once per column (#101)", {
+  rows <- drug_presentation_rows[rep(1L, 2000L), ]
+  rows$total_quantity <- seq_len(2000L) / 7
+  rows$adq_usage <- seq_len(2000L) / 3
+  calls <- 0L
+  format <- format_measure
+  local_mocked_bindings(format_measure = function(...) {
+    calls <<- calls + 1L
+    format(...)
+  })
+  table <- presentations_table(rows)
+  expect_identical(calls, 2L)
+  data <- jsonlite::fromJSON(as.character(table$x$tag$attribs$data))
+  expect_identical(data$quantity_text[c(1L, 2000L)], c("0.143", "286"))
+  expect_identical(data$adq_text[c(1L, 2000L)], c("0.333", "667"))
 })
 
 test_that("a measure sent again, as a redrawn control does, fetches nothing again", {
