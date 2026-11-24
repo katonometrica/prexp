@@ -247,3 +247,100 @@ test_that("search: an exact code first, both levels, no unidentified prescriber,
     expect_false(any(found %in% unidentified$practice_code), label = q)
   }
 })
+
+# The plan of a query with these values bound: as text, and as nodes
+plan_text <- function(con, sql, params) {
+  paste(DBI::dbGetQuery(con, paste("EXPLAIN", sql), params = params)[[1]], collapse = "\n")
+}
+plan_of <- function(con, sql, params) {
+  res <- DBI::dbGetQuery(con, paste("EXPLAIN (FORMAT JSON)", sql), params = params)
+  plan_nodes(parse_plan(res)[[1]]$Plan)
+}
+
+test_that("a search for three characters or more can use an index on each side of its match", {
+  dbname <- local_loaded_db(202609L)
+  con <- local_test_db("app", dbname = dbname)
+  # The fixture's dimensions are small enough for any scan: forbid all but
+  # bitmap scans, so that the plan shows which indexes serve each side of the OR
+  for (scan in c("seqscan", "indexscan", "indexonlyscan")) {
+    DBI::dbExecute(con, paste0("SET enable_", scan, " = off"))
+  }
+  drugs <- plan_text(con, query_sql("search_drugs"), list("atorva", 20L))
+  for (index in c(
+    "dim_chemical_name_trgm", "dim_chemical_code_prefix",
+    "dim_presentation_description_trgm", "dim_presentation_code_prefix"
+  )) {
+    expect_match(drugs, index, fixed = TRUE)
+  }
+  practices <- plan_text(con, query_sql("search_practices"), list("b83", 20L))
+  expect_match(practices, "dim_practice_name_trgm", fixed = TRUE)
+  expect_match(practices, "dim_practice_code_prefix", fixed = TRUE)
+})
+
+test_that("a practice's top drugs join the presentations to the page only", {
+  dbname <- local_loaded_db(202609L)
+  con <- local_test_db("app", dbname = dbname)
+  # The view's join is left out when no presentation column is used...
+  totals <- plan_of(
+    con, "SELECT presentation_id, sum(items) FROM app.v_practice_presentation
+          WHERE practice_id = $1 GROUP BY 1", list(1L)
+  )
+  expect_false("dim_presentation" %in% totals$relation)
+  # ...so the query reads the presentations once, for the page's names
+  top <- plan_of(con, query_sql("practice_top_drugs"), list(1L, 202609L, 202609L, "items", 25L, NA))
+  expect_identical(sum(top$relation %in% "dim_presentation"), 1L)
+})
+
+test_that("two characters match the start of the name or of a word; three or more, anywhere", {
+  dbname <- local_loaded_db(202609L)
+  app <- local_test_db("app", dbname = dbname)
+  owner <- local_test_db("owner", dbname = dbname)
+  drugs <- DBI::dbGetQuery(owner, "
+    SELECT 'chemical' AS level, chemical_id AS id, chemical_name AS name FROM core.dim_chemical
+    UNION ALL
+    SELECT 'presentation', presentation_id, bnf_description FROM core.dim_presentation")
+  key <- function(rows) paste(rows$level, rows$id)
+  # 'ta' starts words ("Tablets") and sits inside others ("Atorvastatin"); "ine"
+  # ends many names ("Amlodipine"), chemicals and presentations alike
+  for (q in c("ta", "ine")) {
+    pattern <- if (nchar(q) < 3) paste0("(^| )", q) else q
+    expected <- drugs[grepl(pattern, drugs$name, ignore.case = TRUE), ]
+    expect_setequal(key(run_query(app, "search_drugs", q, 100000L)), key(expected))
+    expect_true(any(expected$level == "chemical"), label = q)
+  }
+  # Practices: 'er' sits inside names ("CENTER", "SURGERY") more often than it
+  # starts a word
+  practices <- DBI::dbGetQuery(owner, "
+    SELECT practice_code AS code, practice_name AS name FROM core.dim_practice
+    WHERE NOT is_unidentified")
+  inside <- grepl("er", practices$name, ignore.case = TRUE)
+  word_start <- grepl("(^| )er", practices$name, ignore.case = TRUE)
+  expect_gt(sum(inside), sum(word_start))
+  found <- run_query(app, "search_practices", "er", 100L)
+  expect_setequal(found$practice_code, practices$code[word_start])
+})
+
+test_that("a chemical's presentations read the rollup's covering key, index-only", {
+  dbname <- local_loaded_db(202609L)
+  app <- local_test_db("app", dbname = dbname)
+  owner <- local_test_db("owner", dbname = dbname)
+  # The loader vacuums the rollups after the swap, so their visibility maps are set
+  maps <- DBI::dbGetQuery(owner, "
+    SELECT relname, relpages, relallvisible FROM pg_class
+    WHERE relname IN ('agg_presentation_month', 'agg_chemical_month', 'agg_practice_month')")
+  expect_true(all(maps$relpages > 0))
+  expect_identical(maps$relallvisible, maps$relpages)
+  # The fixture's rollup is small enough for any scan: forbid the heap ones
+  for (scan in c("seqscan", "bitmapscan")) {
+    DBI::dbExecute(app, paste0("SET enable_", scan, " = off"))
+  }
+  chemical <- id_of(app, "chemical", "0212000B0")
+  res <- DBI::dbGetQuery(
+    app, paste("EXPLAIN (ANALYZE, FORMAT JSON)", query_sql("drug_presentations")),
+    params = list(chemical, 202609L, 202609L)
+  )
+  nodes <- plan_nodes(parse_plan(res)[[1]]$Plan)
+  rollup <- nodes[nodes$relation %in% "agg_presentation_month", ]
+  expect_identical(unique(rollup$node_type), "Index Only Scan")
+  expect_identical(sum(rollup$heap_fetches), 0)
+})

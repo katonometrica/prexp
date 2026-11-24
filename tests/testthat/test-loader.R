@@ -189,12 +189,14 @@ test_that("blank ITEMS, a measure that is not a number, and no items are refused
 
 test_that("nothing after the commit can mark a live month failed", {
   dbname <- local_migrated_db()
-  testthat::local_mocked_bindings(analyze_parent = function(con) stop("statistics went wrong"))
+  testthat::local_mocked_bindings(
+    refresh_after_swap = function(con) stop("statistics went wrong")
+  )
   expect_warning(
     suppressMessages(load_fixture(202609L, dbname)),
     paste(
-      "202609 is loaded, but the statistics of core.prescribing were not refreshed:",
-      "statistics went wrong"
+      "202609 is loaded, but the statistics of core.prescribing and the rollups were not",
+      "refreshed: statistics went wrong"
     ),
     fixed = TRUE
   )

@@ -4,12 +4,13 @@
 # check_plans() read the same files, so the SQL that is checked is the SQL the
 # app runs.
 #
-# A large sample is the worst case the window holds, over the whole window: the
-# chemical with the most presentations and the practice with the most
-# prescribing rows are picked from the data when the check runs, so they follow
-# the window as it moves; the searches use the two-letter text that matches
-# the most names. A small sample asks for the window's last three months, so the
-# check sees partitions pruned. A sample names its drug or practice by code,
+# A large sample is the worst case the window holds, over the whole window,
+# picked from the data when the check runs, so that it follows the window as it
+# moves: the chemical with the most presentation rollup rows, the practice with
+# the most prescribing rows, and for each search the two characters that start
+# the most names' words, each of which similarity() then ranks. A small sample
+# asks for the window's last three months, so the check sees partitions
+# pruned. A sample names its drug or practice by code,
 # never by id, because ids differ between databases; resolve_sample() looks the
 # codes up at run time, among those with data in the months asked for.
 
@@ -18,14 +19,15 @@
 #' @return A named list, one entry per query, each with `params` (the names of
 #'   its parameters, in order) and `samples` (named lists of sample arguments:
 #'   `chemical`, `presentation` and `practice` are codes, in order of
-#'   preference, or a function of the connection and the months that picks
-#'   one; `months` is the number of most recent months asked for, the whole
-#'   window when absent; other names are parameters).
+#'   preference, and `q` a search text, each of them or a function of the
+#'   connection and the months that picks one; `months` is the number of most
+#'   recent months asked for, the whole window when absent; other names are
+#'   parameters).
 #' @noRd
 query_registry <- function() {
   months <- c("first_month", "last_month")
   chemical <- list(
-    large = list(chemical = most_presentations),
+    large = list(chemical = most_rollup_rows),
     small = list(chemical = "0404000W0", months = 3L)
   )
   presentation <- list(
@@ -42,12 +44,16 @@ query_registry <- function() {
     search_drugs = list(
       params = c("q", "limit"),
       samples = list(
-        large = list(q = "ba", limit = 20L), small = list(q = "pitolisant", limit = 20L)
+        large = list(q = most_matched_drugs, limit = 20L),
+        small = list(q = "pitolisant", limit = 20L)
       )
     ),
     search_practices = list(
       params = c("q", "limit"),
-      samples = list(large = list(q = "he", limit = 20L), small = list(q = "N81655", limit = 20L))
+      samples = list(
+        large = list(q = most_matched_practices, limit = 20L),
+        small = list(q = "N81655", limit = 20L)
+      )
     ),
     drug_series_chemical = list(params = c("chemical_id", months), samples = chemical),
     drug_series_presentation = list(params = c("presentation_id", months), samples = presentation),
@@ -68,16 +74,49 @@ query_registry <- function() {
   )
 }
 
-# The chemical substance with the most presentations seen in the months: the
-# most rows for a chemical's queries to read
-most_presentations <- function(con, first, last) {
+# The chemical substance with the most presentation rollup rows in the months
+# (presentation x month x region): the most rows for its presentations to read
+most_rollup_rows <- function(con, first, last) {
   DBI::dbGetQuery(con, "
-    SELECT c.chemical_code FROM app.v_presentation p
-    JOIN app.v_chemical c ON c.chemical_id = p.chemical_id
-    WHERE p.last_seen >= $1 AND p.first_seen <= $2
+    SELECT c.chemical_code FROM app.v_presentation_month m
+    JOIN app.v_chemical c ON c.chemical_id = m.chemical_id
+    WHERE m.year_month BETWEEN $1 AND $2
     GROUP BY c.chemical_code
     ORDER BY count(*) DESC, c.chemical_code
     LIMIT 1", params = list(first, last))$chemical_code
+}
+
+# The two characters that start a word in the most chemical and presentation
+# names with data in the months: the most names for a search to rank (a match
+# by code alone is not ranked)
+most_matched_drugs <- function(con, first, last) {
+  most_matched(con, first, "
+    SELECT chemical_name AS name FROM app.v_chemical WHERE last_seen >= $1
+    UNION ALL
+    SELECT bnf_description FROM app.v_presentation WHERE last_seen >= $1")
+}
+
+# The same over the practices a search can find
+most_matched_practices <- function(con, first, last) {
+  most_matched(con, first, "
+    SELECT practice_name AS name FROM app.v_practice
+    WHERE last_seen >= $1 AND NOT is_unidentified")
+}
+
+# Words are what the search's short rule counts: the start of the name, or
+# after a space
+most_matched <- function(con, first, rows) {
+  DBI::dbGetQuery(con, paste0("
+    WITH rows AS (", rows, "),
+    pairs AS (
+      SELECT DISTINCT r.row, lower(left(word, 2)) AS pair
+      FROM (SELECT row_number() OVER () AS row, name FROM rows) r,
+      LATERAL regexp_split_to_table(r.name, ' ') AS word
+      WHERE length(word) >= 2
+    )
+    SELECT pair FROM pairs GROUP BY pair ORDER BY count(*) DESC, pair LIMIT 1"),
+    params = list(first)
+  )$pair
 }
 
 # The identified practice with the most prescribing rows in the months: the
@@ -154,7 +193,10 @@ resolve_sample <- function(con, entry, sample, window) {
   } else {
     NA_integer_
   }
-  codes <- if (is.null(sample$q)) character() else sample$q
+  if (is.function(sample$q)) {
+    values$q <- sample$q(con, first, last)
+  }
+  codes <- if (is.null(values$q)) character() else values$q
   for (kind in intersect(names(sample), c("chemical", "presentation", "practice"))) {
     wanted <- sample[[kind]]
     if (is.function(wanted)) {

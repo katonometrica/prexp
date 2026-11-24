@@ -363,12 +363,12 @@ swap_month <- function(con, year_month, load_id, source_rows, loaded_rows, file_
   }
   not_refreshed <- function(e) {
     warning(
-      ym, " is loaded, but the statistics of core.prescribing were not refreshed: ",
-      conditionMessage(e),
+      ym, " is loaded, but the statistics of core.prescribing and the rollups were not ",
+      "refreshed: ", conditionMessage(e),
       call. = FALSE
     )
   }
-  tryCatch(analyze_parent(con), error = not_refreshed, interrupt = not_refreshed)
+  tryCatch(refresh_after_swap(con), error = not_refreshed, interrupt = not_refreshed)
   invisible(swapped$dropped)
 }
 
@@ -440,15 +440,22 @@ drop_partition <- function(con, month) {
   DBI::dbExecute(con, sql[["dropped_log"]], immediate = TRUE)
 }
 
-# Planner statistics for the parent table, which autovacuum never analyses.
-# ONLY: each partition was analysed when it was built, and a plain ANALYZE
-# would analyse them all again, waiting behind any VACUUM of one of them. It
-# runs after the swap's transaction, whose lock timeout has ended, so it gets
-# its own: the month is live, and the statistics can wait for the next load.
-analyze_parent <- function(con) {
+# After the swap: planner statistics for the parent table, which autovacuum
+# never analyses, and a VACUUM of the three rollups, whose rows the swap deleted
+# and inserted, so that their visibility maps are set again and their covering
+# keys stay index-only (migration 009). ONLY: each partition was analysed when
+# it was built, and a plain ANALYZE would analyse them all again, waiting
+# behind any VACUUM of one of them. This runs after the swap's transaction,
+# whose lock timeout has ended, so it gets its own: the month is live, and the
+# statistics can wait for the next load. Neither blocks the app's reads.
+refresh_after_swap <- function(con) {
   DBI::dbExecute(con, "SET lock_timeout = '30s'", immediate = TRUE)
   on.exit(try(DBI::dbExecute(con, "RESET lock_timeout", immediate = TRUE), silent = TRUE))
   DBI::dbExecute(con, "ANALYZE ONLY core.prescribing", immediate = TRUE)
+  DBI::dbExecute(con, paste(
+    "VACUUM (ANALYZE) core.agg_presentation_month, core.agg_chemical_month,",
+    "core.agg_practice_month"
+  ), immediate = TRUE)
 }
 
 # The new table's indexes lose "_new" in their names once the table has.
