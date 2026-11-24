@@ -176,7 +176,7 @@ Each rollup row holds the sums of the measures that can be added at its grain (`
 
 ### 3.4 Size estimate
 
-Measured on September 2026 (P1-09, [benchmarks.md](benchmarks.md#one-month-p1-09)): 9,459,744 fact rows after aggregation, a 639 MB table (71 bytes a row) and 1,133 MB for its two indexes, 1.77 GB a month in all; the month's rollup rows and the dimensions add under 40 MB. Twelve months: about 21.5 GB. While a month loads, staging holds 7.1 GB, the month being built beside the live one 1.8 GB, and the write-ahead log peaked at 1.5 GB, so the peak is about 33 GB. **Plan for at least 50 GB free disk for Postgres**, which leaves room for larger months and for any index phase 2 adds.
+Measured on September 2026 (P1-09, [benchmarks.md](benchmarks.md#one-month-p1-09)): 9,459,744 fact rows after aggregation, a 639 MB table (71 bytes a row) and 1,133 MB for its two indexes, 1.77 GB a month in all; the month's rollup rows and the dimensions add under 40 MB. Twelve months, measured in P2-02 ([benchmarks.md](benchmarks.md#twelve-months-p2-02)): 112.8 million fact rows, 20.7 GB of fact table and indexes, 20.9 GB for the whole database. While a month loads, staging holds 7.1 GB, the month being built beside the live one 1.8 GB, and the write-ahead log peaked at 1.6 GB, so the peak is about 31 GB. **Plan for at least 50 GB free disk for Postgres**, which leaves room for larger months and for any index phase 2 adds.
 
 ### 3.5 Migrations
 
@@ -195,7 +195,7 @@ Entry points:
 
 - `prexp::load_month(year_month)`: loads or reloads one month
 - `prexp::load_latest()`: loads the newest published month not yet loaded, or does nothing. This is what the schedule calls
-- `prexp::load_window(n = 12)`: loads the `n` most recent published months missing from `load_log`, oldest first. Used for the first load and for rebuilds
+- `prexp::load_window(n)`: loads the `n` most recent published months missing from `load_log` (by default the whole window, `PREXP_WINDOW_MONTHS`), oldest first, so a first load drops nothing. Used for the first load and for rebuilds. It stops at the first month that fails; running it again carries on
 
 A Postgres advisory lock stops two loads from running at once. The window size comes from `PREXP_WINDOW_MONTHS`, default 12.
 
@@ -344,7 +344,7 @@ Triggers: pull requests, pushes to `main`, a monthly schedule on the 1st (which 
 
 ### 6.3 Checks that need the full database
 
-The full database (twelve months, about 114 million fact rows) lives in the local Docker stack, not in GitHub Actions, so these run there; P6-02 runs them again on the server, which is smaller than the development machine:
+The full database (twelve months, 112.8 million fact rows) lives in the local Docker stack, not in GitHub Actions, so these run there; P6-02 runs them again on the server, which is smaller than the development machine:
 
 - `prexp::check_plans()`: during phase 2 by hand, then nightly as a Coolify scheduled task
 - The p95 benchmark: `shinyloadtest` records a session of searches and view changes, `shinycannon` replays it with 5 concurrent users, and p95 comes from the report and from the fetch timing logs. Run at the end of phase 4 against the `app` service of the local stack with the full database, again on the server in P6-02, and after schema changes. Results go to `docs/benchmarks.md`

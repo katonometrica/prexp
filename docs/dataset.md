@@ -133,4 +133,4 @@ The last twelve months (202510 to 202609) hold about 218.5 million source rows.
 
 ## Checking the data without downloading it
 
-The portal's `datastore_search_sql` endpoint runs BigQuery SQL on each month (table name in backticks, for example `` `EPD_SNOMED_202609` ``); results are in `result.result.records`. Aggregate queries over a whole month return in seconds. Numeric values come back as JSON numbers, so exact sums need `CAST(SUM(x) AS STRING)`. The portal's terms discourage bulk extraction through the API: the loader downloads files.
+The portal's `datastore_search_sql` endpoint runs BigQuery SQL on each month (table name in backticks, for example `` `EPD_SNOMED_202609` ``). Besides `sql`, it needs the month's resource name as `resource_id` (`EPD_SNOMED_202609`), or it answers 400 with "resource_id is mandatory". Results are in `result.result.records`. Aggregate queries over a whole month return in seconds. Numeric values come back as JSON numbers, so exact sums need `CAST(SUM(x) AS STRING)`. The portal's terms discourage bulk extraction through the API: the loader downloads files.

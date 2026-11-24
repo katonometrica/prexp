@@ -717,3 +717,60 @@ fail_load <- function(loader, owner, ym, load_id, error) {
   })
   invisible()
 }
+
+#' Load the most recent published months that are missing
+#'
+#' Asks the portal which months are published, takes the `n` most recent, and
+#' loads each of them that has no `loaded` row in `core.load_log` with
+#' [load_month()], oldest first, so that loading a window into an empty
+#' database never drops a month on the way. Used for the first load and to
+#' rebuild a database. Stops at the first month that fails, naming it: the
+#' months before it stay loaded, and running `load_window()` again carries on.
+#'
+#' @param n How many of the most recent published months to load; at most the
+#'   window, `PREXP_WINDOW_MONTHS` (default 12), which is also the default.
+#' @param dbname Database name; defaults to `PREXP_DB_NAME`.
+#' @return A data frame with one row per month loaded: `year_month`,
+#'   `source_rows`, `loaded_rows` and `seconds`, invisibly.
+#' @export
+load_window <- function(n = window_months(), dbname = NULL) {
+  window <- window_months()
+  if (!is.numeric(n) || length(n) != 1L || is.na(n) || n != round(n) || n < 1 || n > window) {
+    stop(
+      "`n` must be a whole number of months from 1 to the window, ", window,
+      " (PREXP_WINDOW_MONTHS), not ", paste(format(n), collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  published <- sort(epd_resources()$year_month)
+  wanted <- utils::tail(published, n)
+  con <- db_connect("loader", dbname = dbname)
+  loaded <- tryCatch(loaded_months(con), finally = DBI::dbDisconnect(con))
+  missing <- setdiff(wanted, loaded)
+  done <- data.frame(
+    year_month = integer(), source_rows = numeric(), loaded_rows = numeric(), seconds = numeric()
+  )
+  if (length(missing) == 0L) {
+    message(
+      "Nothing to load: the most recent published months, ", min(wanted), " to ", max(wanted),
+      ", are all loaded."
+    )
+    return(invisible(done))
+  }
+  message("Loading ", n_months(length(missing)), ", oldest first: ", toString(missing))
+  for (ym in missing) {
+    res <- tryCatch(
+      load_month(ym, dbname = dbname),
+      error = function(e) {
+        stop(
+          "Loading ", ym, " failed, after ", nrow(done), " of ", length(missing),
+          " months: ", conditionMessage(e), " Run load_window() again to carry on.",
+          call. = FALSE
+        )
+      }
+    )
+    done[nrow(done) + 1L, ] <- list(ym, res$source_rows, res$loaded_rows, res$seconds)
+  }
+  message("Loaded ", n_months(nrow(done)), " in ", round(sum(done$seconds) / 60, 1), " min.")
+  invisible(done)
+}
