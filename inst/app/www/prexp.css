@@ -22,6 +22,17 @@
   font-size: 0.8rem;
 }
 
+/* The search's dropdown sits on the page, not in its card: no wider than the
+   screen, its long names wrapped */
+.selectize-dropdown {
+  max-width: calc(100vw - 2rem);
+}
+
+.prexp-option {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .prexp-search-message {
   min-height: 1.25rem;
   color: var(--bs-secondary-color);

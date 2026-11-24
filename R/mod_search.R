@@ -27,6 +27,9 @@ mod_search_ui <- function(id, type = c("drug", "practice")) {
         placeholder = placeholder,
         valueField = "value", labelField = "label", searchField = c("label", "meta"),
         maxOptions = 20L, loadThrottle = 50L,
+        # A clear button for a new search, which typing cannot start while a
+        # pick fills the box; and an old pick is never listed again
+        plugins = list("clear_button"), hideSelected = TRUE,
         # On the page, not inside the card, which would clip it
         dropdownParent = "body",
         # The server ranks the matches: keep its order
@@ -36,9 +39,17 @@ mod_search_ui <- function(id, type = c("drug", "practice")) {
           "function(query, callback) { prexpSearch.load(this, '", ns("query"),
           "', query, callback); }"
         )),
+        # Text too short to search clears the list and the last message
+        onType = I(paste0(
+          "function(text) { prexpSearch.typed(this, '", ns("query"), "', text); }"
+        )),
+        # Each option with its own role and a stable id, which a redraw keeps,
+        # for screen readers; a space between the name and its details
         render = I(paste0(
-          "{ option: function(item, escape) { return '<div class=\"prexp-option\">' +",
-          " '<div>' + escape(item.label) + '</div>' +",
+          "{ option: function(item, escape) { return '<div class=\"option prexp-option\"",
+          " role=\"option\" id=\"", ns("option"), "-' +",
+          " escape(item.value).replace(/[^A-Za-z0-9_-]/g, '-') + '\">' +",
+          " '<div>' + escape(item.label) + '</div> ' +",
           " '<div class=\"prexp-option-meta\">' + escape(item.meta) + '</div></div>'; } }"
         ))
       )
@@ -68,20 +79,32 @@ mod_search_server <- function(id, fetch, type = c("drug", "practice")) {
     seen <- new.env(parent = emptyenv())
     query <- shiny::debounce(shiny::reactive(input$query), 300)
 
+    # Each answer names the text it answers, as sent, so that the dropdown
+    # takes only the answer to its latest text
     shiny::observeEvent(query(), {
-      text <- trimws(query())
-      if (nchar(text) < 2L) {
+      asked <- query()
+      text <- trimws(asked)
+      # Fewer than two characters, as the search counts them: nothing to fetch
+      chars <- tryCatch(nchar(clean_search(enc2utf8(asked))), error = function(e) NA_integer_)
+      if (isTRUE(chars < 2L)) {
         message("")
-        send_search_results(session, list())
+        send_search_results(session, list(), asked)
         return()
       }
       found <- tryCatch(fetch(text), error = function(e) e)
+      # The app's log gets an error's class only: its message can quote the
+      # search text, which the log never holds (spec section 5.4)
+      if (inherits(found, "prexp_invalid_argument")) {
+        # Refused, not failed: trying the same again would not help
+        base::message("A search was refused: ", class(found)[[1L]])
+        message("Type between 2 and 100 characters.")
+        send_search_results(session, list(), asked)
+        return()
+      }
       if (inherits(found, "error")) {
-        # The app's log gets the error's class only: its message can quote
-        # the search text, which the log never holds (spec section 5.4)
         base::message("A search failed: ", class(found)[[1L]])
         message("The search failed. Please try again in a moment.")
-        send_search_results(session, list())
+        send_search_results(session, list(), asked)
         return()
       }
       options <- search_options(found, type)
@@ -89,24 +112,24 @@ mod_search_server <- function(id, fetch, type = c("drug", "practice")) {
         seen[[option$value]] <- option
       }
       message(if (length(options) == 0L) "No matches." else "")
-      send_search_results(session, options)
+      send_search_results(session, options, asked)
     })
 
     output$message <- shiny::renderText(message())
 
+    # Only an option the dropdown was offered is a pick: a value set any
+    # other way (from the browser's console) is none. A pick restored from a
+    # bookmark (P5-03) is to be put in `seen` first.
     shiny::reactive({
       value <- input$pick
-      if (is.null(value) || !nzchar(value)) {
+      if (!is.character(value) || length(value) != 1L || !nzchar(value)) {
         return(NULL)
       }
       picked <- seen[[value]]
-      parts <- strsplit(value, ":", fixed = TRUE)[[1]]
-      list(
-        type = type,
-        id = as.integer(parts[2]),
-        label = if (is.null(picked)) NA_character_ else picked$label,
-        level = parts[1]
-      )
+      if (is.null(picked)) {
+        return(NULL)
+      }
+      list(type = type, id = picked$id, label = picked$label, level = picked$level)
     })
   })
 }
@@ -119,26 +142,31 @@ search_options <- function(found, type) {
   }
   if (type == "drug") {
     level <- found$level
-    value <- paste0(level, ":", found$id)
+    id <- found$id
+    value <- paste0(level, ":", id)
     label <- ifelse(is.na(found$name), found$code, found$name)
     meta <- paste(
       ifelse(level == "chemical", "Chemical substance", "Presentation"), "\u00b7", found$code
     )
   } else {
-    value <- paste0("practice:", found$practice_id)
+    level <- rep("practice", nrow(found))
+    id <- found$practice_id
+    value <- paste0("practice:", id)
     label <- ifelse(is.na(found$practice_name), found$practice_code, found$practice_name)
     icb <- ifelse(is.na(found$icb_name), "", paste(" \u00b7", found$icb_name))
     meta <- paste0(found$practice_code, icb)
   }
   lapply(seq_along(value), function(i) {
-    list(value = value[i], label = label[i], meta = meta[i])
+    list(value = value[i], label = label[i], meta = meta[i], level = level[i], id = id[i])
   })
 }
 
 # The answer to the dropdown that asked: search.js hands the options to the
-# selectize input whose query input is named in `id`
-send_search_results <- function(session, options) {
+# selectize input whose query input is named in `id`, if `query` is still the
+# text it waits on
+send_search_results <- function(session, options, query) {
   session$sendCustomMessage(
-    "prexp-search-results", list(id = session$ns("query"), options = options)
+    "prexp-search-results",
+    list(id = session$ns("query"), query = query, options = options)
   )
 }
