@@ -361,7 +361,7 @@ Triggers: pull requests, pushes to `main`, a monthly schedule on the 1st (which 
 The full database (twelve months, 112.8 million fact rows) lives in the local Docker stack, not in GitHub Actions, so these run there; P6-02 runs them again on the server, which is smaller than the development machine:
 
 - `prexp::check_plans()`: during phase 2 by hand, then nightly as a Coolify scheduled task
-- The p95 benchmark: `shinyloadtest` records a session of searches and view changes, `shinycannon` replays it with 5 concurrent users, and p95 comes from the report and from the fetch timing logs. Run at the end of phase 4 against the `app` service of the local stack with the full database, again on the server in P6-02, and after schema changes. Results go to `docs/benchmarks.md`
+- The p95 benchmark: `shinyloadtest` records a session of searches and view changes, `shinycannon` replays it with 5 concurrent users, and p95 comes from the report and from the fetch timing logs. Run at the end of phase 4 against the `app` service of the local stack with the full database, again on the server in P6-02, and after schema changes. Results go to `docs/benchmarks.md`; P4-08's runs are in [The app under load](benchmarks.md#the-app-under-load-p4-08)
 
 A failing scheduled task notifies by email through Coolify's notifications.
 

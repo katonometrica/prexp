@@ -30,3 +30,6 @@ coverage.html
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Load test runs: shinycannon's output and the report (docs/benchmarks.md has the figures)
+/bench/run-*/
