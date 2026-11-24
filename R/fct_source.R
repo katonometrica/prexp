@@ -178,7 +178,8 @@ user_agent <- "prexp (+https://github.com/katonometrica/prexp)"
 #'
 #' The `zip_url` is a signed link that expires an hour after the call, so fetch
 #' the list again shortly before downloading; [download_month()] does that on
-#' every attempt.
+#' every attempt. Stops when the portal lists no monthly file, as it would if
+#' the files were renamed, so that no caller mistakes that for nothing new.
 #'
 #' @return A data frame ordered by month, with `year_month` (integer `YYYYMM`,
 #'   from the resource name `EPD_SNOMED_YYYYMM`), `name`, `url` (the CSV, a stable
@@ -201,7 +202,12 @@ epd_resources <- function() {
   if (!isTRUE(body$success)) {
     stop("The portal's package_show call did not succeed.", call. = FALSE)
   }
-  parse_resources(body$result$resources)
+  out <- parse_resources(body$result$resources)
+  if (nrow(out) == 0L) {
+    stop("The portal lists no monthly file named EPD_SNOMED_YYYYMM: has the dataset changed?",
+         call. = FALSE)
+  }
+  out
 }
 
 parse_resources <- function(resources) {

@@ -62,13 +62,15 @@ R's site library, and renv is never switched on inside a container.
 
 ### The full twelve months
 
-The default database settings suit a laptop. For the full window (about 23 GB of tables
-and indexes, plus a month being loaded), set `PREXP_DB_CONFIG=full` and
+The default database settings suit a laptop. For the full window (21 GB of tables and
+indexes, and about 10 GB more while a month loads), set `PREXP_DB_CONFIG=full` and
 `PREXP_DB_SHM_SIZE=8gb` in `.env`, then run `docker compose up -d --wait db`, which
 recreates the database container with `docker/db/postgresql.full.conf`; the data stays.
 That file is sized for a machine that gives Docker about 100 GB of memory and 16 CPUs,
-and `docs/benchmarks.md` records the machine it was measured on. Load a month from the
-RStudio console with `prexp::load_month(202609)`. The database keeps the
+and `docs/benchmarks.md` records the machine it was measured on. Load the window from the
+RStudio console with `prexp::load_window()`: it loads the most recent published months
+that are missing, oldest first, about three minutes a month on that machine.
+`prexp::load_month(202609)` loads or reloads one month. The database keeps the
 `PREXP_WINDOW_MONTHS` most recent months (12 by default): loading a newer month drops
 the oldest.
 

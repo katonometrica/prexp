@@ -55,7 +55,7 @@ The image needs `libarchive-tools` for `bsdtar`; it is added with the loader (P1
 
 Even the finest key is not unique: two pairs of rows on the national unidentified practice differ only in their measures. Across all 71 months the same key repeats in 62 months (1,483 pairs), always on the national unidentified practice, and in 28 months 173 pairs are identical in all 27 columns. They are separate published rows, so the source has no natural key, and the loader never deduplicates: staging has no unique key, and the aggregation sums every row.
 
-**Decision.** The fact table aggregates on load to one row per month × practice × BNF presentation, summing the measures. The app works at presentation level and never needs the SNOMED product or the quantity per item, and the table halves: about 9.5 million rows a month instead of 18.4 million, about 114 million for twelve months. `TOTAL_QUANTITY` can be summed within a presentation, whose unit is fixed. The load check compares row counts and sums against staging (spec §4).
+**Decision.** The fact table aggregates on load to one row per month × practice × BNF presentation, summing the measures. The app works at presentation level and never needs the SNOMED product or the quantity per item, and the table halves: about 9.5 million rows a month instead of 18.4 million, about 113 million for twelve months. `TOTAL_QUANTITY` can be summed within a presentation, whose unit is fixed. The load check compares row counts and sums against staging (spec §4).
 
 Within a month, practice attributes depend only on `PRACTICE_CODE`, and the BNF and chemical attributes depend only on `BNF_PRESENTATION_CODE`, so the dimensions can be built from staging. Each SNOMED code maps to one BNF presentation, but a presentation can have several SNOMED codes, so `dim_presentation` keeps no SNOMED code.
 
@@ -133,4 +133,4 @@ The last twelve months (202510 to 202609) hold about 218.5 million source rows.
 
 ## Checking the data without downloading it
 
-The portal's `datastore_search_sql` endpoint runs BigQuery SQL on each month (table name in backticks, for example `` `EPD_SNOMED_202609` ``); results are in `result.result.records`. Aggregate queries over a whole month return in seconds. Numeric values come back as JSON numbers, so exact sums need `CAST(SUM(x) AS STRING)`. The portal's terms discourage bulk extraction through the API: the loader downloads files.
+The portal's `datastore_search_sql` endpoint runs BigQuery SQL on each month (table name in backticks, for example `` `EPD_SNOMED_202609` ``). Besides `sql`, it needs the month's resource name as `resource_id` (`EPD_SNOMED_202609`), or it answers 400 with "resource_id is mandatory". Results are in `result.result.records`. Aggregate queries over a whole month return in seconds. Numeric values come back as JSON numbers, so exact sums need `CAST(SUM(x) AS STRING)`. The portal's terms discourage bulk extraction through the API: the loader downloads files.

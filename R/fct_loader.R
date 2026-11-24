@@ -717,3 +717,78 @@ fail_load <- function(loader, owner, ym, load_id, error) {
   })
   invisible()
 }
+
+#' Load the most recent published months that are missing
+#'
+#' Asks the portal which months are published, takes the `n` most recent, and
+#' loads each of them that has no `loaded` row in `core.load_log` with
+#' [load_month()], oldest first, as they were published. Used for the first
+#' load and to rebuild a database. A month that the window would drop, because
+#' it keeps newer months, is left out with a message. Stops at the first month
+#' that fails, naming it: the months before it stay loaded, and running
+#' `load_window()` again carries on.
+#'
+#' @param n How many of the most recent published months to load; at most the
+#'   window, `PREXP_WINDOW_MONTHS` (default 12), which is also the default.
+#' @param dbname Database name; defaults to `PREXP_DB_NAME`.
+#' @return A data frame with one row per month loaded: `year_month`,
+#'   `source_rows`, `loaded_rows` and `seconds`, invisibly.
+#' @export
+load_window <- function(n = window_months(), dbname = NULL) {
+  window <- window_months()
+  if (!is.numeric(n) || length(n) != 1L || is.na(n) || n != round(n) || n < 1 || n > window) {
+    stop(
+      "`n` must be a whole number of months from 1 to the window, ", window,
+      " (PREXP_WINDOW_MONTHS), not ", paste(format(n), collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  wanted <- utils::tail(sort(epd_resources()$year_month), n)
+  con <- db_connect("loader", dbname = dbname)
+  loaded <- tryCatch(loaded_months(con), finally = DBI::dbDisconnect(con))
+  missing <- setdiff(wanted, loaded)
+  # The window keeps the most recent of the months loaded and wanted. A month
+  # outside them would be dropped by a newer one, as soon as it was loaded
+  # (check_window() refuses it) or later in this run.
+  kept <- utils::head(sort(union(loaded, wanted), decreasing = TRUE), window)
+  outside <- setdiff(missing, kept)
+  if (length(outside) > 0L) {
+    message(
+      "Leaving out ", toString(outside), ": the window keeps the most recent ",
+      n_months(window), " (PREXP_WINDOW_MONTHS), from ", min(kept), " on."
+    )
+    missing <- intersect(missing, kept)
+  }
+  done <- data.frame(
+    year_month = integer(), source_rows = numeric(), loaded_rows = numeric(), seconds = numeric()
+  )
+  if (length(missing) == 0L) {
+    if (length(outside) == 0L) {
+      message("Nothing to load: ", if (length(wanted) == 1L) {
+        paste0("the most recent published month, ", wanted, ", is loaded.")
+      } else {
+        paste0(
+          "the ", length(wanted), " most recent published months, ", min(wanted), " to ",
+          max(wanted), ", are loaded."
+        )
+      })
+    }
+    return(invisible(done))
+  }
+  message("Loading ", n_months(length(missing)), ", oldest first: ", toString(missing))
+  for (ym in missing) {
+    res <- tryCatch(
+      load_month(ym, dbname = dbname),
+      error = function(e) {
+        stop(
+          "Loading ", ym, " failed, after ", nrow(done), " of ", n_months(length(missing)),
+          ": ", conditionMessage(e), " Run load_window() again to carry on.",
+          call. = FALSE
+        )
+      }
+    )
+    done[nrow(done) + 1L, ] <- list(ym, res$source_rows, res$loaded_rows, res$seconds)
+  }
+  message("Loaded ", n_months(nrow(done)), " in ", round(sum(done$seconds) / 60, 1), " min.")
+  invisible(done)
+}

@@ -20,5 +20,6 @@ Calls the portal's CKAN \code{package_show} for the English Prescribing Dataset
 \details{
 The \code{zip_url} is a signed link that expires an hour after the call, so fetch
 the list again shortly before downloading; \code{\link[=download_month]{download_month()}} does that on
-every attempt.
+every attempt. Stops when the portal lists no monthly file, as it would if
+the files were renamed, so that no caller mistakes that for nothing new.
 }
