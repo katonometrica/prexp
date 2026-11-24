@@ -1,7 +1,8 @@
 # The fetch functions (spec section 5.2; P3-02): each checks its arguments
 # before it queries, runs its query file with the values bound, and returns a
 # tibble with its documented columns and types. Their values are checked
-# against the oracle in test-fetch-values.R (P3-03).
+# against the oracle in test-fetch-values.R (P3-03). Both read the fixture
+# database, made once per test run (helper-fixture-db.R).
 
 # Each column's class, by name
 col_types <- function(df) vapply(df, function(x) class(x)[1], character(1))
@@ -12,8 +13,7 @@ chr <- "character"
 lgl <- "logical"
 
 test_that("each fetch returns a tibble with its documented columns and types", {
-  dbname <- local_loaded_db(c(202608L, 202609L))
-  con <- local_test_db("app", dbname = dbname)
+  con <- fixture_app()
   chemical <- id_of(con, "chemical", "0212000B0")
   presentation <- id_of(con, "presentation", "0212000B0AAABAB")
   practice <- id_of(con, "practice", "N81655")
@@ -82,8 +82,7 @@ test_that("each fetch returns a tibble with its documented columns and types", {
 })
 
 test_that("a series or comparison returns the measure asked for, from its level's query", {
-  dbname <- local_loaded_db(c(202608L, 202609L))
-  con <- local_test_db("app", dbname = dbname)
+  con <- fixture_app()
   months <- c(202608L, 202609L)
   # The level's own query, as the fetch must run it, with the measure picked
   ids <- list(
@@ -110,8 +109,7 @@ test_that("a series or comparison returns the measure asked for, from its level'
 })
 
 test_that("a page of top drugs starts after the row it is given", {
-  dbname <- local_loaded_db(202609L)
-  con <- local_test_db("app", dbname = dbname)
+  con <- fixture_app()
   practice <- id_of(con, "practice", "N81655")
   months <- c(202609L, 202609L)
   ten <- fetch_practice_top_drugs(con, practice, months, by = "nic", limit = 10)
@@ -127,8 +125,7 @@ test_that("a page of top drugs starts after the row it is given", {
 })
 
 test_that("an unknown id returns no rows, with the same columns", {
-  dbname <- local_loaded_db(202609L)
-  con <- local_test_db("app", dbname = dbname)
+  con <- fixture_app()
   months <- c(202609L, 202609L)
   unknown <- 2147483647L
   calls <- list(
@@ -178,9 +175,8 @@ test_that("every fetch checks its arguments before it queries", {
 })
 
 test_that("a search matches %, _ and \\ as themselves", {
-  dbname <- local_loaded_db(202609L)
-  con <- local_test_db("app", dbname = dbname)
-  owner <- local_test_db("owner", dbname = dbname)
+  con <- fixture_app()
+  owner <- local_test_db("owner", dbname = local_fixture_db())
   names <- DBI::dbGetQuery(owner, "
     SELECT chemical_name AS name FROM core.dim_chemical
     UNION ALL SELECT bnf_description FROM core.dim_presentation")$name
@@ -226,9 +222,8 @@ test_that("no SQL is built from strings in fct_queries.R", {
 })
 
 test_that("the fetch functions take the app's pool as well as a connection", {
-  dbname <- local_loaded_db(202609L)
-  pool <- local_test_pool(dbname)
-  con <- local_test_db("app", dbname = dbname)
+  pool <- local_test_pool(local_fixture_db())
+  con <- fixture_app()
   months <- c(202609L, 202609L)
   practice <- id_of(con, "practice", "N81655")
   expect_identical(fetch_window(pool), fetch_window(con))
