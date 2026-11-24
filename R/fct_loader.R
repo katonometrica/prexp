@@ -344,10 +344,14 @@ swap_month <- function(con, year_month, load_id, source_rows, loaded_rows, file_
         stop(e)
       }
     )
-    # dbWithTransaction() rolls back on an interrupt and returns NULL
-    # instead of signalling it
+    # dbWithTransaction() rolls back on an interrupt and returns NULL instead
+    # of signalling it. An interrupt while the COMMIT's reply is on its way
+    # leaves the swap committed (load_month() reports it): this load's row
+    # says whether it was rolled back.
     if (is.null(swapped)) {
-      stop("The swap of ", ym, " was interrupted and rolled back.", call. = FALSE)
+      rolled_back <- identical(load_status(con, load_id), "running")
+      stop("The swap of ", ym, " was interrupted", if (rolled_back) " and rolled back", ".",
+           call. = FALSE)
     }
     if (is.list(swapped)) {
       break
@@ -355,7 +359,7 @@ swap_month <- function(con, year_month, load_id, source_rows, loaded_rows, file_
     Sys.sleep(pause)
   }
   for (month in swapped$dropped) {
-    message("Dropped ", month, " to keep the window at ", window, " months")
+    message("Dropped ", month, " to keep the window at ", n_months(window))
   }
   not_refreshed <- function(e) {
     warning(
@@ -366,6 +370,16 @@ swap_month <- function(con, year_month, load_id, source_rows, loaded_rows, file_
   }
   tryCatch(analyze_parent(con), error = not_refreshed, interrupt = not_refreshed)
   invisible(swapped$dropped)
+}
+
+# This load's status in load_log, or NA when it cannot be read
+load_status <- function(con, load_id) {
+  tryCatch(
+    DBI::dbGetQuery(
+      con, "SELECT status FROM core.load_log WHERE load_id = $1", params = list(load_id)
+    )$status,
+    error = function(e) NA_character_
+  )
 }
 
 swap_statements <- function(con, sql, ym, log_params, window) {
@@ -503,19 +517,24 @@ window_drops <- function(loaded, ym, window) {
 }
 
 # Refuses a month that would be dropped as soon as it was loaded, before
-# anything is downloaded or recorded.
+# anything is downloaded or recorded. The months kept are the `window` most
+# recent: more can be loaded, after the window was made smaller, until the next
+# new month drops them.
 check_window <- function(con, ym, window) {
   loaded <- loaded_months(con)
   if (ym %in% window_drops(loaded, ym, window)) {
-    first <- sort(loaded, decreasing = TRUE)[window]
+    kept <- sort(loaded, decreasing = TRUE)[seq_len(window)]
     stop(
-      ym, " is older than ", first, ", the first month of the window, which is full (",
-      window, " months, PREXP_WINDOW_MONTHS): it would be dropped as soon as it was loaded.",
+      ym, " would be dropped as soon as it was loaded: the window keeps the most recent ",
+      n_months(window), " (PREXP_WINDOW_MONTHS), from ", min(kept), " on.",
       call. = FALSE
     )
   }
   invisible(loaded)
 }
+
+# "1 month", "12 months"
+n_months <- function(n) paste(n, if (n == 1L) "month" else "months")
 
 #' Load or reload one month
 #'
@@ -563,7 +582,7 @@ load_month <- function(year_month, file = NULL, sha256 = NULL, dbname = NULL) {
   loader <- db_connect("loader", dbname = dbname, check_interrupts = TRUE)
   on.exit(DBI::dbDisconnect(loader), add = TRUE)
   lock_loads(loader)
-  check_window(loader, ym, window)
+  before <- check_window(loader, ym, window)
   owner <- db_connect("owner", dbname = dbname, check_interrupts = TRUE)
   on.exit(DBI::dbDisconnect(owner), add = TRUE)
   quiet_notices(loader)
@@ -607,10 +626,18 @@ load_month <- function(year_month, file = NULL, sha256 = NULL, dbname = NULL) {
     },
     error = function(e) {
       failed(conditionMessage(e))
+      committed <- committed_load(owner, ym, load_id, before)
+      if (!is.null(committed)) {
+        stop(committed, call. = FALSE)
+      }
       stop(e)
     },
     interrupt = function(e) {
       failed("Interrupted.")
+      committed <- committed_load(owner, ym, load_id, before)
+      if (!is.null(committed)) {
+        stop(committed, call. = FALSE)
+      }
       stop("The load of ", ym, " was interrupted.", call. = FALSE)
     }
   )
@@ -626,6 +653,23 @@ load_month <- function(year_month, file = NULL, sha256 = NULL, dbname = NULL) {
     ym, result$source_rows, result$loaded_rows, seconds
   ))
   invisible(c(list(year_month = ym), result, list(seconds = seconds)))
+}
+
+# A load stopped by an error or an interrupt can still have committed its
+# swap: RPostgres turns Ctrl-C during the wait for the COMMIT's reply into an
+# error, and the interrupt may also come just after the swap. This load's row
+# says so once fail_load() has run, since a row still running then is marked
+# failed. NULL when the swap did not commit; otherwise a message saying that
+# the month is loaded, and which months left the window.
+committed_load <- function(con, ym, load_id, before) {
+  if (!identical(load_status(con, load_id), "loaded")) {
+    return(NULL)
+  }
+  dropped <- tryCatch(setdiff(before, loaded_months(con)), error = function(e) integer())
+  paste0(
+    "The load of ", ym, " was stopped after its swap committed: ", ym, " is loaded",
+    if (length(dropped) > 0L) paste0(", and ", toString(dropped), " left the window"), "."
+  )
 }
 
 # Takes the load lock for this session, or stops: two loads must never run at

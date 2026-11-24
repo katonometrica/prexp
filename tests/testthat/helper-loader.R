@@ -29,6 +29,14 @@ partitions <- function(con) {
     WHERE i.inhparent = 'core.prescribing'::regclass ORDER BY 1")$relname
 }
 
+# The months with a table or index of the fact table in core, attached or not
+fact_months <- function(con) {
+  names <- DBI::dbGetQuery(con, "
+    SELECT relname FROM pg_class
+    WHERE relnamespace = 'core'::regnamespace AND relname ~ '^prescribing_[0-9]{6}'")$relname
+  sort(unique(as.integer(substr(names, 13L, 18L))))
+}
+
 # Everything in core that a load could change, but load_log
 core_state <- function(con) {
   list(
