@@ -18,14 +18,21 @@ fixture_file <- function(ym) {
   testthat::test_path("fixtures", sprintf("EPD_SNOMED_%d.zip", ym))
 }
 
-# A fixture month's rows, every column as text
+# A fixture month's rows, every column as text. Each month is read once per
+# test run: the files never change while the tests run.
+fixture_cache <- new.env(parent = emptyenv())
+
 read_fixture <- function(ym) {
-  dir <- withr::local_tempdir()
-  csv <- utils::unzip(fixture_file(ym), exdir = dir, unzip = "internal")
-  utils::read.csv(
-    csv, colClasses = "character", na.strings = character(), check.names = FALSE,
-    encoding = "UTF-8"
-  )
+  key <- as.character(ym)
+  if (is.null(fixture_cache[[key]])) {
+    dir <- withr::local_tempdir()
+    csv <- utils::unzip(fixture_file(ym), exdir = dir, unzip = "internal")
+    fixture_cache[[key]] <- utils::read.csv(
+      csv, colClasses = "character", na.strings = character(), check.names = FALSE,
+      encoding = "UTF-8"
+    )
+  }
+  fixture_cache[[key]]
 }
 
 # Decimal places of each measure in the source
@@ -124,6 +131,73 @@ oracle_month_totals <- function(months = fixture_months()) {
   fact <- oracle_fact(months)
   out$fact_rows <- as.integer(table(fact$year_month)[as.character(out$year_month)])
   out
+}
+
+# Every fixture row of some months, every column as text, with year_month as
+# an integer
+fixture_rows <- function(months = fixture_months()) {
+  rows <- do.call(rbind, lapply(months, read_fixture))
+  rows$year_month <- as.integer(sub("-", "", rows$YEAR_MONTH, fixed = TRUE))
+  rows
+}
+
+# Text as the loader keeps it: an empty field is NULL
+empty_na <- function(x) ifelse(nzchar(x), x, NA_character_)
+
+# Each prescriber as the latest month it prescribed in describes it, with the
+# first and last months it prescribed in: the practice profile. The address
+# joins the non-empty address lines with ", ".
+oracle_practices <- function(months = fixture_months()) {
+  rows <- fixture_rows(months)
+  out <- lapply(split(rows, rows$PRACTICE_CODE), function(df) {
+    latest <- df[df$year_month == max(df$year_month), ]
+    first <- function(col) empty_na(min(latest[[col]]))
+    lines <- vapply(paste0("ADDRESS_", 1:4), first, character(1))
+    lines <- lines[!is.na(lines)]
+    data.frame(
+      practice_code = latest$PRACTICE_CODE[1],
+      practice_name = first("PRACTICE_NAME"),
+      address = if (length(lines) == 0L) NA_character_ else paste(lines, collapse = ", "),
+      postcode = first("POSTCODE"),
+      icb_code = first("ICB_CODE"),
+      icb_name = first("ICB_NAME"),
+      region_code = first("REGIONAL_OFFICE_CODE"),
+      region_name = first("REGIONAL_OFFICE_NAME"),
+      is_unidentified = any(latest$UNIDENTIFIED == "Y"),
+      first_seen = min(df$year_month),
+      last_seen = max(df$year_month)
+    )
+  })
+  do.call(rbind, unname(out))
+}
+
+# Each presentation's chemical substance, name (from the latest month) and
+# whether it is generic: characters 10 and 11 are AA, except in the appliance
+# chapters 20 to 23, where the rule does not hold and the answer is NA
+oracle_presentations <- function(months = fixture_months()) {
+  rows <- fixture_rows(months)
+  rows <- rows[order(rows$BNF_PRESENTATION_CODE, -rows$year_month), ]
+  rows <- rows[!duplicated(rows$BNF_PRESENTATION_CODE), ]
+  code <- rows$BNF_PRESENTATION_CODE
+  data.frame(
+    bnf_code = code,
+    bnf_description = empty_na(rows$BNF_PRESENTATION_NAME),
+    chemical_code = rows$BNF_CHEMICAL_SUBSTANCE_CODE,
+    chemical_name = empty_na(rows$BNF_CHEMICAL_SUBSTANCE),
+    is_generic = ifelse(substr(code, 1L, 2L) %in% c("20", "21", "22", "23"), NA,
+                        substr(code, 10L, 11L) == "AA")
+  )
+}
+
+# Each region's name in the latest month. The source codes the national
+# unidentified prescriber's region '-' and names it UNIDENTIFIED; prescribers
+# with no region code at all are counted under '-' too.
+oracle_region_names <- function(months = fixture_months()) {
+  rows <- fixture_rows(months)
+  rows <- rows[rows$year_month == max(rows$year_month) & nzchar(rows$REGIONAL_OFFICE_CODE), ]
+  names <- unique(rows[, c("REGIONAL_OFFICE_CODE", "REGIONAL_OFFICE_NAME")])
+  stopifnot(!anyDuplicated(names$REGIONAL_OFFICE_CODE))
+  structure(names$REGIONAL_OFFICE_NAME, names = names$REGIONAL_OFFICE_CODE)
 }
 
 # Measures as decimal text (items as whole-number text), for comparison with
