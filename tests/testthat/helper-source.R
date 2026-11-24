@@ -12,6 +12,24 @@ source_header <- function(names = epd_columns()$name) {
   paste(ifelse(names %in% text, paste0('"', names, '"'), names), collapse = ",")
 }
 
+# One source line for January 2099, quoted as the publisher quotes it.
+# Arguments named as source columns replace values, quotes included:
+# source_line(ITEMS = "0", PRACTICE_CODE = '"A00002"').
+source_line <- function(...) {
+  values <- c(
+    '"2099-01"', '"NORTH EAST AND YORKSHIRE"', '"Y63"', '"NHS TEST ICB"', '"QHM"',
+    '"NHS TEST ICB - 00L"', '"00L"', '"TEST PRACTICE"', '"A00001"', '"1 TEST STREET"',
+    '""', '""', '""', '"NE1 1AA"', '"0212000B0"', '"Atorvastatin"', '"0212000B0AAABAB"',
+    '"Atorvastatin 20mg tablets"', '"02: Cardiovascular System"', '"28."', "1", '"28."',
+    '"28."', '"0.98"', '"0.91234"', '"N"', '"320000000000000"'
+  )
+  names(values) <- epd_columns()$name
+  changes <- list(...)
+  stopifnot(all(names(changes) %in% names(values)))
+  values[names(changes)] <- unlist(changes)
+  paste(values, collapse = ",")
+}
+
 # Writes the lines with CRLF endings, as the source does, to a CSV in a new
 # temporary folder, and zips it with bsdtar unless zip = FALSE. Returns the path
 # of the ZIP, or of the CSV.

@@ -2,16 +2,6 @@
 # loads fixture months into a new migrated database and compares every table
 # with the oracle (helper-oracle.R).
 
-load_fixture <- function(ym, dbname, ...) {
-  load_month(ym, file = fixture_file(ym), sha256 = fixture_sha256(ym), dbname = dbname, ...)
-}
-
-partitions <- function(con) {
-  DBI::dbGetQuery(con, "
-    SELECT c.relname FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
-    WHERE i.inhparent = 'core.prescribing'::regclass ORDER BY 1")$relname
-}
-
 leftovers <- function(con) {
   DBI::dbGetQuery(con, "
     SELECT (SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -151,20 +141,6 @@ test_that("two loads never run at once", {
   expect_error(load_fixture(202609L, dbname), "Another load is running")
 })
 
-# Everything in core that a load could change, but load_log
-core_state <- function(con) {
-  list(
-    chemicals = DBI::dbGetQuery(con, "SELECT * FROM core.dim_chemical ORDER BY chemical_id"),
-    presentations = DBI::dbGetQuery(
-      con, "SELECT * FROM core.dim_presentation ORDER BY presentation_id"
-    ),
-    practices = DBI::dbGetQuery(con, "SELECT * FROM core.dim_practice ORDER BY practice_id"),
-    fact = loaded_fact(con), presentation_month = loaded_presentation_month(con),
-    chemical_month = loaded_chemical_month(con), practice_month = loaded_practice_month(con),
-    partitions = partitions(con)
-  )
-}
-
 test_that("a file for another month is refused, and changes nothing in core", {
   dbname <- local_loaded_db(202608L)
   con <- local_test_db("owner", dbname = dbname)
@@ -195,20 +171,7 @@ test_that("a new month that fails its check changes nothing in core, dimensions 
 
 test_that("blank ITEMS, a measure that is not a number, and no items are refused", {
   dbname <- local_migrated_db()
-  cols <- epd_columns()$name
-  row <- function(...) {
-    values <- c(
-      '"2099-01"', '"NORTH EAST AND YORKSHIRE"', '"Y63"', '"NHS TEST ICB"', '"QHM"',
-      '"NHS TEST ICB - 00L"', '"00L"', '"TEST PRACTICE"', '"A00001"', '"1 TEST STREET"',
-      '""', '""', '""', '"NE1 1AA"', '"0212000B0"', '"Atorvastatin"', '"0212000B0AAABAB"',
-      '"Atorvastatin 20mg tablets"', '"02: Cardiovascular System"', '"28."', "1", '"28."',
-      '"28."', '"0.98"', '"0.91234"', '"N"', '"320000000000000"'
-    )
-    names(values) <- cols
-    changes <- list(...)
-    values[names(changes)] <- unlist(changes)
-    paste(values, collapse = ",")
-  }
+  row <- source_line
   load_rows <- function(...) {
     csv <- local_source_file(c(source_header(), row(), ...), zip = FALSE)
     suppressMessages(load_month(209901L, file = csv, dbname = dbname))
