@@ -17,6 +17,14 @@ app_server <- function(con) {
         NULL
       })
     })
+    drug <- mod_search_server(
+      "drug_search", function(q) fetch_search_drugs(con, q, limit = 20L), "drug"
+    )
+    practice <- mod_search_server(
+      "practice_search", function(q) fetch_search_practices(con, q, limit = 20L), "practice"
+    )
+    output$drug_picked <- shiny::renderText(picked_text(drug()))
+    output$practice_picked <- shiny::renderText(picked_text(practice()))
     output$window <- shiny::renderText({
       if (is.null(window())) "Data window unavailable" else window_text(window())
     })
@@ -41,4 +49,12 @@ window_text <- function(window) {
 # Whether a restored tab is one of the app's
 known_tab <- function(tab) {
   is.character(tab) && length(tab) == 1L && tab %in% app_tabs
+}
+
+# What a search picked, until its view shows it
+picked_text <- function(picked) {
+  if (is.null(picked)) {
+    return("Nothing picked yet.")
+  }
+  paste0("Picked: ", picked$label, " (", picked$level, " ", picked$id, ")")
 }

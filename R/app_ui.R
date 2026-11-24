@@ -22,13 +22,14 @@ app_ui <- function(request) {
     fillable = FALSE,
     header = shiny::tags$head(
       shiny::tags$meta(name = "robots", content = "noindex, nofollow"),
-      shiny::tags$link(rel = "stylesheet", href = "prexp/prexp.css")
+      shiny::tags$link(rel = "stylesheet", href = "prexp/prexp.css"),
+      shiny::tags$script(src = "prexp/search.js")
     ),
     bslib::nav_panel(
-      "Drug", value = "drug", view_heading("Drug"), coming_view("Drug", "P4-04")
+      "Drug", value = "drug", view_heading("Drug"), search_view("drug", "P4-04")
     ),
     bslib::nav_panel(
-      "Practice", value = "practice", view_heading("Practice"), coming_view("Practice", "P4-05")
+      "Practice", value = "practice", view_heading("Practice"), search_view("practice", "P4-05")
     ),
     bslib::nav_panel(
       "Region", value = "region", view_heading("Region"), coming_view("Region", "P4-06")
@@ -58,6 +59,17 @@ main_landmark <- function(page) {
   structure(
     main,
     class = class(page), lang = attr(page, "lang"), bs_theme = attr(page, "bs_theme")
+  )
+}
+
+# A tab with its search, whose view is still to come: it shows what was picked
+search_view <- function(type, ticket) {
+  bslib::card(
+    bslib::card_body(
+      mod_search_ui(paste0(type, "_search"), type),
+      shiny::p(shiny::textOutput(paste0(type, "_picked"), inline = TRUE)),
+      shiny::p(class = "text-muted", paste0("The view comes next (", ticket, ")."))
+    )
   )
 }
 
