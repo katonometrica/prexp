@@ -19,8 +19,9 @@ A data frame with one row per month loaded: \code{year_month},
 \description{
 Asks the portal which months are published, takes the \code{n} most recent, and
 loads each of them that has no \code{loaded} row in \code{core.load_log} with
-\code{\link[=load_month]{load_month()}}, oldest first, so that loading a window into an empty
-database never drops a month on the way. Used for the first load and to
-rebuild a database. Stops at the first month that fails, naming it: the
-months before it stay loaded, and running \code{load_window()} again carries on.
+\code{\link[=load_month]{load_month()}}, oldest first, as they were published. Used for the first
+load and to rebuild a database. A month that the window would drop, because
+it keeps newer months, is left out with a message. Stops at the first month
+that fails, naming it: the months before it stay loaded, and running
+\code{load_window()} again carries on.
 }

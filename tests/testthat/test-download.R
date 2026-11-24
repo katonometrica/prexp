@@ -81,6 +81,16 @@ test_that("epd_resources() stops when package_show does not succeed", {
   expect_error(epd_resources(), "did not succeed")
 })
 
+test_that("epd_resources() stops when the portal lists no monthly file", {
+  httr2::local_mocked_responses(function(req) {
+    httr2::response(
+      200, headers = list(`Content-Type` = "application/json"),
+      body = charToRaw('{"success": true, "result": {"resources": [{"name": "EPD_2026_09"}]}}')
+    )
+  })
+  expect_error(epd_resources(), "The portal lists no monthly file named EPD_SNOMED_YYYYMM")
+})
+
 test_that("a month published twice keeps its latest resource (no database)", {
   resources <- list(
     list(name = "EPD_SNOMED_202311", url = "a", created = "2023-12-20T10:00:00.000000"),

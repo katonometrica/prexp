@@ -2,11 +2,13 @@
 
 Measurements of the loader and, from phase 2, of the app's queries (spec §6.3). Until the server arrives in P6-02, everything runs in the local Docker stack, on the machine below.
 
+**Units.** Database and disk sizes are in PostgreSQL's units, 1 GB = 1,024 MB, which is also what Windows and `df -h` show. The sizes of the portal's files, ZIP and CSV, are in millions of bytes, as the portal and the loader's messages give them.
+
 ## Machine (P1-08)
 
 | | |
 | --- | --- |
-| Host | Windows 11 Pro, 137 GB of memory, 786 GB free on the system drive (23 November 2026) |
+| Host | Windows 11 Pro, 137 GB of memory, 732 GB free on the system drive (23 November 2026) |
 | Docker | Docker Desktop with WSL 2. Its virtual machine has 16 CPUs, 100 GB of memory and 32 GB of swap (`.wslconfig`). Its virtual disk grows on the system drive, which is the real limit on space |
 | PostgreSQL | 18.7 (`postgres:18.7-trixie`) in the Compose stack |
 | R | 4.6.1, in the `rstudio` container, which runs the loads |
@@ -38,9 +40,9 @@ The real September 2026 month (`EPD_SNOMED_202609`), loaded on 23 November 2026 
 | Step | Full settings (s) | Laptop settings (s) |
 | --- | ---: | ---: |
 | Find the month on the portal | 0.3 | |
-| Download (666.5 MB ZIP) | 223.1 | |
+| Download (a ZIP of 666.5 million bytes) | 223.1 | |
 | Check the header | 0.0 | 0.0 |
-| Stage: stream 7.7 GB of CSV into `raw.epd_staging` | 30.4 | 30.8 |
+| Stage: stream 7.7 billion bytes of CSV into `raw.epd_staging` | 30.4 | 30.8 |
 | Check the staged month | 1.7 | 1.5 |
 | Dimensions, in temporary tables | 7.5 | 10.8 |
 | Build: aggregate to practice × presentation | 30.0 | 29.9 |
@@ -79,18 +81,18 @@ The window holds about 218.5 million source rows, 18.2 million a month on averag
 
 | | Size |
 | --- | ---: |
-| Twelve months of fact table and indexes (12 × 1.77 GB) | 21.3 GB |
+| Twelve months of fact table and indexes (12 × 1,772 MB) | 20.8 GB |
 | Their rollup rows and the dimensions | 0.2 GB |
-| While a month loads: staging, the month being built beside the live one, the write-ahead log and the ZIP | 11.1 GB |
-| **Peak** | **about 33 GB** |
+| While a month loads: staging, the month being built beside the live one, the write-ahead log and the ZIP | 10.8 GB |
+| **Peak** | **about 32 GB** |
 
-Docker's virtual disk had 835 GB free, and the host drive 786 GB, which is the real limit: the peak is about 4% of it, far under the 70% at which P2-02 would wait for more disk.
+Docker's virtual disk had 835 GB free, and the host drive 732 GB, which is the real limit: the peak is about 4% of it, far under the 70% at which P2-02 would wait for more disk.
 
 ## Twelve months (P2-02)
 
-The window's other eleven months, 202510 to 202608, were loaded on 24 November 2026 into the database that held 202609. The command was `Rscript -e "prexp::load_window(12)"` in the `rstudio` container, with the full settings. `load_window()` loads the missing months oldest first, so nothing was dropped on the way. It took 32.1 minutes, 175 s a month: 48 s to download each ZIP and 127 s to load it.
+The window's other eleven months, 202510 to 202608, were loaded on 24 November 2026 into the database that held 202609. The command was `Rscript -e "prexp::load_window(12)"` in the `rstudio` container, with the full settings. `load_window()` loads the missing months oldest first, as they were published, and none was dropped: the window had room for all eleven. It took 32.1 minutes, 175 s a month: 48 s to download each ZIP and 127 s to load it.
 
-| Month | ZIP (MB) | Source rows | Fact rows | Download | Stage | Dimensions | Aggregate | Indexes | Rollups | Check | Swap | Total |
+| Month | ZIP (million bytes) | Source rows | Fact rows | Download | Stage | Dimensions | Aggregate | Indexes | Rollups | Check | Swap | Total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 202510 | 672.1 | 18,453,220 | 9,495,962 | 50.8 | 34.0 | 8.2 | 31.7 | 6.6 | 21.7 | 15.3 | 1.1 | 173 |
 | 202511 | 651.8 | 17,896,076 | 9,278,254 | 48.3 | 32.3 | 8.2 | 30.9 | 6.9 | 20.4 | 14.5 | 1.0 | 166 |
@@ -105,11 +107,11 @@ The window's other eleven months, 202510 to 202608, were loaded on 24 November 2
 | 202608 | 644.2 | 17,754,211 | 9,203,993 | 48.3 | 30.4 | 36.2 | 30.0 | 6.5 | 21.5 | 15.3 | 1.1 | 192 |
 | **Mean** | 660.8 | 18,191,727 | 9,391,822 | 48.4 | 33.4 | 10.6 | 32.3 | 7.3 | 22.5 | 15.7 | 1.1 | 175 |
 
-Steps are in seconds. Finding the month, checking the header, checking the staged month, `VACUUM` and cleaning up each take under 2 s; the table leaves them out, but the total includes them. While 202606 and 202608 loaded, tests were running against the same PostgreSQL server, which slowed them by 20 to 30 s.
+Steps are in seconds. Finding the month, checking the header, checking the staged month, `VACUUM` and cleaning up each take about 2 s or less; the table leaves them out, but the total includes them. Tests ran against the same PostgreSQL server throughout the load; they visibly slowed 202606 and 202608, by 20 to 30 s. Without those two, a month took 171 s, 122 s without the download.
 
 ### Every month matches the portal
 
-`load_log` shows the twelve months as `loaded`, and `app.v_window` shows 202510 to 202609, 12 months. For each month, the source rows, items, NIC and actual cost, summed from the fact table, equal the portal's own figures exactly. Those come from one aggregate query per month through the portal's SQL API (see [dataset.md](dataset.md#checking-the-data-without-downloading-it)):
+`load_log` shows the twelve months as `loaded`, and `app.v_window` shows 202510 to 202609, 12 months. For each month, the rows staged (`load_log`), and the items, NIC and actual cost summed from the fact table, equal the portal's own figures exactly. Those come from one aggregate query per month through the portal's SQL API (see [dataset.md](dataset.md#checking-the-data-without-downloading-it)):
 
 | Month | Source rows | Fact rows | Items | NIC (£) | Actual cost (£) |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -129,8 +131,6 @@ Steps are in seconds. Finding the month, checking the header, checking the stage
 
 ### Sizes
 
-PostgreSQL's units: 1 GB is 1,024 MB.
-
 | Object | Size | Per fact row |
 | --- | ---: | ---: |
 | The twelve partitions' tables | 7,626 MB | 71 bytes |
@@ -147,7 +147,7 @@ PostgreSQL's units: 1 GB is 1,024 MB.
 The fact table is 0.5% under twelve times September's 1,772 MB.
 
 **Disk use during the load.**
-- **The database** peaked at 28,293 MB while 202608 loaded. That is eleven months, plus staging at its 7,226 MB peak and the month being built.
+- **The database** peaked at 28,293 MB while 202608 loaded. That is eleven months (19,426 MB), the month being built (1,725 MB) and 202608's staged rows (6,895 MB). Staging itself peaked at 7,226 MB, while 202510 and 202512 loaded.
 - **The write-ahead log** peaked at 1,664 MB.
-- **Docker's virtual machine** grew by 29 GB. Its virtual disk file on the host did not grow: it stayed at 264.35 GB, because the virtual machine reused space the file already held.
-- **The host drive** never had less than 777 GB free.
+- **Inside Docker's virtual machine**, disk use rose by up to 27.3 GB, and 19.3 GB of it remained after the load. Its virtual disk file on the host did not grow: it stayed at 246.2 GB, because the virtual machine reused space the file already held.
+- **The host drive** never had less than 724 GB free.
