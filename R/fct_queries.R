@@ -74,9 +74,12 @@ fetch_window <- function(con) {
 #'   control characters are removed. `%`, `_` and `\` match themselves.
 #' @param limit The most matches to return, from 1 to 100.
 #' @return A tibble, best match first: `level` (`"chemical"` or
-#'   `"presentation"`), `id` (integer, the chemical's or presentation's id),
-#'   `code` (BNF code), `name`, `chemical_id` (integer), `chemical_name` and
-#'   `is_generic` (logical, `NA` for a chemical).
+#'   `"presentation"`), `id` (integer, the chemical's or presentation's id:
+#'   chemicals and presentations number their ids apart, so a match is known
+#'   by `level` and `id` together), `code` (BNF code), `name`, `chemical_id`
+#'   (integer), `chemical_name` and `is_generic` (logical: `NA` for a
+#'   chemical, and for an appliance, BNF chapters 20 to 23, which is neither
+#'   brand nor generic).
 #' @family fetch functions
 #' @examples
 #' \dontrun{
@@ -123,11 +126,15 @@ fetch_search_practices <- function(con, q, limit = 20L) {
 #' @param months The first and last month, as YYYYMM: `c(first, last)`.
 #' @param measure `"items"`, `"adq_usage"`, `"nic"`, `"actual_cost"`, or, for
 #'   a presentation only, `"total_quantity"`: a chemical's presentations count
-#'   quantity in different units.
+#'   quantity in different units. An ADQ, the assumed average daily dose, is
+#'   defined for some presentations only: `"adq_usage"` is `NA` for a
+#'   presentation without one, and for a chemical it sums only the
+#'   presentations that have one.
 #' @return A tibble with one row per month that has prescribing, in order:
 #'   `year_month` (integer), `measure` (the measure asked for), `value`
 #'   (double, the national total) and `practices` (integer, how many practices
-#'   prescribed it). No rows for an unknown id.
+#'   prescribed it). A month without prescribing has no row, rather than a
+#'   row of zeros, and an unknown id has none at all.
 #' @family fetch functions
 #' @examples
 #' \dontrun{
@@ -158,10 +165,10 @@ fetch_drug_series <- function(con, level, id, months, measure) {
 #' @inheritParams fetch_drug_series
 #' @param chemical_id The chemical substance's id.
 #' @return A tibble, most items first: `presentation_id` (integer),
-#'   `bnf_code`, `bnf_description`, `is_generic` (logical), and the totals
-#'   `items`, `total_quantity`, `adq_usage`, `nic` and `actual_cost`
-#'   (double). `adq_usage` is `NA` for a presentation with no defined daily
-#'   quantity. No rows for an unknown id.
+#'   `bnf_code`, `bnf_description`, `is_generic` (logical, `NA` for an
+#'   appliance), and the totals `items`, `total_quantity`, `adq_usage`, `nic`
+#'   and `actual_cost` (double). `adq_usage` is `NA` for a presentation with
+#'   no ADQ. No rows for an unknown id.
 #' @family fetch functions
 #' @examples
 #' \dontrun{
@@ -231,14 +238,17 @@ fetch_practice_series <- function(con, practice_id, months) {
 #' @inheritParams fetch_practice_series
 #' @param by The ranking measure: `"items"`, `"nic"` or `"actual_cost"`.
 #' @param limit The page size, from 1 to 1,000.
-#' @param after `NULL` for the first page; then the `presentation_id` of the
-#'   last row of the previous page.
+#' @param after `NULL` (or `NA`) for the first page; then the
+#'   `presentation_id` of the last row of the previous page. A page that comes
+#'   back short or empty is the last: there is no row to pass on from an empty
+#'   one, and a zero-length `after` is refused. An `after` that is not in this
+#'   ranking, for example one kept from other months, gives no rows.
 #' @return A tibble, highest total first, ties by `presentation_id`
 #'   descending: `presentation_id` (integer), `bnf_code`, `bnf_description`,
-#'   `chemical_id` (integer), `chemical_name`, `is_generic` (logical), the
-#'   totals `items`, `adq_usage`, `nic` and `actual_cost` (double), and
-#'   `total` (double), the ranking measure's total. No rows for an unknown id
-#'   or after the last page.
+#'   `chemical_id` (integer), `chemical_name`, `is_generic` (logical, `NA` for
+#'   an appliance), the totals `items`, `adq_usage` (`NA` without an ADQ),
+#'   `nic` and `actual_cost` (double), and `total` (double), the ranking
+#'   measure's total. No rows for an unknown id or after the last page.
 #' @family fetch functions
 #' @examples
 #' \dontrun{
@@ -256,7 +266,7 @@ fetch_practice_top_drugs <- function(con, practice_id, months, by = "items", lim
   months <- validate_months(months)
   by <- validate_choice(by, c("items", "nic", "actual_cost"), "by")
   limit <- validate_limit(limit, max = 1000L)
-  first_page <- is.null(after) || (length(after) == 1L && is.na(after))
+  first_page <- is.null(after) || (is.atomic(after) && length(after) == 1L && is.na(after))
   after <- if (first_page) NA_integer_ else validate_id(after, "after")
   run_fetch(
     con, "practice_top_drugs", list(practice_id, months[1], months[2], by, limit, after)
@@ -270,9 +280,10 @@ fetch_practice_top_drugs <- function(con, practice_id, months, by = "items", lim
 #'   variation model (v2).
 #' @return A tibble with one row per region that prescribed the drug, in order
 #'   of `region_code`: `region_code`, `region_name`, `measure` (the measure
-#'   asked for) and `value` (double, the total over the months). Region `"-"`
-#'   holds prescribers with no region, such as the national unidentified
-#'   prescriber; its `region_name` is `NA`. No rows for an unknown id.
+#'   asked for) and `value` (double, the total over the months). A region that
+#'   did not prescribe it has no row. Region `"-"` holds prescribers without an
+#'   NHS region, such as the national unidentified prescriber, whose source
+#'   rows name it `"UNIDENTIFIED"`. No rows for an unknown id.
 #' @family fetch functions
 #' @examples
 #' \dontrun{

@@ -16,10 +16,10 @@ app views.}
 }
 \value{
 A tibble, most items first: \code{presentation_id} (integer),
-\code{bnf_code}, \code{bnf_description}, \code{is_generic} (logical), and the totals
-\code{items}, \code{total_quantity}, \code{adq_usage}, \code{nic} and \code{actual_cost}
-(double). \code{adq_usage} is \code{NA} for a presentation with no defined daily
-quantity. No rows for an unknown id.
+\code{bnf_code}, \code{bnf_description}, \code{is_generic} (logical, \code{NA} for an
+appliance), and the totals \code{items}, \code{total_quantity}, \code{adq_usage}, \code{nic}
+and \code{actual_cost} (double). \code{adq_usage} is \code{NA} for a presentation with
+no ADQ. No rows for an unknown id.
 }
 \description{
 National totals over the months of each presentation of one chemical

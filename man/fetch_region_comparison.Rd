@@ -18,7 +18,10 @@ app views.}
 
 \item{measure}{\code{"items"}, \code{"adq_usage"}, \code{"nic"}, \code{"actual_cost"}, or, for
 a presentation only, \code{"total_quantity"}: a chemical's presentations count
-quantity in different units.}
+quantity in different units. An ADQ, the assumed average daily dose, is
+defined for some presentations only: \code{"adq_usage"} is \code{NA} for a
+presentation without one, and for a chemical it sums only the
+presentations that have one.}
 
 \item{per}{\code{"total"}. Rates per 1,000 patients come with the practice
 variation model (v2).}
@@ -26,9 +29,10 @@ variation model (v2).}
 \value{
 A tibble with one row per region that prescribed the drug, in order
 of \code{region_code}: \code{region_code}, \code{region_name}, \code{measure} (the measure
-asked for) and \code{value} (double, the total over the months). Region \code{"-"}
-holds prescribers with no region, such as the national unidentified
-prescriber; its \code{region_name} is \code{NA}. No rows for an unknown id.
+asked for) and \code{value} (double, the total over the months). A region that
+did not prescribe it has no row. Region \code{"-"} holds prescribers without an
+NHS region, such as the national unidentified prescriber, whose source
+rows name it \code{"UNIDENTIFIED"}. No rows for an unknown id.
 }
 \description{
 A drug's totals by NHS region

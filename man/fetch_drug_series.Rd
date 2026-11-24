@@ -18,13 +18,17 @@ app views.}
 
 \item{measure}{\code{"items"}, \code{"adq_usage"}, \code{"nic"}, \code{"actual_cost"}, or, for
 a presentation only, \code{"total_quantity"}: a chemical's presentations count
-quantity in different units.}
+quantity in different units. An ADQ, the assumed average daily dose, is
+defined for some presentations only: \code{"adq_usage"} is \code{NA} for a
+presentation without one, and for a chemical it sums only the
+presentations that have one.}
 }
 \value{
 A tibble with one row per month that has prescribing, in order:
 \code{year_month} (integer), \code{measure} (the measure asked for), \code{value}
 (double, the national total) and \code{practices} (integer, how many practices
-prescribed it). No rows for an unknown id.
+prescribed it). A month without prescribing has no row, rather than a
+row of zeros, and an unknown id has none at all.
 }
 \description{
 A drug's national monthly totals

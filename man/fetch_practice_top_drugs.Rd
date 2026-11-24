@@ -25,16 +25,19 @@ app views.}
 
 \item{limit}{The page size, from 1 to 1,000.}
 
-\item{after}{\code{NULL} for the first page; then the \code{presentation_id} of the
-last row of the previous page.}
+\item{after}{\code{NULL} (or \code{NA}) for the first page; then the
+\code{presentation_id} of the last row of the previous page. A page that comes
+back short or empty is the last: there is no row to pass on from an empty
+one, and a zero-length \code{after} is refused. An \code{after} that is not in this
+ranking, for example one kept from other months, gives no rows.}
 }
 \value{
 A tibble, highest total first, ties by \code{presentation_id}
 descending: \code{presentation_id} (integer), \code{bnf_code}, \code{bnf_description},
-\code{chemical_id} (integer), \code{chemical_name}, \code{is_generic} (logical), the
-totals \code{items}, \code{adq_usage}, \code{nic} and \code{actual_cost} (double), and
-\code{total} (double), the ranking measure's total. No rows for an unknown id
-or after the last page.
+\code{chemical_id} (integer), \code{chemical_name}, \code{is_generic} (logical, \code{NA} for
+an appliance), the totals \code{items}, \code{adq_usage} (\code{NA} without an ADQ),
+\code{nic} and \code{actual_cost} (double), and \code{total} (double), the ranking
+measure's total. No rows for an unknown id or after the last page.
 }
 \description{
 The practice's presentations over the months, ranked by a measure. Pages

@@ -25,6 +25,7 @@ Imports:
     tools,
     utils
 Suggests:
+    bit64,
     covr,
     dplyr,
     DT,

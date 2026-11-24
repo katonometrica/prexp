@@ -7,6 +7,8 @@
 -- the number of matches, a positive whole number (NULL would mean no limit).
 -- In the patterns, q's \, % and _ are escaped, \ first, so that every
 -- character matches itself: '1%' finds "1% cream", not every name with a 1.
+-- The backslashes are written in E'' strings, which read the same whatever
+-- standard_conforming_strings is.
 --
 -- A name matches when it contains q, or, for two characters, when it starts
 -- with q or has a word, after a space, that does: nearly every name contains a
@@ -26,7 +28,7 @@
 -- dimensions.
 WITH search AS NOT MATERIALIZED (
   SELECT $1::text AS q,
-         replace(replace(replace($1::text, '\', '\\'), '%', '\%'), '_', '\_') AS pattern
+         replace(replace(replace($1::text, E'\\', E'\\\\'), '%', E'\\%'), '_', E'\\_') AS pattern
 )
 SELECT level, id, code, name, chemical_id, chemical_name, is_generic
 FROM (

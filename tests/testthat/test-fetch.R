@@ -81,19 +81,49 @@ test_that("each fetch returns a tibble with its documented columns and types", {
   )
 })
 
-test_that("a series or comparison returns the measure asked for, as value", {
+test_that("a series or comparison returns the measure asked for, from its level's query", {
+  dbname <- local_loaded_db(c(202608L, 202609L))
+  con <- local_test_db("app", dbname = dbname)
+  months <- c(202608L, 202609L)
+  # The level's own query, as the fetch must run it, with the measure picked
+  ids <- list(
+    chemical = id_of(con, "chemical", "0212000B0"),
+    presentation = id_of(con, "presentation", "0212000B0AAABAB")
+  )
+  measures <- c("items", "total_quantity", "adq_usage", "nic", "actual_cost")
+  for (level in names(ids)) {
+    params <- list(ids[[level]], months[1], months[2])
+    series <- DBI::dbGetQuery(con, query_sql(paste0("drug_series_", level)), params = params)
+    regions <- DBI::dbGetQuery(
+      con, query_sql(paste0("region_comparison_", level)), params = params
+    )
+    for (measure in intersect(measures, names(series))) {
+      label <- paste(level, measure)
+      res <- fetch_drug_series(con, level, ids[[level]], months, measure)
+      expect_identical(res$measure, rep(measure, nrow(series)), label = label)
+      expect_identical(res$value, as.numeric(series[[measure]]), label = label)
+      res <- fetch_region_comparison(con, level, ids[[level]], months, measure)
+      expect_identical(res$region_code, regions$region_code, label = label)
+      expect_identical(res$value, as.numeric(regions[[measure]]), label = label)
+    }
+  }
+})
+
+test_that("a page of top drugs starts after the row it is given", {
   dbname <- local_loaded_db(202609L)
   con <- local_test_db("app", dbname = dbname)
-  presentation <- id_of(con, "presentation", "0212000B0AAABAB")
+  practice <- id_of(con, "practice", "N81655")
   months <- c(202609L, 202609L)
-  raw <- DBI::dbGetQuery(
-    con, query_sql("drug_series_presentation"), params = list(presentation, 202609L, 202609L)
+  ten <- fetch_practice_top_drugs(con, practice, months, by = "nic", limit = 10)
+  first <- fetch_practice_top_drugs(con, practice, months, by = "nic", limit = 5)
+  second <- fetch_practice_top_drugs(
+    con, practice, months, by = "nic", limit = 5, after = first$presentation_id[5]
   )
-  for (measure in c("items", "total_quantity", "adq_usage", "nic", "actual_cost")) {
-    res <- fetch_drug_series(con, "presentation", presentation, months, measure)
-    expect_identical(res$measure, measure)
-    expect_identical(res$value, as.numeric(raw[[measure]]), label = measure)
-  }
+  expect_identical(nrow(ten), 10L)
+  expect_identical(rbind(first, second), ten)
+  expect_identical(
+    fetch_practice_top_drugs(con, practice, months, by = "nic", limit = 5, after = NA), first
+  )
 })
 
 test_that("an unknown id returns no rows, with the same columns", {
@@ -140,6 +170,9 @@ test_that("every fetch checks its arguments before it queries", {
   refused(fetch_practice_top_drugs(con, 1, months, by = "total_quantity"))
   refused(fetch_practice_top_drugs(con, 1, months, limit = 1001))
   refused(fetch_practice_top_drugs(con, 1, months, after = -5))
+  refused(fetch_practice_top_drugs(con, 1, months, after = integer()))
+  refused(fetch_practice_top_drugs(con, 1, months, after = data.frame(x = 1:2)))
+  refused(fetch_practice_profile(con, tibble::tibble(practice_id = 1:2)))
   refused(fetch_region_comparison(con, "chemical", 1, months, "total_quantity"))
   refused(fetch_region_comparison(con, "chemical", 1, months, "items", per = "per_1000"))
 })
@@ -180,7 +213,16 @@ test_that("no SQL is built from strings in fct_queries.R", {
   skip_if_not(file.exists(path), "The package sources are not here")
   code <- readLines(path, warn = FALSE)
   code <- code[!grepl("^\\s*#", code)]
-  expect_false(any(grepl("\\b(paste0?|sprintf|glue|str_c|str_glue)\\s*\\(", code)))
+  # No function that builds or edits text, and SQL reaches the database only
+  # as a query file's text, in run_fetch()
+  builders <- paste0(
+    "\\b(paste0?|sprintf|format|formatC|gsub|sub|regmatches|glue[a-z_]*|str_[a-z_]+|",
+    "stri_[a-z_]+|sqlInterpolate|SQL|DBI::SQL|toupper|tolower|trimws|strtoi|chartr)\\s*\\("
+  )
+  expect_false(any(grepl(builders, code)), label = grep(builders, code, value = TRUE)[1])
+  calls <- grep("DBI::db[A-Za-z]+\\(", code, value = TRUE)
+  expect_true(all(grepl("DBI::dbGetQuery\\(con, sql", calls)), label = calls[1])
+  expect_identical(sum(grepl("sql <- query_sql\\(query\\)", code)), 1L)
 })
 
 test_that("the fetch functions take the app's pool as well as a connection", {

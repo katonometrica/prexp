@@ -5,7 +5,8 @@
 -- $1 q, the search text as typed, two characters or more; $2 limit, the
 -- number of matches, a positive whole number (NULL would mean no limit). In
 -- the patterns, q's \, % and _ are escaped, \ first, so that every character
--- matches itself.
+-- matches itself. The backslashes are written in E'' strings, which read the
+-- same whatever standard_conforming_strings is.
 --
 -- A name matches as in the drug search: it contains q, or, for two
 -- characters, starts with q or has a word, after a space, that does. A code
@@ -18,7 +19,7 @@
 -- (migration 008) for LIKE. A generic plan scans the practices.
 WITH search AS NOT MATERIALIZED (
   SELECT $1::text AS q,
-         replace(replace(replace($1::text, '\', '\\'), '%', '\%'), '_', '\_') AS pattern
+         replace(replace(replace($1::text, E'\\', E'\\\\'), '%', E'\\%'), '_', E'\\_') AS pattern
 )
 SELECT p.practice_id, p.practice_code, p.practice_name, p.postcode, p.icb_name,
        p.region_name

@@ -17,9 +17,12 @@ control characters are removed. \verb{\%}, \verb{_} and \verb{\\} match themselv
 }
 \value{
 A tibble, best match first: \code{level} (\code{"chemical"} or
-\code{"presentation"}), \code{id} (integer, the chemical's or presentation's id),
-\code{code} (BNF code), \code{name}, \code{chemical_id} (integer), \code{chemical_name} and
-\code{is_generic} (logical, \code{NA} for a chemical).
+\code{"presentation"}), \code{id} (integer, the chemical's or presentation's id:
+chemicals and presentations number their ids apart, so a match is known
+by \code{level} and \code{id} together), \code{code} (BNF code), \code{name}, \code{chemical_id}
+(integer), \code{chemical_name} and \code{is_generic} (logical: \code{NA} for a
+chemical, and for an appliance, BNF chapters 20 to 23, which is neither
+brand nor generic).
 }
 \description{
 Matches names that contain \code{q}, ignoring case, and BNF codes that start

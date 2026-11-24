@@ -11,15 +11,40 @@ invalid_argument <- function(...) {
   ))
 }
 
-# A value for an error message, as R would print it, cut short
-describe <- function(x) {
-  text <- if (is.null(x)) "NULL" else deparse1(x, collapse = " ")
+# A value for an error message, as R would print it, cut short. A classed
+# value (a factor, a date, a 64-bit integer) is shown as it prints, not as
+# what it is stored as.
+value_text <- function(x) {
+  if (is.null(x)) {
+    return("NULL")
+  }
+  x <- utils::head(x, 5L)
+  if (is.atomic(x) && !is.null(oldClass(x))) {
+    x <- format(x)
+  }
+  text <- deparse1(x, collapse = " ")
   if (nchar(text) > 40L) paste0(substr(text, 1L, 37L), "...") else text
+}
+
+# What a value is, without what it holds: for search text, which stays out of
+# messages and so out of logs
+value_shape <- function(x) {
+  if (is.null(x)) {
+    return("NULL")
+  }
+  if (is.atomic(x) && length(x) == 1L && is.na(x)) {
+    return("NA")
+  }
+  kind <- if (is.atomic(x) && is.null(oldClass(x))) paste(typeof(x), "vector") else class(x)[1]
+  paste0("a ", kind, " of length ", length(x))
 }
 
 # Whether each value is a month as YYYYMM: six digits, a year from 2000 and a
 # month from 01 to 12. Numbers must be whole; text must be the digits alone.
 is_year_month <- function(x) {
+  if (inherits(x, "integer64")) {
+    x <- as.numeric(x)
+  }
   if (!is.numeric(x) && !is.character(x)) {
     return(rep(FALSE, length(x)))
   }
@@ -37,59 +62,63 @@ check_year_month <- function(year_month, arg = "year_month") {
   if (length(year_month) != 1L || !is_year_month(year_month)) {
     invalid_argument(
       "`", arg, "` must be one month as YYYYMM, for example 202609, not ",
-      describe(year_month), "."
+      value_text(year_month), "."
     )
   }
-  as.integer(year_month)
+  as.integer(as.numeric(year_month))
 }
 
 # A range of months, c(first, last), as integers YYYYMM, the first not after
 # the last. The queries would read a reversed range as no prescribing.
 validate_months <- function(months, arg = "months") {
-  ok <- length(months) == 2L && all(is_year_month(months)) &&
-    as.integer(months[[1L]]) <= as.integer(months[[2L]])
-  if (!ok) {
+  ok <- length(months) == 2L && all(is_year_month(months))
+  checked <- if (ok) unname(as.integer(as.numeric(months))) else NULL
+  if (!ok || checked[1] > checked[2]) {
     invalid_argument(
       "`", arg, "` must be two months as YYYYMM, the first not after the last, ",
-      "for example c(202510, 202609), not ", describe(months), "."
+      "for example c(202510, 202609), not ", value_text(months), "."
     )
   }
-  unname(as.integer(months))
+  checked
 }
 
 # One id of a chemical, presentation or practice: a whole number in the range
 # of the database's integer ids, from a number or a string of digits
 validate_id <- function(id, arg = "id") {
   value <- NA_real_
-  if (length(id) == 1L && !is.na(id)) {
+  if (length(id) == 1L && (is.numeric(id) || is.character(id)) && !is.na(id)) {
     if (is.numeric(id)) {
       value <- as.numeric(id)
-    } else if (is.character(id) && grepl("^[0-9]{1,10}$", id)) {
+    } else if (grepl("^[0-9]{1,10}$", id)) {
       value <- as.numeric(id)
     }
   }
   if (is.na(value) || value != trunc(value) || value < 1 || value > .Machine$integer.max) {
     invalid_argument(
       "`", arg, "` must be one id, a whole number from 1 to 2147483647, not ",
-      describe(id), "."
+      value_text(id), "."
     )
   }
   as.integer(value)
 }
 
-# Search text: spaces, tabs and line breaks become single spaces, other
-# control and format characters (such as a zero-width space) are removed, and
-# the ends are trimmed; then it must be 2 to 100 characters. The message never
-# repeats the text, which stays out of logs.
+# Search text: spaces, tabs, line breaks and other separators become single
+# spaces, other control and format characters (such as a zero-width space) are
+# removed, and the ends are trimmed; then it must be 2 to 100 characters. Text
+# over 1,000 bytes is refused before any of that. No message repeats the text,
+# which stays out of logs.
 validate_search <- function(q, arg = "q") {
   if (!is.character(q) || length(q) != 1L || is.na(q)) {
-    invalid_argument("`", arg, "` must be one string of search text, not ", describe(q), ".")
+    invalid_argument("`", arg, "` must be one string of search text, not ", value_shape(q), ".")
+  }
+  if (nchar(q, type = "bytes") > 1000L) {
+    invalid_argument("`", arg, "` must be 2 to 100 characters; it is over 1,000 bytes long.")
   }
   q <- enc2utf8(q)
   if (!validUTF8(q)) {
     invalid_argument("`", arg, "` must be text in UTF-8.")
   }
-  q <- gsub("[\\s\\p{Zs}]", " ", q, perl = TRUE)
+  q <- gsub("[\\s\\p{Z}\\x{85}]", " ", q, perl = TRUE)
   q <- gsub("[\\p{Cc}\\p{Cf}]", "", q, perl = TRUE)
   q <- trimws(gsub(" {2,}", " ", q))
   n <- nchar(q)
@@ -107,7 +136,7 @@ validate_choice <- function(x, choices, arg) {
   if (!is.character(x) || length(x) != 1L || is.na(x) || !x %in% choices) {
     invalid_argument(
       "`", arg, "` must be ", if (length(choices) > 1L) "one of ",
-      paste0("\"", choices, "\"", collapse = ", "), ", not ", describe(x), "."
+      paste0("\"", choices, "\"", collapse = ", "), ", not ", value_text(x), "."
     )
   }
   x
@@ -118,7 +147,7 @@ validate_limit <- function(limit, max, arg = "limit") {
   value <- if (is.numeric(limit) && length(limit) == 1L && !is.na(limit)) limit else NA
   if (is.na(value) || value != trunc(value) || value < 1 || value > max) {
     invalid_argument(
-      "`", arg, "` must be a whole number from 1 to ", max, ", not ", describe(limit), "."
+      "`", arg, "` must be a whole number from 1 to ", max, ", not ", value_text(limit), "."
     )
   }
   as.integer(value)
