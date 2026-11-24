@@ -72,7 +72,8 @@ RStudio console with `prexp::load_window()`: it loads the most recent published 
 that are missing, oldest first, about three minutes a month on that machine.
 `prexp::load_month(202609)` loads or reloads one month. The database keeps the
 `PREXP_WINDOW_MONTHS` most recent months (12 by default): loading a newer month drops
-the oldest.
+the oldest. `prexp::check_plans()` then checks every app query's plan and time against
+the window, and stops with an error if one fails; `docs/benchmarks.md` has the results.
 
 ### Stop and reset
 

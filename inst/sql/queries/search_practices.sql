@@ -8,9 +8,10 @@
 -- refuses empty text, which would match every name.
 --
 -- A code typed in full ranks first, then names by trigram similarity to q; a
--- practice without a name ranks last. The name match alone could use the
--- trigram index on the name, but OR'ed with the code prefix, which no index
--- serves until migration 008 (P2-05), each search scans the practices.
+-- practice without a name ranks last. For three characters or more, each side
+-- of the match has its index: the trigram index on the name for ILIKE, the
+-- code prefix index (migration 008) for LIKE. Shorter text scans the
+-- practices, since trigrams need three characters.
 SELECT practice_id, practice_code, practice_name, postcode, icb_name, region_name
 FROM app.v_practice
 WHERE (practice_name ILIKE '%' || $1 || '%' OR practice_code LIKE upper($1) || '%')

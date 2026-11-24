@@ -31,7 +31,40 @@ Measurements of the loader and, from phase 2, of the app's queries (spec §6.3).
 | `/dev/shm` | 1 GB | 8 GB | Parallel queries share memory through it |
 | `jit` | off | off | Compilation costs more than it saves on short queries |
 
-Phase 2 tunes these against twelve loaded months (P2-05).
+### Tuned against the twelve months (P2-05)
+
+On the full window, `check_plans()` found nothing to fix. No sequential scan of the fact table, no heap fetches, partitions pruned, and every query under 50 ms. Migration 008 widens the margin where the first timings were weakest:
+
+- **A `text_pattern_ops` index on each code.** With the trigram index on the name, a search for three characters or more is a `BitmapOr` of two index scans, not a scan of the dimension. The collation is not C, so the codes' unique indexes cannot serve `LIKE 'ABC%'`.
+- **`app.v_practice_presentation` with a `LEFT JOIN`.** The planner can remove that join when no presentation column is used. With the inner join, it probed the presentations for every fact row: 50,000 for the largest practice, with a hash join in a custom plan and row by row in a generic one.
+
+| Query (sample) | Before, ms (one run) | After, ms (median of 5) |
+| --- | ---: | ---: |
+| `search_drugs` ('pitolisant') | 13.47 | 0.43 |
+| `search_practices` ('N81655') | 3.33 | 0.19 |
+| `practice_top_drugs` (B83033, twelve months) | 22.66 | 15.48 |
+| The same as a generic plan | 40.21 | 15.93 |
+
+Then each planner setting was changed in turn, and the 21 checks were timed three times each:
+
+| Setting changed | Sum of the 21 medians (ms) |
+| --- | ---: |
+| None: the full settings above | 87.9 |
+| `max_parallel_workers_per_gather = 0` | 85.7 |
+| `max_parallel_workers_per_gather = 2` | 84.4 |
+| `work_mem = '4MB'` | 84.1 |
+| `work_mem = '16MB'` | 91.7 |
+| `work_mem = '256MB'` | 87.2 |
+| `random_page_cost = 4` | 88.6 |
+| `effective_cache_size = '4GB'` | 86.0 |
+| `jit = on` | 87.1 |
+
+**No check failed, and the differences are noise.**
+- **Why.** Every app query is an index lookup of a few thousand rows at most, which these settings do not affect.
+- **work_mem.** The largest hash, a practice's top drugs over twelve months, needs 9.5 MB. It fits in hash memory even at 4MB, because `hash_mem_multiplier` is 2.
+- **JIT.** No app query costs enough to trigger it, so turning it on changed nothing; one that did would pay the compile time on every call.
+
+The settings therefore stay as they are. They serve the loads and keep the indexes cached, and P6-02 derives the server's settings from them.
 
 ## One month (P1-09)
 

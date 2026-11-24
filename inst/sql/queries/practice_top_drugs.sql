@@ -2,9 +2,9 @@
 -- practice's presentations over the months, ranked by items, NIC or actual
 -- cost, one page at a time (spec section 5.2). Reads the fact table through
 -- app.v_practice_presentation; the practice index holds every fact column
--- used, so each month is an index-only scan of one partition. The names are
--- joined to the page only, though until migration 008 (P2-05) the view still
--- joins the presentations to every fact row.
+-- used, so each month is an index-only scan of one partition, and the view's
+-- join to the presentations is left out, since none of their columns is used
+-- (migration 008). The names are joined to the page only.
 --
 -- $1 practice_id; $2 and $3 the first and last month (YYYYMM), $2 <= $3; $4
 -- the ranking measure, 'items', 'nic' or 'actual_cost' (anything else ranks

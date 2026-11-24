@@ -247,3 +247,46 @@ test_that("search: an exact code first, both levels, no unidentified prescriber,
     expect_false(any(found %in% unidentified$practice_code), label = q)
   }
 })
+
+# The plan of a query with these values bound: as text, and as nodes
+plan_text <- function(con, sql, params) {
+  paste(DBI::dbGetQuery(con, paste("EXPLAIN", sql), params = params)[[1]], collapse = "\n")
+}
+plan_of <- function(con, sql, params) {
+  res <- DBI::dbGetQuery(con, paste("EXPLAIN (FORMAT JSON)", sql), params = params)
+  plan_nodes(parse_plan(res)[[1]]$Plan)
+}
+
+test_that("a search for three characters or more can use an index on each side of its match", {
+  dbname <- local_loaded_db(202609L)
+  con <- local_test_db("app", dbname = dbname)
+  # The fixture's dimensions are small enough for any scan: forbid all but
+  # bitmap scans, so that the plan shows which indexes serve each side of the OR
+  for (scan in c("seqscan", "indexscan", "indexonlyscan")) {
+    DBI::dbExecute(con, paste0("SET enable_", scan, " = off"))
+  }
+  drugs <- plan_text(con, query_sql("search_drugs"), list("atorva", 20L))
+  for (index in c(
+    "dim_chemical_name_trgm", "dim_chemical_code_prefix",
+    "dim_presentation_description_trgm", "dim_presentation_code_prefix"
+  )) {
+    expect_match(drugs, index, fixed = TRUE)
+  }
+  practices <- plan_text(con, query_sql("search_practices"), list("b83", 20L))
+  expect_match(practices, "dim_practice_name_trgm", fixed = TRUE)
+  expect_match(practices, "dim_practice_code_prefix", fixed = TRUE)
+})
+
+test_that("a practice's top drugs join the presentations to the page only", {
+  dbname <- local_loaded_db(202609L)
+  con <- local_test_db("app", dbname = dbname)
+  # The view's join is left out when no presentation column is used...
+  totals <- plan_of(
+    con, "SELECT presentation_id, sum(items) FROM app.v_practice_presentation
+          WHERE practice_id = $1 GROUP BY 1", list(1L)
+  )
+  expect_false("dim_presentation" %in% totals$relation)
+  # ...so the query reads the presentations once, for the page's names
+  top <- plan_of(con, query_sql("practice_top_drugs"), list(1L, 202609L, 202609L, "items", 25L, NA))
+  expect_identical(sum(top$relation %in% "dim_presentation"), 1L)
+})

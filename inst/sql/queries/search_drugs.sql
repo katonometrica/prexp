@@ -8,9 +8,10 @@
 -- refuses empty text, which would match every name.
 --
 -- A code typed in full ranks first, then names by trigram similarity to q; a
--- row without a name ranks last. The name match alone could use the trigram
--- index on each name, but OR'ed with the code prefix, which no index serves
--- until migration 008 (P2-05), each search scans the dimensions.
+-- row without a name ranks last. For three characters or more, each side of
+-- the match has its index: the trigram index on the name for ILIKE, the code
+-- prefix index (migration 008) for LIKE. Shorter text scans the dimensions,
+-- since trigrams need three characters.
 SELECT level, id, code, name, chemical_id, chemical_name, is_generic
 FROM (
   SELECT 'chemical' AS level, chemical_id AS id, chemical_code AS code,

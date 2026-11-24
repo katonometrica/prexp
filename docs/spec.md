@@ -139,11 +139,11 @@ Indexes, defined on the parent so each attached partition's matching indexes are
 
 Both are covering indexes, so lookups are index-only scans. That only works once the visibility map is set, which is why the loader runs `VACUUM (ANALYZE)` on each new partition.
 
-**`core.dim_chemical`**: `chemical_id` (identity), `chemical_code` (unique, the source's `BNF_CHEMICAL_SUBSTANCE_CODE`: 9 characters, or 4 for appliance chapters 20 to 23), `chemical_name`, `first_seen`, `last_seen`. Trigram GIN index on `chemical_name`.
+**`core.dim_chemical`**: `chemical_id` (identity), `chemical_code` (unique, the source's `BNF_CHEMICAL_SUBSTANCE_CODE`: 9 characters, or 4 for appliance chapters 20 to 23), `chemical_name`, `first_seen`, `last_seen`. Trigram GIN index on `chemical_name`, and a `text_pattern_ops` index on `chemical_code` for prefix search (the database's collation is not C).
 
-**`core.dim_presentation`**: `presentation_id` (identity), `bnf_code` (unique), `bnf_description`, `chemical_id`, `bnf_chapter` (`05`), `bnf_chapter_name` (`Infections`, from `BNF_CHAPTER_PLUS_CODE`), `bnf_section` (`0501`), `bnf_paragraph` (`050101`), `is_generic` (characters 10 and 11 of the BNF code are `AA`; null for appliance chapters 20 to 23), `first_seen`, `last_seen`. No SNOMED code: a presentation can have several. Trigram GIN index on `bnf_description`.
+**`core.dim_presentation`**: `presentation_id` (identity), `bnf_code` (unique), `bnf_description`, `chemical_id`, `bnf_chapter` (`05`), `bnf_chapter_name` (`Infections`, from `BNF_CHAPTER_PLUS_CODE`), `bnf_section` (`0501`), `bnf_paragraph` (`050101`), `is_generic` (characters 10 and 11 of the BNF code are `AA`; null for appliance chapters 20 to 23), `first_seen`, `last_seen`. No SNOMED code: a presentation can have several. Trigram GIN index on `bnf_description`, and a `text_pattern_ops` index on `bnf_code`.
 
-**`core.dim_practice`**: `practice_id` (identity), `practice_code` (unique), `practice_name`, `address`, `postcode`, `icb_code`, `icb_name`, `region_code`, `region_name`, `is_unidentified`, `first_seen`, `last_seen`. Trigram GIN index on `practice_name`. Name, ICB and region take the latest month's values, so every month shows today's geography (ICBs were reorganised in April 2026). `is_unidentified` marks the 'UNIDENTIFIED DOCTORS' codes, including the national code `-`; their rows stay in the fact table so totals reconcile.
+**`core.dim_practice`**: `practice_id` (identity), `practice_code` (unique), `practice_name`, `address`, `postcode`, `icb_code`, `icb_name`, `region_code`, `region_name`, `is_unidentified`, `first_seen`, `last_seen`. Trigram GIN index on `practice_name`, and a `text_pattern_ops` index on `practice_code`. Name, ICB and region take the latest month's values, so every month shows today's geography (ICBs were reorganised in April 2026). `is_unidentified` marks the 'UNIDENTIFIED DOCTORS' codes, including the national code `-`; their rows stay in the fact table so totals reconcile.
 
 **Rollups**, all rebuilt one month at a time by the loader:
 
@@ -171,7 +171,7 @@ Each rollup row holds the sums of the measures that can be added at its grain (`
 | `app.v_presentation_month` | `agg_presentation_month` + dimensions | Drug view, presentation level |
 | `app.v_chemical_month` | `agg_chemical_month` + dimensions | Drug view, chemical level; region view |
 | `app.v_practice_month` | `agg_practice_month` | Practice view, totals |
-| `app.v_practice_presentation` | `prescribing` + `dim_presentation` | Practice view, top drugs |
+| `app.v_practice_presentation` | `prescribing` + `dim_presentation`, a left join the planner leaves out when no presentation column is used | Practice view, top drugs |
 | `app.v_variation` (v2) | `model_variation` + dimensions | Variation view |
 
 ### 3.4 Size estimate
