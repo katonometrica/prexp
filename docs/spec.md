@@ -263,7 +263,7 @@ Every function takes `con` (a pool or connection) first, validates its arguments
 | Function | Arguments | Returns | Reads |
 | --- | --- | --- | --- |
 | `fetch_window()` | none | First and last month | `v_window` |
-| `fetch_search_drugs()` | `q` (two characters or more), `limit = 20` | Chemicals and presentations whose name contains `q` (for two characters: starts with it, or has a word after a space that does) or whose BNF code starts with it; names that contain `q` ranked by similarity | `v_chemical`, `v_presentation` |
+| `fetch_search_drugs()` | `q` (2 to 100 characters, after control characters and spaces at either end are removed), `limit = 20` | Chemicals and presentations whose name contains `q` (for two characters: starts with it, or has a word after a space that does) or whose BNF code starts with it; names that contain `q` ranked by similarity. `%`, `_` and `\` match themselves: the query escapes them | `v_chemical`, `v_presentation` |
 | `fetch_search_practices()` | `q`, `limit = 20` | Practices matched by name, the same way, or by code | `v_practice` |
 | `fetch_drug_series()` | `level` (chemical or presentation), `id`, `months`, `measure` | Monthly national totals | `v_chemical_month` or `v_presentation_month` |
 | `fetch_drug_presentations()` | `chemical_id`, `months` | Totals per presentation, brand or generic | `v_presentation_month` |
@@ -274,6 +274,8 @@ Every function takes `con` (a pool or connection) first, validates its arguments
 | `fetch_variation()` (v2) | `group`, `icb_code` | Observed, expected, ratio, interval per practice | `v_variation` |
 
 Quantity is only valid for a single presentation, because units differ across presentations.
+
+`fetch_drug_series()` and `fetch_region_comparison()` return the measure asked for as `value`, with a `measure` column that names it; the others return every measure. An unknown id returns no rows. A refused argument stops the call before it queries, with an error of class `prexp_invalid_argument`, so the app can tell a request it refused from a query that failed. Sums of items are doubles, exact up to 2^53.
 
 Each query is registered in `fct_query_registry.R` with two sample argument sets. Codes are looked up at run time, among those with data in the months asked for:
 - large, over the whole window, the worst case it holds, picked from the data when the check runs: the chemical with the most presentation rollup rows (presentation × region × month), the practice with the most prescribing rows, and for each search the two characters that start the most names' words;
