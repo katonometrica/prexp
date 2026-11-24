@@ -169,3 +169,24 @@ test_that("empty values are loaded as NULL, and address lines are joined", {
   expect_true(is.na(practice$practice_name))
   expect_true(practice$is_unidentified)
 })
+
+# The fetch tests' oracle takes a practice's UNIDENTIFIED flag from its latest
+# month, as the loader must
+test_that("a practice's UNIDENTIFIED flag is the newest month's, never an older one's", {
+  dbname <- local_migrated_db()
+  owner <- local_test_db("owner", dbname = dbname)
+  flag <- function() {
+    DBI::dbGetQuery(owner, "SELECT is_unidentified FROM core.dim_practice")$is_unidentified
+  }
+  apply_month <- function(ym, unidentified) {
+    stage_rows(owner, staging_row(unidentified = unidentified))
+    prepare_and_apply(owner, ym)
+  }
+  apply_month(202601L, "Y")
+  expect_true(flag())
+  # A newer month clears it, and reloading the older month does not bring it back
+  apply_month(202602L, "N")
+  expect_false(flag())
+  apply_month(202601L, "Y")
+  expect_false(flag())
+})
