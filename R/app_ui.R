@@ -25,9 +25,7 @@ app_ui <- function(request) {
       shiny::tags$link(rel = "stylesheet", href = "prexp/prexp.css"),
       shiny::tags$script(src = "prexp/search.js")
     ),
-    bslib::nav_panel(
-      "Drug", value = "drug", view_heading("Drug"), search_view("drug", "P4-04")
-    ),
+    bslib::nav_panel("Drug", value = "drug", view_heading("Drug"), mod_drug_ui("drug")),
     bslib::nav_panel(
       "Practice", value = "practice", view_heading("Practice"), search_view("practice", "P4-05")
     ),

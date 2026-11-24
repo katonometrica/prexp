@@ -220,3 +220,17 @@ test_that("the app does not start with a login that can write", {
   app <- run_app(port = httpuv::randomPort(), launch.browser = FALSE)
   expect_error(shiny::runApp(app, quiet = TRUE), class = "prexp_writable_login")
 })
+
+test_that("a window that cannot be fetched is fetched again in a while", {
+  local_test_db("app")
+  closed <- db_connect("app", dbname = local_fixture_db())
+  DBI::dbDisconnect(closed)
+  logged <- testthat::capture_messages(
+    shiny::testServer(app_server(closed), {
+      expect_identical(output$window, "Data window unavailable")
+      session$elapse(window_retry_ms)
+      expect_identical(output$window, "Data window unavailable")
+    })
+  )
+  expect_length(grep("The data window could not be fetched", logged, fixed = TRUE), 2L)
+})

@@ -9,21 +9,19 @@
 #' @noRd
 app_server <- function(con) {
   function(input, output, session) {
+    fetches <- app_fetches(con)
     # The window, or NULL when it cannot be fetched: the footer says so, and the
     # cause goes to the app's log, not to the page
     window <- shiny::reactive({
-      tryCatch(fetch_window(con), error = function(e) {
+      tryCatch(fetches$window(), error = function(e) {
         message("The data window could not be fetched: ", conditionMessage(e))
+        # Try again in a while: the views wait for it
+        shiny::invalidateLater(window_retry_ms)
         NULL
       })
     })
-    drug <- mod_search_server(
-      "drug_search", function(q) fetch_search_drugs(con, q, limit = 20L), "drug"
-    )
-    practice <- mod_search_server(
-      "practice_search", function(q) fetch_search_practices(con, q, limit = 20L), "practice"
-    )
-    output$drug_picked <- shiny::renderText(picked_text(drug()))
+    mod_drug_server("drug", fetches, window)
+    practice <- mod_search_server("practice_search", fetches$search_practices, "practice")
     output$practice_picked <- shiny::renderText(picked_text(practice()))
     output$window <- shiny::renderText({
       if (is.null(window())) "Data window unavailable" else window_text(window())
@@ -37,6 +35,9 @@ app_server <- function(con) {
     })
   }
 }
+
+# How long the app waits before fetching the window again, when it could not
+window_retry_ms <- 10000
 
 # The footer's words for the window: its months, or that nothing is loaded
 window_text <- function(window) {
