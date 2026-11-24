@@ -15,9 +15,17 @@ local_test_db <- function(role = c("app", "loader", "owner"),
   if (!nzchar(dbname)) {
     no_test_db("PREXP_TEST_DB_NAME is not set")
   }
+  # Only a database that cannot be reached skips the test: an app login that
+  # db_connect() refuses as writable is a failure. One handler: an error raised
+  # again from a handler of the same tryCatch() would reach its other handlers.
   con <- tryCatch(
     db_connect(role, dbname = dbname, connect_timeout = "5"),
-    error = function(e) no_test_db(conditionMessage(e))
+    error = function(e) {
+      if (inherits(e, "prexp_writable_login")) {
+        stop(e)
+      }
+      no_test_db(conditionMessage(e))
+    }
   )
   withr::defer(DBI::dbDisconnect(con), envir = env)
   con
@@ -31,6 +39,16 @@ local_temp_db <- function(env = parent.frame()) {
   drop <- paste("DROP DATABASE IF EXISTS", quoted, "WITH (FORCE)")
   withr::defer(DBI::dbExecute(admin, drop, immediate = TRUE), envir = env)
   name
+}
+
+# The app's pool on a test database, closed when the calling test ends. A
+# connection as the app role comes first, so that only an unreachable database
+# skips the test: db_pool() refusing the login is a failure.
+local_test_pool <- function(dbname = Sys.getenv("PREXP_TEST_DB_NAME"), env = parent.frame()) {
+  local_test_db("app", dbname = dbname, env = env)
+  pool <- db_pool(dbname = dbname)
+  withr::defer(pool::poolClose(pool), envir = env)
+  pool
 }
 
 # A new database with every migration applied, dropped when the calling test ends.
