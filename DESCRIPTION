@@ -18,6 +18,7 @@ Imports:
     DBI,
     httr2,
     jsonlite,
+    pool,
     processx,
     RPostgres (>= 1.4.0),
     tools,

@@ -33,6 +33,16 @@ local_temp_db <- function(env = parent.frame()) {
   name
 }
 
+# The app's pool on a test database, closed when the calling test ends. A
+# connection as the app role comes first, so that only an unreachable database
+# skips the test: db_pool() refusing the login is a failure.
+local_test_pool <- function(dbname = Sys.getenv("PREXP_TEST_DB_NAME"), env = parent.frame()) {
+  local_test_db("app", dbname = dbname, env = env)
+  pool <- db_pool(dbname = dbname)
+  withr::defer(pool::poolClose(pool), envir = env)
+  pool
+}
+
 # A new database with every migration applied, dropped when the calling test ends.
 local_migrated_db <- function(env = parent.frame()) {
   dbname <- local_temp_db(env = env)

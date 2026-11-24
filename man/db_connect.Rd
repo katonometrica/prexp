@@ -24,3 +24,11 @@ Settings come from environment variables: \code{PREXP_DB_HOST}, \code{PREXP_DB_P
 \code{APP}, \code{LOADER} or \code{OWNER}. A missing variable stops with its name, never
 its value.
 }
+\details{
+An app connection must be read-only: if the login's settings do not make it
+so, the connection is closed and \code{db_connect()} stops, so the app never runs
+with the loader's or the owner's login.
+}
+\seealso{
+\code{\link[=db_pool]{db_pool()}}, the app's pool of connections.
+}

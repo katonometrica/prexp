@@ -11,7 +11,10 @@
 # <ROLE> is OWNER, LOADER or APP. The migrations grant privileges to the roles
 # by their default names, and default privileges only cover objects created by
 # prexp_owner itself. So set a *_USER variable only to log in as a member of
-# the loader or app role, and never for the owner.
+# the loader or app role, and never for the owner. A member of the app role
+# also needs the app role's settings (docker/db/init/02-database.sql), which a
+# member does not inherit: app connections must be read-only, or they are
+# refused.
 
 # Advisory lock keys, as (namespace, key). The namespace is "prex" in ASCII.
 # Advisory locks are local to each database. Give every new job its own key.
@@ -55,16 +58,21 @@ db_config <- function(role = c("app", "loader", "owner"), dbname = NULL) {
 #' `APP`, `LOADER` or `OWNER`. A missing variable stops with its name, never
 #' its value.
 #'
+#' An app connection must be read-only: if the login's settings do not make it
+#' so, the connection is closed and `db_connect()` stops, so the app never runs
+#' with the loader's or the owner's login.
+#'
 #' @param role `"app"` (read-only, the default), `"loader"` or `"owner"`.
 #' @param dbname Database name. Defaults to `PREXP_DB_NAME`.
 #' @param ... Other libpq connection parameters, as strings, for example
 #'   `connect_timeout = "5"`.
 #' @return A DBI connection. Close it with [DBI::dbDisconnect()].
+#' @seealso [db_pool()], the app's pool of connections.
 #' @export
 db_connect <- function(role = c("app", "loader", "owner"), dbname = NULL, ...) {
   role <- match.arg(role)
   cfg <- db_config(role, dbname)
-  DBI::dbConnect(
+  con <- DBI::dbConnect(
     RPostgres::Postgres(),
     host = cfg$host,
     port = cfg$port,
@@ -74,6 +82,72 @@ db_connect <- function(role = c("app", "loader", "owner"), dbname = NULL, ...) {
     application_name = paste0("prexp-", role),
     ...
   )
+  if (role == "app") {
+    check_read_only(con)
+  }
+  con
+}
+
+#' The app's pool of read-only connections
+#'
+#' Opens a pool of connections as the app role, with the settings
+#' [db_connect()] reads. The app creates it once per process, and each fetch
+#' borrows a connection from it (spec section 5.4). Every connection the pool
+#' opens must be read-only, as the `prexp_app` role's settings make it: if one
+#' is not, it is closed and the pool stops with an error. The pool opens its
+#' first connection at once, even with `minSize = 0`, so the app refuses to
+#' start with the loader's or the owner's login rather than failing at its
+#' first query.
+#'
+#' Close the pool with [pool::poolClose()] when the app stops.
+#'
+#' @param dbname Database name. Defaults to `PREXP_DB_NAME`.
+#' @param ... Other arguments to [pool::dbPool()], such as `maxSize` or
+#'   `idleTimeout`, and libpq connection parameters, as strings. `onCreate` is
+#'   taken: it runs the read-only check.
+#' @return A pool, which DBI functions such as [DBI::dbGetQuery()] accept in
+#'   place of a connection.
+#' @export
+db_pool <- function(dbname = NULL, ...) {
+  cfg <- db_config("app", dbname)
+  pool <- pool::dbPool(
+    RPostgres::Postgres(),
+    host = cfg$host,
+    port = cfg$port,
+    dbname = cfg$dbname,
+    user = cfg$user,
+    password = cfg$password,
+    application_name = "prexp-app",
+    onCreate = check_read_only,
+    ...
+  )
+  tryCatch(
+    pool::poolReturn(pool::poolCheckout(pool)),
+    error = function(e) {
+      pool::poolClose(pool)
+      stop(e)
+    }
+  )
+  pool
+}
+
+# Stops unless the connection is read-only by default, as the app role's
+# settings make it. The connection is closed first: the pool calls this on each
+# new connection, before it is handed out, and would otherwise leak it.
+check_read_only <- function(con) {
+  session <- DBI::dbGetQuery(con, "
+    SELECT current_user AS login,
+           current_setting('default_transaction_read_only') AS read_only")
+  if (!identical(session$read_only, "on")) {
+    DBI::dbDisconnect(con)
+    stop(
+      "The app must connect read-only, but ", session$login,
+      " has default_transaction_read_only = ", session$read_only,
+      ". Log in as prexp_app (PREXP_APP_USER), or as a login with its settings.",
+      call. = FALSE
+    )
+  }
+  invisible(con)
 }
 
 #' Apply pending database migrations

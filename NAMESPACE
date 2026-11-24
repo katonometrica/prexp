@@ -2,6 +2,7 @@
 
 export(check_plans)
 export(db_connect)
+export(db_pool)
 export(download_month)
 export(epd_resources)
 export(load_month)
