@@ -13,8 +13,8 @@ The full window, 202510 to 202609, in the local Docker stack on the machine belo
 | Source rows | 218,504,372: for every month, the count, items, NIC and actual cost equal the portal's |
 | Fact rows, one per month × prescriber × presentation | 112,769,791 |
 | Fact table with its two covering indexes | 21,151 MB (20.7 GB) |
-| The database | 21,445 MB (20.9 GB) |
-| Loading a month | 175 s: 48 s to download, 127 s to stage, aggregate, index, check and swap |
+| The database | 21,445 MB (20.9 GB), 47 MB more than after the load (P2-02), for P2-05's indexes |
+| Loading a month | 175 s, the mean of P2-02's eleven loads, 48 s of it downloading; 171 s (122 s without the download) leaving out the two months that tests slowed. Measured before P2-05 added the vacuum of the rollups after each swap |
 | The swap's transaction, the only step the app can wait for | about 1 s; the rollups are vacuumed after it, without blocking the app |
 | App queries, warm | Every check under 50 ms: the slowest, a two-letter search, takes 33 ms, and 13 of the 21 under 1 ms |
 | Fact table | Read only by index-only scans of the months asked for, with no heap fetches |
@@ -212,10 +212,10 @@ Steps are in seconds. Finding the month, checking the header, checking the stage
 | `core.agg_chemical_month` (136,411 rows) | 18 MB | |
 | `core.agg_practice_month` (111,174 rows) | 12 MB | |
 | The three dimensions (2,030 chemical substances, 26,589 presentations, 10,230 prescribers), with their indexes | 44 MB | |
-| **The database** | **21,398 MB** (20.9 GB) | |
+| **The database after the load** | **21,398 MB** (20.9 GB) | |
 | Write-ahead log | 1,664 MB | |
 
-The fact table is 0.5% under twelve times September's 1,772 MB.
+The fact table is 0.5% under twelve times September's 1,772 MB. These sizes are from just after the load: P2-05's indexes then added 47 MB, to the 21,445 MB in [At a glance](#at-a-glance-p2-06), most of it the presentation rollup's primary key, which now carries the measures.
 
 **Disk use during the load.**
 - **The database** peaked at 28,293 MB while 202608 loaded. That is eleven months (19,426 MB), the month being built (1,725 MB) and 202608's staged rows (6,895 MB). Staging itself peaked at 7,226 MB, while 202510 and 202512 loaded.
@@ -229,10 +229,10 @@ Each query of spec §5.2 runs with its large sample, the worst case the window h
 - **Custom** plans are made with the values, as the app's are: RPostgres sends unnamed statements.
 - **Generic** plans are made once without the values, as for a statement prepared once.
 
-| Query | Sample | Custom (ms) | Generic (ms) | Plan |
+| Query | Sample | Custom (ms) | Generic (ms) | Plan (custom) |
 | --- | --- | ---: | ---: | --- |
 | `window` | window | 0.12 | 0.02 | Bitmap scan of `load_log`'s index of live months; aggregate |
-| `search_drugs` | large: co | 33.18 | 48.97 | On each dimension, `BitmapOr` of the trigram index on the name (pg_trgm reads the word starts in `'co%'` and `'% co%'` as padded trigrams) and the code prefix index; `similarity()` for the 5,235 names that contain 'co'; top-20 sort |
+| `search_drugs` | large: co | 33.18 | 48.97 | On each dimension, `BitmapOr` of the trigram index on the name (pg_trgm reads the word starts in `'co%'` and `'% co%'` as padded trigrams) and the code prefix index; `similarity()` for the 5,235 names that start with 'co' or have a word, after a space, that does; top-20 sort |
 | `search_drugs` | small: pitolisant | 0.44 | 17.16 | On each dimension, `BitmapOr` of the trigram index (contains) and the code prefix index; top-20 sort |
 | `search_practices` | large: me | 8.07 | 11.87 | `BitmapOr` of the trigram index on the name (word starts) and the code prefix index; `similarity()` for the names; top-20 sort |
 | `search_practices` | small: N81655 | 0.19 | 4.81 | `BitmapOr` of the trigram index on the name and the code prefix index |
@@ -240,7 +240,7 @@ Each query of spec §5.2 runs with its large sample, the worst case the window h
 | `drug_series_chemical` | small: 0404000W0, 3 months | 0.08 | 0.04 | Index scan of `agg_chemical_month`'s primary key (chemical, months); grouped by month |
 | `drug_series_presentation` | large: 0212000B0AAABAB, 12 months | 0.14 | 0.11 | Index-only scan of `agg_presentation_month`'s covering key (presentation, months); grouped by month |
 | `drug_series_presentation` | small: 0404000W0BBAAAA, 3 months | 0.08 | 0.03 | Index-only scan of `agg_presentation_month`'s covering key (presentation, months); grouped by month |
-| `drug_presentations` | large: 2003, 12 months | 24.95 | 39.58 | The chemical's 2,068 presentations by bitmap scan, each with an index-only scan of the rollup's covering key (89,282 rows); hash aggregate; sort |
+| `drug_presentations` | large: 2003, 12 months | 24.95 | 39.58 | The chemical's 2,068 presentations by bitmap scan, each with an index-only scan of the rollup's covering key (89,282 rows); hash aggregate; sort. As a generic plan, a sort of the 89,282 rows and a group aggregate instead |
 | `drug_presentations` | small: 0404000W0, 3 months | 0.16 | 0.06 | The same, for 4 presentations |
 | `practice_profile` | large: B83033 | 0.03 | 0.02 | Index scan of `dim_practice`'s primary key |
 | `practice_profile` | small: Y03965 | 0.03 | 0.01 | Index scan of `dim_practice`'s primary key |
@@ -254,9 +254,9 @@ Each query of spec §5.2 runs with its large sample, the worst case the window h
 | `region_comparison_presentation` | small: 0404000W0BBAAAA, 3 months | 8.15 | 6.88 | The same, with an index-only scan of the presentation rollup's covering key |
 
 Eight checks take more than a millisecond:
-- **The searches over many names.** Their time is `similarity()` ranking every name that contains the text. In a generic plan a search can use neither of its indexes, so 'pitolisant' takes 17 ms that way instead of 0.4.
+- **The searches over many names.** Their time is `similarity()` ranking every name the search matches. For two characters, those are the names that start with the text or have a word, after a space, that does: 5,235 drug names for 'co' and 2,626 practices for 'me', of the 7,274 and 3,029 that contain it. In a generic plan a search can use neither of its indexes, so 'pitolisant' takes 17 ms that way instead of 0.4.
 - **A chemical's presentations, for the largest chemical.** It reads 89,282 rows of the rollup, index-only.
 - **The largest practice's top drugs.** They read 49,902 fact rows, index-only.
-- **The four region comparisons.** Most of each one's 7 ms is `app.v_region` naming the regions from every prescriber.
+- **The four region comparisons.** About 7 ms of each one's 7 to 9 ms is `app.v_region` naming the regions from every prescriber.
 
-Every other check reads a few rows by primary key. The checks run nightly in the jobs container from P6-02 (spec §6.3), so a plan that changes as the window moves will show up there.
+The other thirteen read a few rows through an index: the series and the profiles by primary key, the window, the small searches, the small chemical's presentations and the small practice's top drugs through the indexes the table names. The checks run nightly in the jobs container from P6-02 (spec §6.3), so a plan that changes as the window moves will show up there.

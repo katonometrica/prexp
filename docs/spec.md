@@ -276,7 +276,7 @@ Every function takes `con` (a pool or connection) first, validates its arguments
 Quantity is only valid for a single presentation, because units differ across presentations.
 
 Each query is registered in `fct_query_registry.R` with two sample argument sets. Codes are looked up at run time, among those with data in the months asked for:
-- large, over the whole window, the worst case it holds: the chemical with the most presentations and the practice with the most prescribing rows, picked from the data when the check runs, and the two-letter search that matches the most names;
+- large, over the whole window, the worst case it holds, picked from the data when the check runs: the chemical with the most presentation rollup rows (presentation × region × month), the practice with the most prescribing rows, and for each search the two characters that start the most names' words;
 - small, over the last three months: a rarely prescribed drug, or a small practice.
 
 `check_plans()` runs every entry once to warm the cache, then with `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON)`. It fails on any of:
