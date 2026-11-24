@@ -275,7 +275,17 @@ Every function takes `con` (a pool or connection) first, validates its arguments
 
 Quantity is only valid for a single presentation, because units differ across presentations.
 
-Each query is registered in `fct_query_registry.R` with two sample argument sets, large and small (for example a widely prescribed statin and a rarely prescribed drug), looked up by code at run time. `check_plans()` runs `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` for every entry and fails on any sequential scan of a `core.prescribing` partition or any execution over 50 ms.
+Each query is registered in `fct_query_registry.R` with two sample argument sets, looked up by code at run time:
+- large, over the whole window: for example a widely prescribed statin, or the largest practice;
+- small, over the last three months: a rarely prescribed drug, or a small practice.
+
+`check_plans()` runs every entry once to warm the cache, then with `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON)`. It fails on any of:
+- a sequential scan of a `core.prescribing` partition;
+- a plan that reads more partitions than the months asked for;
+- heap fetches in an index-only scan of one;
+- planning and execution over 50 ms.
+
+`check_plans(generic = TRUE)` checks the generic plans of prepared statements the same way.
 
 ### 5.3 Screens
 
