@@ -107,6 +107,15 @@ validate_id <- function(id, arg = "id") {
 # removed, and the ends are trimmed; then it must be 2 to 100 characters. Text
 # over 1,000 bytes is refused before any of that. No message repeats the text,
 # which stays out of logs.
+# Search text as the search reads it: every kind of space a plain space,
+# control and format characters (a zero-width space, say) gone, and no spaces
+# doubled or at either end. The search module counts characters with it too.
+clean_search <- function(q) {
+  q <- gsub("[\\s\\p{Z}\\x{85}]", " ", q, perl = TRUE)
+  q <- gsub("[\\p{Cc}\\p{Cf}]", "", q, perl = TRUE)
+  trimws(gsub(" {2,}", " ", q))
+}
+
 validate_search <- function(q, arg = "q") {
   if (!is.character(q) || length(q) != 1L || is.na(q)) {
     invalid_argument("`", arg, "` must be one string of search text, not ", value_shape(q), ".")
@@ -118,9 +127,7 @@ validate_search <- function(q, arg = "q") {
   if (!validUTF8(q)) {
     invalid_argument("`", arg, "` must be text in UTF-8.")
   }
-  q <- gsub("[\\s\\p{Z}\\x{85}]", " ", q, perl = TRUE)
-  q <- gsub("[\\p{Cc}\\p{Cf}]", "", q, perl = TRUE)
-  q <- trimws(gsub(" {2,}", " ", q))
+  q <- clean_search(q)
   n <- nchar(q)
   if (n < 2L || n > 100L) {
     invalid_argument(
