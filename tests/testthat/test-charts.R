@@ -54,6 +54,38 @@ test_that("a series shows each measure in its unit, on its axis and in its toolt
   expect_identical(adq$labels$y, "ADQ usage (ADQs)")
 })
 
+test_that("axis labels tell a small range's breaks apart, and items break at whole numbers", {
+  labels <- function(p) {
+    axis <- ggplot2::layer_scales(p)$y
+    axis$get_labels(axis$get_breaks())
+  }
+  adq <- chart_series(series(c(0.4, 1.2, 2), measure = "adq_usage"))
+  expect_identical(labels(adq), c("0.0", "0.5", "1.0", "1.5", "2.0"))
+  nic <- chart_series(series(c(0.4, 1.2, 2), measure = "nic"))
+  expect_identical(
+    labels(nic), c("\u00a30.00", "\u00a30.50", "\u00a31.00", "\u00a31.50", "\u00a32.00")
+  )
+  expect_identical(labels(chart_series(series(c(1, 2, 2)))), c("0", "1", "2"))
+  big <- chart_series(series(c(2.1e6, 4e6, 3e6)))
+  expect_identical(labels(big), c("0", "1,000,000", "2,000,000", "3,000,000", "4,000,000"))
+  # Bars too
+  bars <- ggplot2::layer_scales(chart_bars(regions("items")))$x
+  expect_false(anyDuplicated(bars$get_labels(bars$get_breaks())) > 0L)
+})
+
+test_that("chart marks keep 3:1 against the white background", {
+  marks <- c(
+    unique(ggplot2::ggplot_build(chart_series(series()))$data[[1]]$colour),
+    unique(ggplot2::ggplot_build(chart_bars(regions()))$data[[1]]$fill),
+    # A selected mark
+    prexp_palette()[["vermillion"]]
+  )
+  expect_length(marks, 3L)
+  for (colour in marks) {
+    expect_gte(contrast_ratio(colour, "#FFFFFF"), 3, label = colour)
+  }
+})
+
 test_that("a series fills the months without prescribing with 0, and skips missing values", {
   p <- chart_series(series(c(10, 20), months = c(202607L, 202609L)), months = c(202606L, 202609L))
   points <- ggplot2::ggplot_build(p)$data[[2]]

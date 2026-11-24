@@ -51,7 +51,7 @@ chart_series <- function(data, months = NULL) {
       guide = ggplot2::guide_axis(check.overlap = TRUE)
     ) +
     ggplot2::scale_y_continuous(
-      labels = axis_labels(measure), limits = c(0, NA),
+      breaks = axis_breaks(measure), labels = axis_labels(measure), limits = c(0, NA),
       expand = ggplot2::expansion(mult = c(0, 0.08))
     ) +
     ggplot2::labs(x = NULL, y = measure_title(measure)) +
@@ -94,7 +94,8 @@ chart_bars <- function(data, label = "region_name", id = "region_code", width = 
     ) +
     ggplot2::scale_y_discrete(labels = structure(shorten(labels, width), names = ids)) +
     ggplot2::scale_x_continuous(
-      labels = axis_labels(measure), expand = ggplot2::expansion(mult = c(0, 0.05))
+      breaks = axis_breaks(measure), labels = axis_labels(measure),
+      expand = ggplot2::expansion(mult = c(0, 0.05))
     ) +
     ggplot2::labs(x = measure_title(measure), y = NULL) +
     theme_prexp() +
@@ -208,12 +209,27 @@ value_words <- function(value, measure) {
   if (measure %in% c("nic", "actual_cost")) formatted else paste(formatted, unit)
 }
 
-# Axis labels: whole pounds for the costs, whole numbers otherwise
+# Axis labels with thousands separators, pounds for the costs, and as many
+# decimals as the breaks need to differ (scales picks them): on a small range,
+# labels rounded to whole numbers would repeat
 axis_labels <- function(measure) {
   if (measure %in% c("nic", "actual_cost")) {
-    function(x) format_pounds(x, digits = 0L, na = "")
+    scales::label_currency(prefix = "\u00a3", big.mark = ",")
   } else {
-    function(x) format_number(x, digits = 0L, na = "")
+    scales::label_comma()
+  }
+}
+
+# Axis breaks: whole numbers only for items, which are counted whole
+axis_breaks <- function(measure) {
+  extended <- scales::breaks_extended()
+  if (measure == "items") {
+    function(limits) {
+      breaks <- extended(limits)
+      breaks[breaks == round(breaks)]
+    }
+  } else {
+    extended
   }
 }
 

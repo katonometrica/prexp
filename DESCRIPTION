@@ -27,6 +27,7 @@ Imports:
     processx,
     reactable,
     RPostgres (>= 1.4.0),
+    scales,
     shiny,
     systemfonts,
     tibble,
