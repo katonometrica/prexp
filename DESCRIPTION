@@ -15,12 +15,19 @@ BugReports: https://github.com/katonometrica/prexp/issues
 Depends:
     R (>= 4.6.0)
 Imports:
+    bslib,
+    cachem,
     DBI,
+    ggiraph,
+    ggplot2,
     httr2,
     jsonlite,
+    mirai,
     pool,
     processx,
+    reactable,
     RPostgres (>= 1.4.0),
+    shiny,
     tibble,
     tools,
     utils

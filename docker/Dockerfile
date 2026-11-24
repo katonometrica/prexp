@@ -37,6 +37,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 #     libfontconfig-dev, libfreetype-dev, libharfbuzz-dev, libfribidi-dev, libpng-dev
 #                           systemfonts, textshaping, ggiraph
 #     libjpeg-dev, libtiff-dev, libwebp-dev                 ragg (officer)
+#     libcairo2-dev         gdtools (ggiraph), which links libcairo.so.2
 #   The -dev packages pull in the runtime libraries the P3M binaries link to, and let a
 #   package compile from source when no binary exists. Check them whenever renv.lock
 #   changes (renv::sysreqs()).
@@ -86,7 +87,7 @@ apt-get update
 apt-get install -y --no-install-recommends "postgresql-client-${PG_MAJOR}" \
   libpq-dev libxml2-dev libuv1-dev libcurl4-openssl-dev libssl-dev \
   libfontconfig-dev libfreetype-dev libharfbuzz-dev libfribidi-dev libpng-dev \
-  libjpeg-dev libtiff-dev libwebp-dev fonts-liberation fonts-dejavu-core \
+  libjpeg-dev libtiff-dev libwebp-dev libcairo2-dev fonts-liberation fonts-dejavu-core \
   libarchive-tools unzip tini
 if [ -f /tmp/ubuntu.sources.orig ]; then
   mv /tmp/ubuntu.sources.orig /etc/apt/sources.list.d/ubuntu.sources
