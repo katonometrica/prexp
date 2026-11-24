@@ -5,12 +5,29 @@
 #' The fetch functions of the app, on one pool or connection
 #'
 #' The views call these, never the fetch functions themselves, so that the
-#' tests can pass fakes and P4-07 can wrap them with its cache.
+#' tests can pass fakes, and so that with a cache every fetch but the window's
+#' is kept in it.
 #'
 #' @param con A pool from [db_pool()], or a connection.
+#' @param cache The app's cache, from [app_cache()], or `NULL` for none.
+#' @param window With a cache, a function giving the data window, part of
+#'   every key ([cache_fetch()]).
 #' @return A named list of functions.
 #' @noRd
-app_fetches <- function(con) {
+app_fetches <- function(con, cache = NULL, window = NULL) {
+  fetches <- plain_fetches(con)
+  if (is.null(cache)) {
+    return(fetches)
+  }
+  kept <- setdiff(names(fetches), "window")
+  fetches[kept] <- lapply(kept, function(name) {
+    cache_fetch(cache, name, fetches[[name]], window)
+  })
+  fetches
+}
+
+# The fetch functions on a pool or connection, as the views call them
+plain_fetches <- function(con) {
   list(
     window = function() fetch_window(con),
     search_drugs = function(q) fetch_search_drugs(con, q, limit = 20L),
@@ -118,6 +135,97 @@ output_width <- function(session, id) {
     return(768)
   }
   width
+}
+
+#' A view's results card header: its title, and the CSV button once there is
+#' data to download
+#'
+#' @param ns The view's namespace function.
+#' @return Shiny UI.
+#' @noRd
+view_header <- function(ns) {
+  bslib::card_header(
+    class = "d-flex justify-content-between align-items-center gap-2",
+    shiny::textOutput(ns("title"), inline = TRUE),
+    shiny::uiOutput(ns("csv_ui"), inline = TRUE)
+  )
+}
+
+#' The CSV download of a view: the data of its current view
+#'
+#' The button is drawn when data appears or goes, not again on every change of
+#' measure, months or pick, which would lose the keyboard's focus and announce
+#' it again. It reads "CSV", and "Download CSV" to a screen reader.
+#'
+#' @param output The view's output.
+#' @param ns The view's namespace function.
+#' @param current The view's `current_view()` reactive.
+#' @param title What the file holds, for the button's tooltip.
+#' @return Nothing: it sets the outputs `csv_ui` and `csv`.
+#' @noRd
+csv_download <- function(output, ns, current, title) {
+  has_data <- shiny::reactiveVal(FALSE)
+  shiny::observe(has_data(!is.null(current())))
+  output$csv_ui <- shiny::renderUI({
+    if (!has_data()) {
+      return(NULL)
+    }
+    shiny::downloadButton(
+      ns("csv"), shiny::tagList(shiny::span(class = "visually-hidden", "Download"), "CSV"),
+      class = "btn-outline-primary btn-sm", icon = NULL, title = title
+    )
+  })
+  output$csv <- shiny::downloadHandler(
+    filename = function() csv_name(current()),
+    content = function(file) write_view_csv(current(), file),
+    contentType = "text/csv"
+  )
+  invisible(NULL)
+}
+
+# A CSV's file name: the app, the view, its subject's code and name, the
+# measure and the months, as in
+# "prexp-drug-0212000B0-atorvastatin-items-202510-202609.csv". Two subjects
+# with the same name have different codes. The Practice file holds every
+# measure, so its name names none.
+csv_name <- function(view) {
+  params <- view$params
+  slug <- function(x) gsub("^-+|-+$", "", gsub("[^a-z0-9]+", "-", tolower(x)))
+  code <- if (length(params$code) == 1L && !is.na(params$code) && nzchar(params$code)) {
+    gsub("[^A-Za-z0-9]", "", params$code)
+  } else {
+    as.character(params$id)
+  }
+  name <- if (length(params$label) == 1L && !is.na(params$label)) {
+    sub("-+$", "", substr(slug(params$label), 1L, 40L))
+  }
+  measure <- if (!identical(view$view, "practice")) slug(params$measure)
+  parts <- c("prexp", view$view, code, name[nzchar(name)], measure, params$months[1:2])
+  paste0(paste(parts, collapse = "-"), ".csv")
+}
+
+# The view's data as CSV, in UTF-8, a missing value as an empty field, and
+# every number in full: write.csv() writes 400000 as 4e+05 by default, which a
+# spreadsheet then shows as 4.00E+05 among plain numbers
+write_view_csv <- function(view, file) {
+  old <- options(scipen = 100L)
+  on.exit(options(old), add = TRUE)
+  utils::write.csv(
+    as.data.frame(view$data), file, row.names = FALSE, na = "", fileEncoding = "UTF-8"
+  )
+}
+
+# Every month of the range, in order, a month without a row as `zeros` (named
+# values by column), as chart_series() draws a month without prescribing
+complete_months <- function(rows, months, zeros) {
+  all <- index_month(seq(month_index(as.integer(months[1])), month_index(as.integer(months[2]))))
+  out <- rows[match(all, rows$year_month), ]
+  out$year_month <- all
+  gap <- !all %in% rows$year_month
+  for (column in names(zeros)) {
+    out[[column]][gap] <- zeros[[column]]
+  }
+  out
 }
 
 #' A view's message in place of its results

@@ -69,8 +69,8 @@ mod_search_ui <- function(id, type = c("drug", "practice")) {
 #'   connection; the tests pass a fake.
 #' @param type `"drug"` or `"practice"`.
 #' @return A reactive: `NULL` until something is picked, then a list with
-#'   `type`, `id` (integer), `label` and `level` (`"chemical"`,
-#'   `"presentation"` or `"practice"`).
+#'   `type`, `id` (integer), `label`, `level` (`"chemical"`,
+#'   `"presentation"` or `"practice"`) and `code` (the BNF or practice code).
 #' @noRd
 mod_search_server <- function(id, fetch, type = c("drug", "practice")) {
   type <- match.arg(type)
@@ -129,7 +129,10 @@ mod_search_server <- function(id, fetch, type = c("drug", "practice")) {
       if (is.null(picked)) {
         return(NULL)
       }
-      list(type = type, id = picked$id, label = picked$label, level = picked$level)
+      list(
+        type = type, id = picked$id, label = picked$label, level = picked$level,
+        code = picked$code
+      )
     })
   })
 }
@@ -143,6 +146,7 @@ search_options <- function(found, type) {
   if (type == "drug") {
     level <- found$level
     id <- found$id
+    code <- found$code
     value <- paste0(level, ":", id)
     label <- ifelse(is.na(found$name), found$code, found$name)
     meta <- paste(
@@ -151,13 +155,17 @@ search_options <- function(found, type) {
   } else {
     level <- rep("practice", nrow(found))
     id <- found$practice_id
+    code <- found$practice_code
     value <- paste0("practice:", id)
     label <- ifelse(is.na(found$practice_name), found$practice_code, found$practice_name)
     icb <- ifelse(is.na(found$icb_name), "", paste(" \u00b7", found$icb_name))
     meta <- paste0(found$practice_code, icb)
   }
   lapply(seq_along(value), function(i) {
-    list(value = value[i], label = label[i], meta = meta[i], level = level[i], id = id[i])
+    list(
+      value = value[i], label = label[i], meta = meta[i], level = level[i], id = id[i],
+      code = code[i]
+    )
   })
 }
 

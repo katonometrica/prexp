@@ -187,7 +187,8 @@ test_that("run_app() opens the pool when the app starts and closes it when the a
       SELECT count(*)::int4 AS n FROM pg_stat_activity
       WHERE datname = current_database() AND application_name = 'prexp-app'")$n
   }
-  app <- run_app(port = httpuv::randomPort(), launch.browser = FALSE)
+  # No workers here: test-workers.R tests them, and their connections would count
+  app <- run_app(port = httpuv::randomPort(), workers = 0L, launch.browser = FALSE)
   expect_s3_class(app, "shiny.appobj")
   expect_identical(app$appOptions$bookmarkStore, "url")
   while_running <- NA_integer_
@@ -217,7 +218,7 @@ test_that("the app does not start with a login that can write", {
     PREXP_DB_NAME = dbname, PREXP_APP_USER = "prexp_loader",
     PREXP_APP_PASSWORD = Sys.getenv("PREXP_LOADER_PASSWORD")
   )
-  app <- run_app(port = httpuv::randomPort(), launch.browser = FALSE)
+  app <- run_app(port = httpuv::randomPort(), workers = 0L, launch.browser = FALSE)
   expect_error(shiny::runApp(app, quiet = TRUE), class = "prexp_writable_login")
 })
 
@@ -233,4 +234,44 @@ test_that("a window that cannot be fetched is fetched again in a while", {
     })
   )
   expect_length(grep("The data window could not be fetched", logged, fixed = TRUE), 2L)
+})
+
+test_that("run_app() starts and stops the workers, and gives every session one cache of 200 MB", {
+  dbname <- local_fixture_db()
+  local_test_db("app", dbname = dbname)
+  withr::local_envvar(PREXP_DB_NAME = dbname, PREXP_LOG = "off")
+  withr::local_options(shiny.sanitize.errors = NULL)
+  calls <- character()
+  caches <- list()
+  local_mocked_bindings(
+    start_workers = function(n = 2L, ...) {
+      calls <<- c(calls, paste("start", n))
+      invisible(n)
+    },
+    stop_workers = function() {
+      calls <<- c(calls, "stop")
+      invisible(NULL)
+    },
+    from_source = function() FALSE,
+    app_server = function(con, cache = NULL) {
+      caches <<- c(caches, list(cache))
+      function(input, output, session) NULL
+    }
+  )
+  app <- run_app(port = httpuv::randomPort(), launch.browser = FALSE)
+  later::later(function() {
+    # Two sessions
+    server <- app$serverFuncSource()
+    for (i in 1:2) server(list(), list(), list())
+    shiny::stopApp()
+  }, 0.5)
+  shiny::runApp(app, quiet = TRUE)
+  expect_identical(calls, c("start 2", "stop"))
+  expect_length(caches, 2L)
+  expect_true(identical(caches[[1]], caches[[2]]))
+  expect_identical(caches[[1]]$info()$max_size, 200 * 1024^2)
+})
+
+test_that("run from its source, the app starts no workers, which could not load it", {
+  expect_identical(from_source(), pkgload::is_dev_package("prexp"))
 })

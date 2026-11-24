@@ -32,7 +32,8 @@ args_hash <- function(args) {
 }
 
 # PREXP_LOG_KEY if set, so that hashes compare across restarts; otherwise a
-# key drawn when the process first logs, so that they compare within it
+# key drawn when the process first logs, so that they compare within it. The
+# app gives its key to its background workers (start_workers()).
 log_key <- function() {
   key <- Sys.getenv("PREXP_LOG_KEY")
   if (nzchar(key)) {

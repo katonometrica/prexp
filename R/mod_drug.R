@@ -19,7 +19,7 @@ mod_drug_ui <- function(id) {
       )
     ),
     bslib::card(
-      bslib::card_header(shiny::textOutput(ns("title"), inline = TRUE)),
+      view_header(ns),
       bslib::card_body(shiny::uiOutput(ns("body")))
     )
   )
@@ -124,7 +124,7 @@ mod_drug_server <- function(id, fetches, window) {
       presentations_table(rows)
     })
 
-    shiny::reactive({
+    current <- shiny::reactive({
       pick <- picked()
       rows <- if (is.null(pick) || is.null(months())) NULL else series()
       if (is.null(rows) || inherits(rows, "error") || nrow(rows) == 0L ||
@@ -134,12 +134,17 @@ mod_drug_server <- function(id, fetches, window) {
       list(
         view = "drug",
         params = list(
-          level = pick$level, id = pick$id, label = pick$label, months = months(),
-          measure = measure()
+          level = pick$level, id = pick$id, code = pick$code, label = pick$label,
+          months = months(), measure = measure()
         ),
-        data = rows
+        # Every month, as the chart draws it: a month without prescribing at 0
+        data = complete_months(
+          rows, months(), list(measure = measure(), value = 0, practices = 0L)
+        )
       )
     })
+    csv_download(output, ns, current, "Download the monthly totals, as CSV")
+    current
   })
 }
 
