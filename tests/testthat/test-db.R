@@ -60,6 +60,20 @@ test_that("db_pool() lends read-only connections as the app, to the database giv
   )
 })
 
+test_that("the pool checks a connection when a fetch borrows it, never in the background", {
+  pool <- local_test_pool()
+  # pool's timer would check idle connections, and an error there stops the app
+  expect_identical(pool$validationInterval, 0)
+  # The server ends a pooled connection's session
+  con <- pool::poolCheckout(pool)
+  ended <- DBI::dbGetQuery(con, "SELECT pg_backend_pid() AS pid")$pid
+  try(DBI::dbGetQuery(con, "SELECT pg_terminate_backend(pg_backend_pid())"), silent = TRUE)
+  pool::poolReturn(con)
+  # The next fetch works, on a new session (RPostgres resets a lost one)
+  now <- DBI::dbGetQuery(pool, "SELECT pg_backend_pid() AS pid")$pid
+  expect_false(now == ended)
+})
+
 test_that("the app refuses a login that can write, even one the client made read-only", {
   local_test_db("owner")
   dbname <- Sys.getenv("PREXP_TEST_DB_NAME")
