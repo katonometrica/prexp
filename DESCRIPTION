@@ -21,9 +21,11 @@ Imports:
     pool,
     processx,
     RPostgres (>= 1.4.0),
+    tibble,
     tools,
     utils
 Suggests:
+    bit64,
     covr,
     dplyr,
     DT,
