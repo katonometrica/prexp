@@ -275,3 +275,19 @@ test_that("run_app() starts and stops the workers, and gives every session one c
 test_that("run from its source, the app starts no workers, which could not load it", {
   expect_identical(from_source(), pkgload::is_dev_package("prexp"))
 })
+
+test_that("a view pinned on its tab is listed on the Report tab", {
+  app <- fixture_app()
+  chemical <- id_of(app, "chemical", "0212000B0")
+  local_mocked_bindings(showNotification = function(ui, ...) invisible(NULL), .package = "shiny")
+  shiny::testServer(app_server(app), {
+    expect_match(output$`report-items`$html, "Nothing is pinned yet.", fixed = TRUE)
+    session$setInputs(`drug-search-query` = "atorva")
+    session$elapse(400)
+    session$setInputs(`drug-search-pick` = paste0("chemical:", chemical))
+    session$setInputs(`drug-pin` = structure(1L, class = "shinyActionButtonValue"))
+    title <- paste("Atorvastatin", "items", "Oct 2025 to Sep 2026", sep = " \u00b7 ")
+    expect_match(output$`report-items`$html, title, fixed = TRUE)
+    expect_match(output$`report-count`$html, ">1/15<", fixed = TRUE)
+  })
+})

@@ -470,3 +470,22 @@ test_that("the CSV is the practice's monthly totals", {
     expect_identical(nrow(utils::read.csv(path)), 12L)
   })
 })
+
+test_that("Add to report pins the practice view with its parameters", {
+  fake <- fake_practice_fetches()
+  pinned <- shiny::reactiveVal(new_report())
+  local_mocked_bindings(showNotification = function(ui, ...) invisible(NULL), .package = "shiny")
+  shiny::testServer(
+    mod_practice_server,
+    args = list(
+      fetches = fake$fetches, window = shiny::reactive(practice_window), report = pinned
+    ),
+    {
+      pick_practice(session)
+      session$setInputs(pin = clicked(1))
+      expect_length(pinned()$items, 1L)
+      expect_identical(pinned()$items[[1]]$view, "practice")
+      expect_identical(pinned()$items[[1]]$params, session$returned()$params)
+    }
+  )
+})

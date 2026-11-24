@@ -502,3 +502,122 @@ test_that("the CSV button reads Download CSV to a screen reader, and says what t
     }
   )
 })
+
+test_that("Add to report pins the view with its parameters, off until there is one and when full", {
+  fake <- fake_drug_fetches()
+  pinned <- shiny::reactiveVal(new_report())
+  toasts <- character()
+  said <- character()
+  offs <- logical()
+  local_mocked_bindings(
+    showNotification = function(ui, ...) {
+      toasts <<- c(toasts, ui)
+      invisible(NULL)
+    },
+    updateActionButton = function(session, ..., disabled = NULL) {
+      offs <<- c(offs, disabled)
+      invisible(NULL)
+    },
+    .package = "shiny"
+  )
+  local_mocked_bindings(announce = function(session, text) said <<- c(said, text))
+  shiny::testServer(
+    mod_drug_server,
+    args = list(fetches = fake$fetches, window = shiny::reactive(drug_window), report = pinned),
+    {
+      session$flushReact()
+      expect_identical(offs, TRUE)
+      # A click with nothing shown pins nothing
+      session$setInputs(pin = clicked(1))
+      expect_length(pinned()$items, 0L)
+      pick_drug(session, "chemical:57")
+      expect_false(utils::tail(offs, 1L))
+      session$setInputs(pin = clicked(2))
+      expect_length(pinned()$items, 1L)
+      expect_identical(pinned()$items[[1]]$view, "drug")
+      expect_identical(pinned()$items[[1]]$params, session$returned()$params)
+      # The toast, and the status region for a screen reader, say so
+      expect_identical(utils::tail(toasts, 1L), paste0(
+        "Added to the report: Atorvastatin \u00b7 items \u00b7 Oct 2025 to Sep 2026. ",
+        "It holds 1 of 15 items."
+      ))
+      expect_identical(said, toasts)
+      # Full: the button goes off, and a click is refused with a toast
+      full <- pinned()
+      while (length(full$items) < 15L) {
+        full <- report_add(full, "drug", full$items[[1]]$params)
+      }
+      pinned(full)
+      session$flushReact()
+      expect_true(utils::tail(offs, 1L))
+      session$setInputs(pin = clicked(3))
+      expect_length(pinned()$items, 15L)
+      expect_match(utils::tail(toasts, 1L), "at most 15 items", fixed = TRUE)
+      expect_identical(utils::tail(said, 1L), utils::tail(toasts, 1L))
+      # One item removed elsewhere: the button is on again
+      pinned(report_remove(pinned(), 3L))
+      session$flushReact()
+      expect_false(utils::tail(offs, 1L))
+    }
+  )
+})
+
+test_that("a drug whose name ends in a tab pins, its label without it", {
+  fake <- fake_drug_fetches()
+  matches <- drug_matches
+  matches$name[2] <- paste0(matches$name[2], "\t")
+  fake$fetches$search_drugs <- function(q) matches
+  pinned <- shiny::reactiveVal(new_report())
+  local_mocked_bindings(showNotification = function(ui, ...) invisible(NULL), .package = "shiny")
+  local_mocked_bindings(announce = function(session, text) invisible(NULL))
+  shiny::testServer(
+    mod_drug_server,
+    args = list(fetches = fake$fetches, window = shiny::reactive(drug_window), report = pinned),
+    {
+      pick_drug(session, "presentation:300")
+      expect_match(session$returned()$params$label, "\t$")
+      session$setInputs(pin = clicked(1))
+      expect_identical(pinned()$items[[1]]$params$label, "Atorvastatin 20mg tablets")
+    }
+  )
+  expect_identical(pin_label(" a\tb\n\nc\t"), "a b c")
+  expect_identical(pin_label(NA_character_), NA_character_)
+  expect_identical(pin_label(intToUtf8(c(97L, 65535L, 133L, 98L))), "a b")
+  expect_identical(pin_label(""), "")
+})
+
+test_that("a pin the report refuses says so in plain words, and logs only the error's class", {
+  fake <- fake_drug_fetches()
+  pinned <- shiny::reactiveVal(new_report())
+  toasts <- character()
+  local_mocked_bindings(
+    showNotification = function(ui, ...) {
+      toasts <<- c(toasts, ui)
+      invisible(NULL)
+    },
+    .package = "shiny"
+  )
+  local_mocked_bindings(
+    announce = function(session, text) invisible(NULL),
+    report_add = function(...) invalid_argument("`label` must be one line of text")
+  )
+  shiny::testServer(
+    mod_drug_server,
+    args = list(fetches = fake$fetches, window = shiny::reactive(drug_window), report = pinned),
+    {
+      pick_drug(session, "chemical:57")
+      expect_message(
+        session$setInputs(pin = clicked(1)), "A pin was refused: prexp_invalid_argument"
+      )
+      expect_length(pinned()$items, 0L)
+      expect_identical(toasts, "This view could not be added to the report.")
+    }
+  )
+})
+
+test_that("the view's header has the Add to report button, off at first", {
+  html <- htmltools::renderTags(mod_drug_ui("drug"))$html
+  button <- regmatches(html, regexpr("<button[^>]*id=\"drug-pin\"[^>]*>", html))
+  expect_match(button, "disabled", fixed = TRUE)
+  expect_match(html, ">Add to report</span></button>", fixed = TRUE)
+})

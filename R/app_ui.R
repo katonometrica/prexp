@@ -20,10 +20,16 @@ app_ui <- function(request) {
     # Every tab flows as a page, so the footer follows its content; charts set
     # their own heights
     fillable = FALSE,
-    header = shiny::tags$head(
-      shiny::tags$meta(name = "robots", content = "noindex, nofollow"),
-      shiny::tags$link(rel = "stylesheet", href = "prexp/prexp.css"),
-      shiny::tags$script(src = "prexp/search.js")
+    header = shiny::tagList(
+      shiny::tags$head(
+        shiny::tags$meta(name = "robots", content = "noindex, nofollow"),
+        shiny::tags$link(rel = "stylesheet", href = "prexp/prexp.css"),
+        shiny::tags$script(src = "prexp/search.js"),
+        shiny::tags$script(src = "prexp/report.js")
+      ),
+      # The page's status region, there from the start on every tab, which
+      # says what a pin or a change to the report did (report.js, announce())
+      shiny::div(id = "prexp-status", class = "visually-hidden", role = "status")
     ),
     bslib::nav_panel("Drug", value = "drug", view_heading("Drug"), mod_drug_ui("drug")),
     bslib::nav_panel(
@@ -33,7 +39,7 @@ app_ui <- function(request) {
       "Region", value = "region", view_heading("Region"), mod_region_ui("region")
     ),
     bslib::nav_panel(
-      "Report", value = "report", view_heading("Report"), coming_view("Report", "P5-02")
+      "Report", value = "report", view_heading("Report"), mod_report_ui("report")
     ),
     bslib::nav_panel("About", value = "about", view_heading("About the data"), about_ui()),
     footer = footer_ui()
@@ -57,15 +63,6 @@ main_landmark <- function(page) {
   structure(
     main,
     class = class(page), lang = attr(page, "lang"), bs_theme = attr(page, "bs_theme")
-  )
-}
-
-# A tab whose view is still to come
-coming_view <- function(name, ticket) {
-  bslib::card(
-    bslib::card_body(
-      shiny::p(class = "text-muted", paste0("The ", name, " view comes next (", ticket, ")."))
-    )
   )
 }
 
