@@ -263,7 +263,7 @@ The other thirteen read a few rows through an index: the series and the profiles
 
 ## The app under load (P4-08)
 
-The app image as it runs in production: `prexp-app:local`, built from the tree of `main` after P4-07 (`d2e459f`). It ran on the full database with its settings for this machine (`full`), connected as the app role only, with its two background workers. On the machine above, otherwise idle, 24 November 2026.
+The app image as it runs in production: `prexp-app:local`, built from the tree of `main` after P4-07 (`d2e459f`), and for run 4 with the fix for #101 as well. It ran on the full database with its settings for this machine (`full`), connected as the app role only, with its two background workers. On the machine above, otherwise idle, 24 November 2026.
 
 **The sessions**, recorded through `shinyloadtest`'s proxy:
 - **`bench/recording.log`**, 1 min 43 s, ordinary lookups:
@@ -284,18 +284,19 @@ The app image as it runs in production: `prexp-app:local`, built from the tree o
 - **Run 1: ordinary lookups, as deployed.** The app container, restarted after the recording, with its 200 MB cache. Every session asks the same things, so after the first one the cache answers every lookup but the window's: the run's timing log has 32 fetches, 19 of them the window's.
 - **Run 2: ordinary lookups, no cache.** Every lookup goes to the database, as when each user asks for something not yet in the cache. The database stays warm, though: every session sends it the same 15 queries. This is the same image, started with `app_cache()` giving `NULL`, which the server takes as no cache.
 - **Run 3: the largest chemical, as deployed.** The cache keeps the fetch, not the table drawn from it, so every session builds the table again.
+- **Run 4: the largest chemical again, after #101's fix**, in the app image built with it.
 
-| | Run 1: ordinary, cache | Run 2: ordinary, no cache | Run 3: the largest chemical |
-| --- | ---: | ---: | ---: |
-| Sessions, and in the steady part | 19, 11 | 19, 11 | 32, 24 |
-| **Lookups, the searches' wait aside: p50, p95, max** | **39, 191, 411 ms** | **39, 195, 228 ms** | **144, 864, 1,148 ms** |
-| Lookups counted | 132 | 132 | 120 |
-| Messages, the searches' wait aside: p95 | 164 ms | 164 ms | 624 ms |
-| Messages, the searches' wait counted: p95 | 318 ms | 322 ms | 634 ms |
-| Search results, the wait included: p50, p95, max | 317, 322, 325 ms | 320, 330, 330 ms | 318, 580, 661 ms |
-| The page itself: p50, max | 124, 162 ms | 120, 149 ms | 141, 1,215 ms |
+| | Run 1: ordinary, cache | Run 2: ordinary, no cache | Run 3: the largest chemical | Run 4: the same, after #101 |
+| --- | ---: | ---: | ---: | ---: |
+| Sessions, and in the steady part | 19, 11 | 19, 11 | 32, 24 | 32, 24 |
+| **Lookups, the searches' wait aside: p50, p95, max** | **39, 191, 411 ms** | **39, 195, 228 ms** | **144, 864, 1,148 ms** | **150, 236, 304 ms** |
+| Lookups counted | 132 | 132 | 120 | 120 |
+| Messages, the searches' wait aside: p95 | 164 ms | 164 ms | 624 ms | 217 ms |
+| Messages, the searches' wait counted: p95 | 318 ms | 322 ms | 634 ms | 317 ms |
+| Search results, the wait included: p50, p95, max | 317, 322, 325 ms | 320, 330, 330 ms | 318, 580, 661 ms | 316, 321, 322 ms |
+| The page itself: p50, max | 124, 162 ms | 120, 149 ms | 141, 1,215 ms | 145, 333 ms |
 
-The page's files took 12 ms at most in every run.
+The page's files took 15 ms at most in every run.
 
 **In the database**, from run 2's timing log (`timing_summary()`): all 19 sessions' 285 fetches, with no errors.
 
@@ -312,20 +313,20 @@ The page's files took 12 ms at most in every run.
 | `fetch_regions` | 19 | 9.15 | 10.3 |
 | `fetch_region_comparison` | 19 | 10.8 | 11.8 |
 
-In run 3, the largest chemical's presentations took 24 and 32 ms to fetch. Those are its two fetches before the cache had them.
+In run 3, the largest chemical's presentations took 24 and 32 ms to fetch, and 31 and 34 ms in run 4. Those are its two fetches in each run before the cache had them.
 
 What the runs show:
 - **Ordinary lookups are under the 300 ms target, with the search's wait left out.**
   - Their p95 is 191 ms with the cache and 195 ms without.
   - The search's wait comes before the lookup and is not part of it, so the target is read without it.
   - Counting the wait, the p95 of all messages is 318 and 322 ms. That is because 3 of the session's 18 messages are search results, and each takes the wait plus 8 to 30 ms (17 and 20 ms at p50).
-- **The largest chemical's lookups are over the target: p95 864 ms.**
-  - Its Drug view sends the table every presentation: 2,068 rows, in a message of 235 KB (240,682 bytes). R writes the table's Quantity and ADQ usage cells one call per row.
-  - The table-and-chart message takes 543 ms at p50 in the pick's view and 585 ms after the change of month, each timed from the event before it; the worst is 1,148 ms. With one user, in the recording, timed the same way, it took 718 and 869 ms.
-  - One R process answers every session, so every other answer waits while a table is built. In this run, search results took up to 661 ms, and the page up to 1.2 s.
-  - Issue #101 has the cause and the ways to fix it.
+- **The largest chemical's lookups were over the target, p95 864 ms in run 3, until #101's fix: 236 ms in run 4.**
+  - Its Drug view sends the table every presentation: 2,068 rows, in a message of 235 KB (240,682 bytes) when it was recorded. R wrote the table's Quantity and ADQ usage cells one call per row.
+  - In run 3, the table-and-chart message took 543 ms at p50 in the pick's view and 585 ms after the change of month, each timed from the event before it; the worst was 1,148 ms. With one user, in the recording, timed the same way, it took 718 and 869 ms.
+  - One R process answers every session, so every other answer waits while a table is built. In run 3, search results took up to 661 ms, and the page up to 1.2 s.
+  - The fix writes the two columns once for all rows, into hidden columns that the cells show. In run 4 the table-and-chart message took 160 ms at p50 in the pick's view and 197 ms after the change of month; the search results took the wait plus 11 to 22 ms, and the page 333 ms at worst. Answers still wait while a table is built, but for less time: a pick's frame took 35 ms at p50, and up to 114 ms when it came while another session's table and chart were being built. That made one pick the run's slowest lookup, 304 ms.
 - **The database is a small part.**
-  - In runs 1 and 2 every fetch's p95 is under 20 ms, and the cache saves only those few milliseconds: the two runs have the same p95 per message, and are 4 ms apart per lookup. In run 3 the largest chemical's presentations took 24 and 32 ms to fetch, against its lookups' p95 of 864 ms.
+  - In runs 1 and 2 every fetch's p95 is under 20 ms, and the cache saves only those few milliseconds: the two runs have the same p95 per message, and are 4 ms apart per lookup. In runs 3 and 4 the largest chemical's presentations took 24 to 34 ms to fetch, against its lookups' p95 of 864 and 236 ms.
   - Most of an answer's time is the app's R process drawing the tables and charts. An ordinary update with a chart takes 105 to 165 ms at p50.
 - **The slowest ordinary lookup took 411 ms:** run 1's region pick.
   - Its frame took 39 ms, then a region chart 372 ms; that chart's p50 is 115 ms.
@@ -338,7 +339,7 @@ What the runs show:
   - `bench/recording.log`'s page load is a returning visitor's. The browser had most of the files from earlier visits, so it asks for the page and 16 files, 10 of them only revalidated.
   - `bench/recording-largest.log`'s is a first visit: the page and 32 files.
 - **Sessions reported as failed.**
-  - `shinycannon` reported 9 of 19, 10 of 19 and 19 of 32 of the runs' sessions as failed. Each failed after its last event, as it closed the socket: its `onDisconnected` handler expects the server's close frame, and threw an exception when given none (`null`).
+  - `shinycannon` reported 9 of 19, 10 of 19, 19 of 32 and 17 of 32 of the runs' sessions as failed. Each failed after its last event, as it closed the socket: its `onDisconnected` handler expects the server's close frame, and threw an exception when given none (`null`).
   - Every session replayed every event of its recording, up to the close, so the figures count all of them. The app's logs have no errors.
 
 **The workers' timing lines.** No view fetches on the workers yet: none takes 100 ms, so in every run each fetch ran in the app's own process. Their timing lines reach the container's log as the app's do. This was checked in a container of the app image with two workers:
@@ -353,7 +354,7 @@ The package's tests check the same on every CI run (`tests/testthat/test-workers
 2. `bench/setup.sh` installs the tools in the rstudio container: a Java runtime, `shinycannon` 1.1.3 from Posit's release on GitHub, checked against its SHA-256, and `shinyloadtest`.
 3. `bench/record.R` records a session through `shinyloadtest`'s proxy. `bench/tidy.R` then keeps the last session the proxy saw, and ends it with the socket's close if the proxy left that out.
 4. `bench/replay.sh` replays the session, against one of:
-   - the app container, restarted after the recording so that its cache starts empty (runs 1 and 3);
+   - the app container, restarted after the recording so that its cache starts empty (runs 1, 3 and 4);
    - a container of the app image without the cache (run 2).
 5. Save the app's log over the run as `app.log` in the run's folder:
    - for the app container, use `docker compose logs` from the replay's start;
