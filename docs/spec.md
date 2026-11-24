@@ -176,7 +176,7 @@ Each rollup row holds the sums of the measures that can be added at its grain (`
 
 ### 3.4 Size estimate
 
-Measured on September 2026 (P1-09, [benchmarks.md](benchmarks.md#one-month-p1-09)): 9,459,744 fact rows after aggregation, a 639 MB table (71 bytes a row) and 1,133 MB for its two indexes, 1,772 MB (1.73 GB) a month in all; the month's rollup rows and the dimensions add under 40 MB. Twelve months, measured in P2-02 ([benchmarks.md](benchmarks.md#twelve-months-p2-02)): 112.8 million fact rows, 20.7 GB of fact table and indexes, 20.9 GB for the whole database. While a month loads, staging holds 7.0 GB, the month being built beside the live one 1.7 GB, and the write-ahead log peaked at 1.6 GB, so the peak is about 31 GB (sizes in PostgreSQL's units, 1 GB = 1,024 MB). **Plan for at least 50 GB free disk for Postgres**, which leaves room for larger months and for any index phase 2 adds.
+Measured on September 2026 (P1-09, [benchmarks.md](benchmarks.md#one-month-p1-09)): 9,459,744 fact rows after aggregation, a 639 MB table (71 bytes a row) and 1,133 MB for its two indexes, 1,772 MB (1.73 GB) a month in all; the month's rollup rows and the dimensions add under 40 MB. Twelve months, measured in P2-02 ([benchmarks.md](benchmarks.md#twelve-months-p2-02)): 112.8 million fact rows, 20.7 GB of fact table and indexes, 20.9 GB for the whole database. While a month loads, staging holds 7.0 GB, the month being built beside the live one 1.7 GB, and the write-ahead log peaked at 1.6 GB, so the peak is about 31 GB (sizes in PostgreSQL's units, 1 GB = 1,024 MB). **Plan for at least 50 GB free disk for Postgres**, which leaves room for larger months. Phase 2's indexes added about 50 MB (migrations 008 and 009); the database is 20.9 GB ([benchmarks.md](benchmarks.md#at-a-glance-p2-06)).
 
 ### 3.5 Migrations
 
@@ -276,7 +276,7 @@ Every function takes `con` (a pool or connection) first, validates its arguments
 Quantity is only valid for a single presentation, because units differ across presentations.
 
 Each query is registered in `fct_query_registry.R` with two sample argument sets. Codes are looked up at run time, among those with data in the months asked for:
-- large, over the whole window, the worst case it holds: the chemical with the most presentations and the practice with the most prescribing rows, picked from the data when the check runs, and the two-letter search that matches the most names;
+- large, over the whole window, the worst case it holds, picked from the data when the check runs: the chemical with the most presentation rollup rows (presentation × region × month), the practice with the most prescribing rows, and for each search the two characters that start the most names' words;
 - small, over the last three months: a rarely prescribed drug, or a small practice.
 
 `check_plans()` runs every entry once to warm the cache, then with `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON)`. It fails on any of:
