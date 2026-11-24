@@ -24,6 +24,7 @@ test_that("every query prepares as the app role, with the parameter types expect
   months <- c("integer", "integer", "integer")
   expected <- list(
     window = character(),
+    regions = character(),
     search_drugs = c("text", "bigint"),
     search_practices = c("text", "bigint"),
     drug_series_chemical = months,
@@ -67,6 +68,7 @@ test_that("every query runs as the app role on loaded months, with its columns",
   months <- list(202608L, 202609L)
   calls <- list(
     window = list(),
+    regions = list(),
     search_drugs = list("atorva", 20L),
     search_practices = list("n81", 20L),
     drug_series_chemical = c(chemical, months),
@@ -81,6 +83,7 @@ test_that("every query runs as the app role on loaded months, with its columns",
   measures <- c("items", "adq_usage", "nic", "actual_cost")
   columns <- list(
     window = c("first_month", "last_month", "months", "loaded_at"),
+    regions = c("region_code", "region_name"),
     search_drugs = c("level", "id", "code", "name", "chemical_id", "chemical_name", "is_generic"),
     search_practices = c(
       "practice_id", "practice_code", "practice_name", "postcode", "icb_name", "region_name"

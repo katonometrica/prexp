@@ -257,3 +257,15 @@ test_that("the fetch functions take the app's pool as well as a connection", {
   )
   expect_identical(fetch_search_drugs(pool, "atorva"), fetch_search_drugs(con, "atorva"))
 })
+
+test_that("fetch_regions() gives the NHS regions, not the prescribers without one", {
+  con <- fixture_app()
+  regions <- fetch_regions(con)
+  expect_identical(names(regions), c("region_code", "region_name"))
+  expect_false("-" %in% regions$region_code)
+  expect_identical(regions$region_code, sort(regions$region_code))
+  known <- DBI::dbGetQuery(con, "
+    SELECT region_code, region_name FROM app.v_region
+    WHERE region_code <> '-' ORDER BY region_code")
+  expect_identical(as.data.frame(regions), known)
+})

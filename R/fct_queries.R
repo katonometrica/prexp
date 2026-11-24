@@ -72,6 +72,27 @@ fetch_window <- function(con) {
   run_fetch(con, "fetch_window", "window")
 }
 
+#' The NHS regions
+#'
+#' The seven regions of NHS England, so that a comparison by region can show
+#' every one, at 0 where a drug was not prescribed. Prescribers without a
+#' region (region `"-"`) are not one of them.
+#'
+#' @inheritParams fetch_window
+#' @return A tibble, one row per region, in order of `region_code`:
+#'   `region_code` and `region_name`.
+#' @family fetch functions
+#' @examples
+#' \dontrun{
+#' pool <- db_pool()
+#' fetch_regions(pool)
+#' pool::poolClose(pool)
+#' }
+#' @export
+fetch_regions <- function(con) {
+  run_fetch(con, "fetch_regions", "regions")
+}
+
 #' Search chemical substances and presentations
 #'
 #' Matches names that contain `q`, ignoring case, and BNF codes that start
