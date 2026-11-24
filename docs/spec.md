@@ -275,15 +275,16 @@ Every function takes `con` (a pool or connection) first, validates its arguments
 
 Quantity is only valid for a single presentation, because units differ across presentations.
 
-Each query is registered in `fct_query_registry.R` with two sample argument sets, looked up by code at run time:
-- large, over the whole window: for example a widely prescribed statin, or the largest practice;
+Each query is registered in `fct_query_registry.R` with two sample argument sets. Codes are looked up at run time, among those with data in the months asked for:
+- large, over the whole window, the worst case it holds: the chemical with the most presentations and the practice with the most prescribing rows, picked from the data when the check runs, and the two-letter search that matches the most names;
 - small, over the last three months: a rarely prescribed drug, or a small practice.
 
 `check_plans()` runs every entry once to warm the cache, then with `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON)`. It fails on any of:
-- a sequential scan of a `core.prescribing` partition;
+- a read of a `core.prescribing` partition that is not an index-only scan;
 - a plan that reads more partitions than the months asked for;
 - heap fetches in an index-only scan of one;
-- planning and execution over 50 ms.
+- planning and execution over 50 ms;
+- a query that returns no rows, or errors.
 
 `check_plans(generic = TRUE)` checks the generic plans of prepared statements the same way.
 

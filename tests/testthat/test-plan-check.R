@@ -32,7 +32,9 @@ test_that("months count across the turn of the year", {
 
 test_that("a clean plan passes: index-only scans of the twelve months asked for", {
   res <- plan_summary(read_plan("clean"), max_ms = 50, months = 12L)
+  expect_identical(res$rows, 25)
   expect_identical(res$seq_scans, 0L)
+  expect_identical(res$heap_scans, 0L)
   expect_identical(res$partitions, 12L)
   expect_identical(res$heap_fetches, 0)
   expect_identical(res$pruned, 0)
@@ -54,6 +56,26 @@ test_that("a sequential scan, unpruned partitions, heap fetches and slowness fai
   expect_identical(unpruned$problems, "reads 12 partitions for 3 months")
   slow <- plan_summary(read_plan("clean"), max_ms = 0.001)
   expect_match(slow$problems, "^[0-9.]+ ms, over 0.001 ms$")
+  # The limit is on planning plus execution: 0.642 + 20.361 ms in this plan
+  plan <- read_plan("clean")
+  expect_equal(plan[[1]][["Planning Time"]] + plan[[1]][["Execution Time"]], 21.003)
+  expect_identical(plan_summary(plan, max_ms = 20.5)$problems, "21.0 ms, over 20.5 ms")
+  # Any other read of a partition than an index-only scan goes to the heap
+  heap <- plan
+  heap[[1]]$Plan$Plans <- c(heap[[1]]$Plan$Plans, list(list(
+    "Node Type" = "Bitmap Heap Scan", "Relation Name" = "prescribing_202609"
+  )))
+  expect_match(
+    plan_summary(heap, 50, months = 12L)$problems,
+    "not index-only: Bitmap Heap Scan of prescribing_202609", fixed = TRUE
+  )
+  # A query that returns nothing tests nothing
+  empty <- plan
+  empty[[1]]$Plan[["Actual Rows"]] <- 0
+  expect_identical(
+    plan_summary(empty, 50, months = 12L)$problems,
+    "returns no rows: the sample no longer tests anything"
+  )
   fetches <- read_plan("clean")
   fetches[[1]]$Plan <- list(
     "Node Type" = "Index Only Scan", "Relation Name" = "prescribing_202609", "Heap Fetches" = 7
@@ -90,24 +112,46 @@ test_that("check_plans() reports every query and sample on the fixture months", 
   registry <- query_registry()
   expect_identical(nrow(res), sum(lengths(lapply(registry, `[[`, "samples"))))
   expect_setequal(unique(res$query), names(registry))
-  # The large practice of the full data is not in the fixtures: its stand-in is used
-  expect_identical(res$codes[res$query == "practice_series" & res$sample == "large"], "N81655")
-  # Every sample found, every plan read
-  expect_false(any(grepl("is not in the database", res$problems)))
+  # The large samples are the worst cases in the data: the practice with the
+  # most prescribing rows, the chemical with the most presentations
+  large_practice <- res$codes[res$query == "practice_series" & res$sample == "large"]
+  prescribing <- DBI::dbGetQuery(con, "
+    SELECT p.practice_code, sum(m.presentations)::int AS n FROM app.v_practice_month m
+    JOIN app.v_practice p USING (practice_id) WHERE NOT p.is_unidentified GROUP BY 1")
+  expect_identical(
+    prescribing$n[prescribing$practice_code == large_practice], max(prescribing$n)
+  )
+  large_chemical <- res$codes[res$query == "drug_presentations" & res$sample == "large"]
+  presentations <- DBI::dbGetQuery(con, "
+    SELECT c.chemical_code, count(*)::int AS n FROM app.v_presentation p
+    JOIN app.v_chemical c USING (chemical_id) GROUP BY 1")
+  expect_identical(
+    presentations$n[presentations$chemical_code == large_chemical], max(presentations$n)
+  )
+  expect_identical(res$codes[res$query == "search_drugs"], c("ba", "pitolisant"))
+  # Every sample found, every plan read, every query returning rows
+  expect_false(any(grepl("has no data", res$problems)))
   expect_false(any(is.na(res$ms)))
+  expect_true(all(res$rows > 0))
   # The large sample asks for the whole window, the small one for three months,
   # and the plan reads no more partitions than that
   top <- res[res$query == "practice_top_drugs", ]
   expect_identical(top$months, c(4L, 3L))
   expect_identical(top$partitions, c(4L, 3L))
   expect_false(any(grepl("partitions for", res$problems)))
-  # One JSON line per check
-  lines <- grep("^[{]", output, value = TRUE)
-  expect_length(lines, nrow(res))
-  first <- jsonlite::fromJSON(lines[1])
+  # The table, one line per check under its header, and one JSON line per check
+  json <- grepl("^[{]", output)
+  expect_identical(sum(json), nrow(res))
+  expect_identical(sum(!json), nrow(res) + 1L)
+  expect_match(output[!json][1], "^ *query +sample +codes +months +rows +ms")
+  first <- jsonlite::fromJSON(output[json][1])
   expect_identical(first$event, "plan_check")
   expect_identical(first$plan, "custom")
   expect_identical(first$query, res$query[1])
+  expect_identical(
+    vapply(output[json], function(line) jsonlite::fromJSON(line)$ok, logical(1), USE.NAMES = FALSE),
+    res$ok
+  )
 })
 
 test_that("generic plans are checked too, and the session is left as it was", {
@@ -123,6 +167,7 @@ test_that("generic plans are checked too, and the session is left as it was", {
   expect_identical(top$partitions, c(4L, 3L))
   expect_identical(top$pruned, c(0, 1))
   lines <- grep("^[{]", output, value = TRUE)
+  expect_length(lines, nrow(res))
   expect_true(all(vapply(lines, function(line) jsonlite::fromJSON(line)$plan, "") == "generic"))
   expect_identical(DBI::dbGetQuery(con, "SHOW plan_cache_mode")[[1]], "force_custom_plan")
   expect_identical(nrow(DBI::dbGetQuery(con, "SELECT name FROM pg_prepared_statements")), 0L)
@@ -137,12 +182,60 @@ test_that("on a database with no month loaded, the check stops", {
 test_that("a failing check stops unless it is report-only, and names the failures", {
   dbname <- local_loaded_db(202609L)
   con <- local_test_db("loader", dbname = dbname)
+  # The failures go out as a message, which is never cut short, then the error
   expect_error(
-    utils::capture.output(check_plans(con, max_ms = 0)),
-    "plan checks failed:\nwindow (window): ", fixed = TRUE
+    expect_message(
+      utils::capture.output(check_plans(con, max_ms = 0)),
+      "21 of 21 plan checks failed:\nwindow (window): ", fixed = TRUE
+    ),
+    "21 of 21 plan checks failed (listed above).", fixed = TRUE
   )
   expect_message(
     utils::capture.output(check_plans(con, max_ms = 0, report_only = TRUE)),
     "checks would fail"
   )
+})
+
+test_that("a sample code with no data, or a query that errors, fails its check only", {
+  dbname <- local_loaded_db(202609L)
+  con <- local_test_db("loader", dbname = dbname)
+  registry <- query_registry()
+  registry$practice_profile$samples$small$practice <- "ZZZ999"
+  real_sql <- query_sql
+  testthat::local_mocked_bindings(
+    query_registry = function() registry,
+    query_sql = function(query) {
+      if (query == "practice_series") "SELECT no_such_column FROM app.v_window" else real_sql(query)
+    }
+  )
+  utils::capture.output(res <- suppressMessages(check_plans(con, report_only = TRUE)))
+  expect_identical(nrow(res), 21L)
+  expect_identical(
+    res$problems[res$query == "practice_profile" & res$sample == "small"],
+    "practice ZZZ999 has no data in the months asked for"
+  )
+  expect_match(res$problems[res$query == "practice_series"], "^error: ")
+  # The checks after it ran
+  expect_false(any(is.na(res$ms[res$query == "region_comparison_presentation"])))
+  expect_error(
+    suppressMessages(utils::capture.output(check_plans(con))), "plan checks failed", fixed = TRUE
+  )
+})
+
+test_that("a code is found only with data in the months asked for, in the order given", {
+  dbname <- local_loaded_db(c(202608L, 202609L))
+  con <- local_test_db("loader", dbname = dbname)
+  expect_identical(lookup_id(con, "practice", c("Y03965", "N81655"), 202608L)$code, "Y03965")
+  expect_identical(lookup_id(con, "practice", c("N81655", "Y03965"), 202608L)$code, "N81655")
+  # Dimension rows outlive the window: a code last seen before the months is missing
+  expect_true(is.na(lookup_id(con, "practice", "N81655", 202610L)$id))
+  expect_identical(lookup_id(con, "practice", c("ZZZ999", "Y03965"), 202608L)$code, "Y03965")
+})
+
+test_that("with no connection given, the check opens and closes its own", {
+  dbname <- local_loaded_db(202609L)
+  withr::local_envvar(PREXP_DB_NAME = dbname)
+  utils::capture.output(res <- suppressMessages(check_plans(report_only = TRUE, generic = TRUE)))
+  expect_identical(nrow(res), 21L)
+  expect_false(any(is.na(res$ms)))
 })

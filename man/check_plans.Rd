@@ -24,12 +24,14 @@ Runs each query of the registry with its large sample, over the whole
 window, and its small sample, over the last three months: once to warm the
 cache, then with \verb{EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON)},
 which measures the whole statement without timing each node. A check fails
-on a sequential scan of a partition of the fact table, on a plan that reads
-more partitions than the months asked for (they were not pruned), on heap
-fetches in an index-only scan of one (its visibility map is not set), on
-planning and execution taking more than \code{max_ms}, or on a sample whose code
-is not in the database. Prints a table of the results and writes one JSON
-line per check to standard output.
+on any read of a partition of the fact table that is not an index-only scan
+(a sequential, index or bitmap scan), on a plan that reads more partitions
+than the months asked for (they were not pruned), on heap fetches in an
+index-only scan of one (its visibility map is not set), on planning and
+execution taking more than \code{max_ms}, on a query that returns no rows, on a
+sample whose code has no data in the months asked for, or on a query that
+errors; the other checks still run. Prints a table of the results and
+writes one JSON line per check to standard output.
 }
 \details{
 The app sends each query as an unnamed prepared statement, which the server
@@ -38,9 +40,10 @@ plans with the parameters' values; the checks do the same by default.
 its statements once would get, made without the values: they must still
 prune the partitions, when the plan starts.
 
-On the full database every check must pass: the function stops with an
-error when one fails, so \verb{Rscript -e "prexp::check_plans()"} exits with a
-non-zero status and a scheduled task can alert. On a small database, such as
+On the full database every check must pass: the function lists the
+failures as a message, then stops with an error, so
+\verb{Rscript -e "prexp::check_plans()"} exits with a non-zero status and a
+scheduled task can alert. On a small database, such as
 the test fixtures, sequential scans are the planner's right choice: use
 \code{report_only = TRUE} there.
 }
