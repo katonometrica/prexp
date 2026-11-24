@@ -13,16 +13,16 @@
 run_fetch <- function(con, fetch, query, params = list(), args = params) {
   sql <- query_sql(query)
   started <- Sys.time()
-  rows <- tryCatch(
+  # A failed or interrupted query logs its line, then goes on failing
+  failed <- function(condition) log_fetch(fetch, args, NULL, started, error = TRUE)
+  rows <- withCallingHandlers(
     if (length(params) == 0L) {
       DBI::dbGetQuery(con, sql)
     } else {
       DBI::dbGetQuery(con, sql, params = unname(params))
     },
-    error = function(e) {
-      log_fetch(fetch, args, NULL, started, error = TRUE)
-      stop(e)
-    }
+    error = failed,
+    interrupt = failed
   )
   for (col in names(rows)) {
     if (inherits(rows[[col]], "integer64")) {

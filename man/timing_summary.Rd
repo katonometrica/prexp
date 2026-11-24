@@ -13,12 +13,16 @@ timing_summary(path)
 A tibble, one row per function in alphabetical order: \code{function},
 \code{count} (integer, its fetches), \code{errors} (integer, how many failed), and
 \code{p50} and \code{p95} (double, milliseconds, over every fetch, failed ones
-included). No rows for a log without timing lines.
+included). No rows, with a warning, for a log that has lines but no
+timing lines.
 }
 \description{
 Reads the fetch timing lines from a log, such as the app's standard output,
-and summarises them per fetch function, for the p95 benchmark. Other lines
-in the file are skipped.
+and summarises them per fetch function, for the p95 benchmark. A timing
+line may carry a prefix, as \verb{docker compose logs} and \verb{docker logs -t} add
+one: a record starts at the first \verb{\{"time":} in a line. Other lines, and
+records whose \code{function} is not a fetch's name or whose \code{ms} is not one
+number, are skipped.
 }
 \details{
 A percentile is the nearest rank: the p95 is the smallest time that at least
