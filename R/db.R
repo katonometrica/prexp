@@ -147,16 +147,20 @@ db_pool <- function(dbname = NULL, ...) {
 #   again, so a setting from the client does not count.
 # - not a superuser's, which no privilege limits;
 # - unable to use the core and raw schemas, which the loader writes.
+# Each test is of the login, session_user: a client can also ask to act as
+# another role (-c role=prexp_app), which changes current_user, and RESET ROLE
+# brings the login's own rights back.
 # A refused connection is closed first: the pool calls this on each new
 # connection, before handing it out, and would otherwise leak it.
 check_read_only <- function(con) {
   session <- DBI::dbGetQuery(con, "
-    SELECT current_user AS login, s.setting AS read_only, s.source, r.rolsuper AS superuser,
-           coalesce(has_schema_privilege(to_regnamespace('core')::oid, 'USAGE'), false)
-             OR coalesce(has_schema_privilege(to_regnamespace('raw')::oid, 'USAGE'), false)
-             AS loader_schemas
+    SELECT session_user AS login, s.setting AS read_only, s.source, r.rolsuper AS superuser,
+           coalesce(has_schema_privilege(
+             session_user, to_regnamespace('core')::oid, 'USAGE'), false)
+           OR coalesce(has_schema_privilege(
+             session_user, to_regnamespace('raw')::oid, 'USAGE'), false) AS loader_schemas
     FROM pg_settings s
-    JOIN pg_roles r ON r.rolname = current_user
+    JOIN pg_roles r ON r.rolname = session_user
     WHERE s.name = 'default_transaction_read_only'")
   problem <- if (!identical(session$read_only, "on")) {
     paste0("has default_transaction_read_only = ", session$read_only)
