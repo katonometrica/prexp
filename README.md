@@ -68,7 +68,9 @@ and indexes, plus a month being loaded), set `PREXP_DB_CONFIG=full` and
 recreates the database container with `docker/db/postgresql.full.conf`; the data stays.
 That file is sized for a machine that gives Docker about 100 GB of memory and 16 CPUs,
 and `docs/benchmarks.md` records the machine it was measured on. Load a month from the
-RStudio console with `prexp::load_month(202609)`.
+RStudio console with `prexp::load_month(202609)`. The database keeps the
+`PREXP_WINDOW_MONTHS` most recent months (12 by default): loading a newer month drops
+the oldest.
 
 ### Stop and reset
 

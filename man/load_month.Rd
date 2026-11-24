@@ -18,20 +18,30 @@ to check it. Without \code{file} the portal's is used.}
 \item{dbname}{Database name; defaults to \code{PREXP_DB_NAME}.}
 }
 \value{
-A list with \code{year_month}, \code{source_rows}, \code{loaded_rows} and
-\code{seconds}, invisibly.
+A list with \code{year_month}, \code{source_rows}, \code{loaded_rows}, \code{dropped}
+(the months dropped from the window) and \code{seconds}, invisibly.
 }
 \description{
 Runs the steps of the monthly load (spec section 4) with a timed message for
-each: find the month on the portal, download it, check its header, stage it,
-upsert the dimensions, build the month beside the live data, check it
-against staging, and swap it in. Nothing in \code{core} changes unless every
-check passes, and a failure during the swap rolls it back, so a month is
-either loaded completely or left as it was. Loading a month again rebuilds
-and swaps it.
+each: find the month on the portal, download it, check its header, stage it
+and check that it is the month asked for, work out its dimensions, build the
+month beside the live data, check it against staging, and swap it in.
+Nothing in \code{core} changes before the swap, which runs in one transaction, so
+a month is either loaded completely, dimensions included, or left as it was.
+Loading a month again rebuilds and swaps it.
 }
 \details{
-An advisory lock lets only one load run at a time. The load is recorded in
-\code{core.load_log}: \code{running} while it runs, then \code{loaded}, or \code{failed} with the
-error. At the end staging is truncated and a downloaded file is deleted.
+The database keeps a window of \code{PREXP_WINDOW_MONTHS} months (default 12), the
+most recent loaded. A new month that takes it beyond that drops the oldest
+in the same swap: its partition and rollup rows go, its dimension rows stay.
+A reload never drops anything. A month older than the first month of a full
+window is refused before anything is downloaded, since it would be dropped
+at once.
+
+An advisory lock lets only one load run at a time on a database. The load is
+recorded in \code{core.load_log}: \code{running} while it runs, then \code{loaded}, or
+\code{failed} with the error. At the end staging is truncated and a downloaded
+file is deleted. A downloaded file is also deleted when a step that reads it
+fails before its SHA-256 has been checked, so a damaged download is never
+used again.
 }

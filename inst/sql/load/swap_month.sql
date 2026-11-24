@@ -11,6 +11,11 @@
 -- for that lock, new app queries queue behind it, so each wait is kept short
 -- (lock_timeout 1 s, well under the app's 5 s statement timeout) and retried
 -- after a pause that lets the queued queries run.
+--
+-- A new month that takes the window beyond PREXP_WINDOW_MONTHS drops the
+-- oldest months (P2-01), with these same statements run for each of them: the
+-- delete_* statements with the rollup rows, live_partition, detach and drop_old
+-- after the attach, and dropped_log.
 
 -- name: delete_presentation
 DELETE FROM core.agg_presentation_month WHERE year_month = {ym};
@@ -70,6 +75,11 @@ ALTER TABLE core.prescribing ATTACH PARTITION core.prescribing_{ym}
 
 -- name: replace_log
 UPDATE core.load_log SET status = 'replaced'
+WHERE year_month = {ym} AND status = 'loaded';
+
+-- name: dropped_log
+-- A month that has left the window
+UPDATE core.load_log SET status = 'dropped'
 WHERE year_month = {ym} AND status = 'loaded';
 
 -- name: loaded_log

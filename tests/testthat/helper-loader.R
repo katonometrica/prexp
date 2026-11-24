@@ -8,15 +8,47 @@ fixture_sha256 <- function(ym) {
   unname(tools::sha256sum(csv))
 }
 
+# Loads a fixture month with the real loader
+load_fixture <- function(ym, dbname, ...) {
+  load_month(ym, file = fixture_file(ym), sha256 = fixture_sha256(ym), dbname = dbname, ...)
+}
+
 # A new migrated database with fixture months loaded by the real loader
 local_loaded_db <- function(months, env = parent.frame()) {
   dbname <- local_migrated_db(env = env)
   for (ym in months) {
-    suppressMessages(load_month(
-      ym, file = fixture_file(ym), sha256 = fixture_sha256(ym), dbname = dbname
-    ))
+    suppressMessages(load_fixture(ym, dbname))
   }
   dbname
+}
+
+# The fact table's attached partitions
+partitions <- function(con) {
+  DBI::dbGetQuery(con, "
+    SELECT c.relname FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
+    WHERE i.inhparent = 'core.prescribing'::regclass ORDER BY 1")$relname
+}
+
+# The months with a table or index of the fact table in core, attached or not
+fact_months <- function(con) {
+  names <- DBI::dbGetQuery(con, "
+    SELECT relname FROM pg_class
+    WHERE relnamespace = 'core'::regnamespace AND relname ~ '^prescribing_[0-9]{6}'")$relname
+  sort(unique(as.integer(substr(names, 13L, 18L))))
+}
+
+# Everything in core that a load could change, but load_log
+core_state <- function(con) {
+  list(
+    chemicals = DBI::dbGetQuery(con, "SELECT * FROM core.dim_chemical ORDER BY chemical_id"),
+    presentations = DBI::dbGetQuery(
+      con, "SELECT * FROM core.dim_presentation ORDER BY presentation_id"
+    ),
+    practices = DBI::dbGetQuery(con, "SELECT * FROM core.dim_practice ORDER BY practice_id"),
+    fact = loaded_fact(con), presentation_month = loaded_presentation_month(con),
+    chemical_month = loaded_chemical_month(con), practice_month = loaded_practice_month(con),
+    partitions = partitions(con)
+  )
 }
 
 # One staging row, as text, with every column; arguments override the defaults
