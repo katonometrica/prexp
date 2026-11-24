@@ -21,11 +21,13 @@ place of a connection.
 Opens a pool of connections as the app role, with the settings
 \code{\link[=db_connect]{db_connect()}} reads. The app creates it once per process, and each fetch
 borrows a connection from it (spec section 5.4). Every connection the pool
-opens must be read-only, as the \code{prexp_app} role's settings make it: if one
-is not, it is closed and the pool stops with an error. The pool opens its
-first connection at once, even with \code{minSize = 0}, so the app refuses to
-start with the loader's or the owner's login rather than failing at its
-first query.
+opens is checked as \code{\link[=db_connect]{db_connect()}} checks an app connection: read-only by
+the server's settings, as the \code{prexp_app} role's settings make it, and not a
+superuser's or a login that can use the loader's schemas. If one fails, it
+is closed and the pool stops with an error of class \code{prexp_writable_login}.
+The pool opens its first connection at once, even with \code{minSize = 0}, so
+the app refuses to start with the loader's or the owner's login rather than
+failing at its first query.
 }
 \details{
 Close the pool with \code{\link[pool:poolClose]{pool::poolClose()}} when the app stops.

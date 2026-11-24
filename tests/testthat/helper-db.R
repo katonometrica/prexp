@@ -15,9 +15,17 @@ local_test_db <- function(role = c("app", "loader", "owner"),
   if (!nzchar(dbname)) {
     no_test_db("PREXP_TEST_DB_NAME is not set")
   }
+  # Only a database that cannot be reached skips the test: an app login that
+  # db_connect() refuses as writable is a failure. One handler: an error raised
+  # again from a handler of the same tryCatch() would reach its other handlers.
   con <- tryCatch(
     db_connect(role, dbname = dbname, connect_timeout = "5"),
-    error = function(e) no_test_db(conditionMessage(e))
+    error = function(e) {
+      if (inherits(e, "prexp_writable_login")) {
+        stop(e)
+      }
+      no_test_db(conditionMessage(e))
+    }
   )
   withr::defer(DBI::dbDisconnect(con), envir = env)
   con

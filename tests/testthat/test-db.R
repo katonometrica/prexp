@@ -42,20 +42,28 @@ test_that("db_connect() logs in as each role, and the app role is read-only", {
   expect_identical(settings$timeout, "5s")
 })
 
-test_that("db_pool() lends read-only connections as the app", {
+test_that("db_pool() lends read-only connections as the app, to the database given", {
   pool <- local_test_pool()
   session <- DBI::dbGetQuery(pool, "
-    SELECT current_user AS login, current_setting('application_name') AS name,
+    SELECT current_user AS login, current_database() AS dbname,
+           current_setting('application_name') AS name,
            current_setting('transaction_read_only') AS read_only")
-  expect_identical(session, data.frame(login = "prexp_app", name = "prexp-app", read_only = "on"))
+  expect_identical(
+    session,
+    data.frame(
+      login = "prexp_app", dbname = Sys.getenv("PREXP_TEST_DB_NAME"), name = "prexp-app",
+      read_only = "on"
+    )
+  )
   expect_error(
     DBI::dbExecute(pool, "CREATE TABLE app.not_allowed (x int)"), "read-only transaction"
   )
 })
 
-test_that("the app refuses a login that can write, and leaves no connection behind", {
-  owner <- local_test_db("owner")
+test_that("the app refuses a login that can write, even one the client made read-only", {
+  local_test_db("owner")
   dbname <- Sys.getenv("PREXP_TEST_DB_NAME")
+  read_only <- "-c default_transaction_read_only=on"
   for (role in c("loader", "owner")) {
     withr::with_envvar(
       c(
@@ -63,23 +71,59 @@ test_that("the app refuses a login that can write, and leaves no connection behi
         PREXP_APP_PASSWORD = Sys.getenv(paste0("PREXP_", toupper(role), "_PASSWORD"))
       ),
       {
-        refused <- paste0("must connect read-only, but prexp_", role)
-        expect_error(db_pool(dbname = dbname), refused, fixed = TRUE)
-        expect_error(db_pool(dbname = dbname, minSize = 0), refused, fixed = TRUE)
+        refused <- paste0("The app must connect read-only, but prexp_", role, " ")
+        expect_error(
+          db_pool(dbname = dbname), refused, fixed = TRUE, class = "prexp_writable_login"
+        )
+        # With minSize = 0 the first connection opens after the pool: the error
+        # is still the check's own
+        error <- expect_error(db_pool(dbname = dbname, minSize = 0), class = "prexp_writable_login")
+        expect_true(startsWith(conditionMessage(error), refused))
         expect_error(db_connect("app", dbname = dbname), refused, fixed = TRUE)
+        # A read-only default the client asked for can be set off again
+        client <- "only because the client asked"
+        expect_error(db_pool(dbname = dbname, options = read_only), client, fixed = TRUE)
+        withr::with_envvar(
+          c(PGOPTIONS = read_only),
+          expect_error(db_connect("app", dbname = dbname), client, fixed = TRUE)
+        )
       }
     )
   }
-  # A refused connection is closed before the error: none of the writable
-  # logins is still connected as the app. A backend can take a moment to go.
-  left <- function() {
-    DBI::dbGetQuery(owner, "
-      SELECT count(*)::int4 AS n FROM pg_stat_activity
-      WHERE application_name = 'prexp-app' AND usename <> 'prexp_app'")$n
-  }
-  for (i in 1:50) {
-    if (left() == 0L) break
-    Sys.sleep(0.1)
-  }
-  expect_identical(left(), 0L)
+})
+
+test_that("a refused connection is closed before the error", {
+  local_test_db("owner")
+  dbname <- Sys.getenv("PREXP_TEST_DB_NAME")
+  con <- db_connect("loader", dbname = dbname)
+  expect_error(check_read_only(con), "prexp_loader has default_transaction_read_only = off")
+  expect_false(DBI::dbIsValid(con))
+  # The pool's and db_connect()'s refused connections too. pool does not close
+  # a connection its onCreate refuses, so the check must. Each connection the
+  # check sees is kept here, so that garbage collection cannot close a leaked one.
+  seen <- list()
+  check <- check_read_only
+  local_mocked_bindings(check_read_only = function(con) {
+    seen[[length(seen) + 1L]] <<- con
+    check(con)
+  })
+  withr::local_envvar(
+    PREXP_APP_USER = "prexp_loader", PREXP_APP_PASSWORD = Sys.getenv("PREXP_LOADER_PASSWORD")
+  )
+  expect_error(db_pool(dbname = dbname), class = "prexp_writable_login")
+  expect_error(db_pool(dbname = dbname, minSize = 0), class = "prexp_writable_login")
+  expect_error(db_connect("app", dbname = dbname), class = "prexp_writable_login")
+  expect_length(seen, 3L)
+  expect_false(any(vapply(seen, DBI::dbIsValid, logical(1))))
+})
+
+test_that("a refused app login fails the tests that need it, rather than skip them", {
+  local_test_db("owner")
+  withr::local_envvar(
+    PREXP_APP_USER = "prexp_loader",
+    PREXP_APP_PASSWORD = Sys.getenv("PREXP_LOADER_PASSWORD"),
+    PREXP_TEST_DB_REQUIRED = NA
+  )
+  expect_error(local_test_db("app"), class = "prexp_writable_login")
+  expect_error(local_test_pool(), class = "prexp_writable_login")
 })

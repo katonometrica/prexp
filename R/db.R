@@ -58,9 +58,11 @@ db_config <- function(role = c("app", "loader", "owner"), dbname = NULL) {
 #' `APP`, `LOADER` or `OWNER`. A missing variable stops with its name, never
 #' its value.
 #'
-#' An app connection must be read-only: if the login's settings do not make it
-#' so, the connection is closed and `db_connect()` stops, so the app never runs
-#' with the loader's or the owner's login.
+#' An app connection must be read-only by the server's settings for its login
+#' or database, as `prexp_app`'s role settings make it, and its login must not
+#' be a superuser or able to use the schemas the loader writes. Otherwise the
+#' connection is closed and `db_connect()` stops, so the app never runs with
+#' the loader's or the owner's login.
 #'
 #' @param role `"app"` (read-only, the default), `"loader"` or `"owner"`.
 #' @param dbname Database name. Defaults to `PREXP_DB_NAME`.
@@ -93,11 +95,13 @@ db_connect <- function(role = c("app", "loader", "owner"), dbname = NULL, ...) {
 #' Opens a pool of connections as the app role, with the settings
 #' [db_connect()] reads. The app creates it once per process, and each fetch
 #' borrows a connection from it (spec section 5.4). Every connection the pool
-#' opens must be read-only, as the `prexp_app` role's settings make it: if one
-#' is not, it is closed and the pool stops with an error. The pool opens its
-#' first connection at once, even with `minSize = 0`, so the app refuses to
-#' start with the loader's or the owner's login rather than failing at its
-#' first query.
+#' opens is checked as [db_connect()] checks an app connection: read-only by
+#' the server's settings, as the `prexp_app` role's settings make it, and not a
+#' superuser's or a login that can use the loader's schemas. If one fails, it
+#' is closed and the pool stops with an error of class `prexp_writable_login`.
+#' The pool opens its first connection at once, even with `minSize = 0`, so
+#' the app refuses to start with the loader's or the owner's login rather than
+#' failing at its first query.
 #'
 #' Close the pool with [pool::poolClose()] when the app stops.
 #'
@@ -121,8 +125,13 @@ db_pool <- function(dbname = NULL, ...) {
     onCreate = check_read_only,
     ...
   )
+  # The checkout is its own step: as poolReturn()'s argument, its error would
+  # come back wrapped by S4 method dispatch.
   tryCatch(
-    pool::poolReturn(pool::poolCheckout(pool)),
+    {
+      con <- pool::poolCheckout(pool)
+      pool::poolReturn(con)
+    },
     error = function(e) {
       pool::poolClose(pool)
       stop(e)
@@ -131,21 +140,46 @@ db_pool <- function(dbname = NULL, ...) {
   pool
 }
 
-# Stops unless the connection is read-only by default, as the app role's
-# settings make it. The connection is closed first: the pool calls this on each
-# new connection, before it is handed out, and would otherwise leak it.
+# Stops unless the connection is one the app may use:
+# - read-only by default, from the server's settings for the login or the
+#   database, as prexp_app's role settings make it. A client can ask for the
+#   same default with PGOPTIONS or the options parameter, and then set it off
+#   again, so a setting from the client does not count.
+# - not a superuser's, which no privilege limits;
+# - unable to use the core and raw schemas, which the loader writes.
+# A refused connection is closed first: the pool calls this on each new
+# connection, before handing it out, and would otherwise leak it.
 check_read_only <- function(con) {
   session <- DBI::dbGetQuery(con, "
-    SELECT current_user AS login,
-           current_setting('default_transaction_read_only') AS read_only")
-  if (!identical(session$read_only, "on")) {
+    SELECT current_user AS login, s.setting AS read_only, s.source, r.rolsuper AS superuser,
+           coalesce(has_schema_privilege(to_regnamespace('core')::oid, 'USAGE'), false)
+             OR coalesce(has_schema_privilege(to_regnamespace('raw')::oid, 'USAGE'), false)
+             AS loader_schemas
+    FROM pg_settings s
+    JOIN pg_roles r ON r.rolname = current_user
+    WHERE s.name = 'default_transaction_read_only'")
+  problem <- if (!identical(session$read_only, "on")) {
+    paste0("has default_transaction_read_only = ", session$read_only)
+  } else if (!session$source %in% c("user", "database", "database user")) {
+    paste0("is read-only only because the client asked (source: ", session$source, ")")
+  } else if (isTRUE(session$superuser)) {
+    "is a superuser"
+  } else if (isTRUE(session$loader_schemas)) {
+    "can use the core or raw schema, which the loader writes"
+  }
+  if (!is.null(problem)) {
     DBI::dbDisconnect(con)
-    stop(
-      "The app must connect read-only, but ", session$login,
-      " has default_transaction_read_only = ", session$read_only,
-      ". Log in as prexp_app (PREXP_APP_USER), or as a login with its settings.",
-      call. = FALSE
-    )
+    stop(structure(
+      class = c("prexp_writable_login", "error", "condition"),
+      list(
+        message = paste0(
+          "The app must connect read-only, but ", session$login, " ", problem,
+          ". Log in as prexp_app (PREXP_APP_USER), or as a login with its settings ",
+          "and privileges."
+        ),
+        call = NULL
+      )
+    ))
   }
   invisible(con)
 }

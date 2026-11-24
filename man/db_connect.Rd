@@ -25,9 +25,11 @@ Settings come from environment variables: \code{PREXP_DB_HOST}, \code{PREXP_DB_P
 its value.
 }
 \details{
-An app connection must be read-only: if the login's settings do not make it
-so, the connection is closed and \code{db_connect()} stops, so the app never runs
-with the loader's or the owner's login.
+An app connection must be read-only by the server's settings for its login
+or database, as \code{prexp_app}'s role settings make it, and its login must not
+be a superuser or able to use the schemas the loader writes. Otherwise the
+connection is closed and \code{db_connect()} stops, so the app never runs with
+the loader's or the owner's login.
 }
 \seealso{
 \code{\link[=db_pool]{db_pool()}}, the app's pool of connections.

@@ -304,7 +304,7 @@ Every view handles three states besides the normal one: nothing selected, no row
 
 ### 5.4 Runtime
 
-- `pool` created once per process as `prexp_app` by `db_pool()`, and closed when the app stops. Every connection it opens, and every `db_connect("app")`, must be read-only by the login's settings, or it is closed and refused, so the app refuses to start with the loader's or the owner's login
+- `pool` created once per process as `prexp_app` by `db_pool()`, and closed when the app stops. Every connection it opens, and every `db_connect("app")`, must be read-only by default from the server's settings for the login or the database (a default the client asks for, with `PGOPTIONS` or the `options` parameter, does not count), and its login must not be a superuser or able to use the `core` and `raw` schemas. Otherwise the connection is closed and refused, so the app refuses to start with the loader's or the owner's login
 - Search uses selectize with remote loading: a small script sends typed text to the server, which ignores fewer than two characters, debounces at 300 ms, and sends back up to 20 matches from `fetch_search_*()`
 - Tables use `reactable`, the one table library in the app
 - `bindCache()` on every fetch-backed reactive, keyed on the arguments plus the window from `fetch_window()`, with an app-wide `cachem::cache_mem()` of 200 MB
