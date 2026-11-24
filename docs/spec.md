@@ -311,7 +311,7 @@ Every view handles three states besides the normal one: nothing selected, no row
 - Tables use `reactable`, the one table library in the app
 - `bindCache()` on every fetch-backed reactive, keyed on the arguments plus the window from `fetch_window()`, with an app-wide `cachem::cache_mem()` of 200 MB
 - Exports and any fetch expected over 100 ms run in `ExtendedTask` on two `mirai` daemons. Each daemon opens its own connection, because a pool cannot be shared across processes
-- Every fetch logs one JSON line to stdout: function, hash of the arguments, rows, milliseconds. Used for the p95 figure and for spotting slow queries in production
+- Every fetch logs one JSON line to stdout: the time, the function, a hash of its arguments (16 hex digits of a SHA-256, so identical requests share it while the values, search text included, stay out of the log), the rows and the milliseconds, and `"error": true` if the query failed. `PREXP_LOG=off` turns it off, as the tests do. `timing_summary()` reads a log back into count, errors, p50 and p95 per function, by nearest rank. Used for the p95 figure and for spotting slow queries in production
 
 ### 5.5 Reports
 

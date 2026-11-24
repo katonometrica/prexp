@@ -4,23 +4,34 @@
 # query_sql(), the same file the plan check runs, with the values bound as
 # parameters, and returns a tibble with the columns documented below. SQL is
 # never built from strings here: the values only ever travel as parameters.
+# Each fetch writes a line to the timing log (utils_log.R).
 
-# Runs a query file with these values bound. Sums of whole numbers arrive as
-# 64-bit integers and become doubles, which hold them exactly up to 2^53;
-# numeric sums arrive as doubles.
-run_fetch <- function(con, query, params = list()) {
+# Runs a fetch's query file with these values bound, and logs it under the
+# fetch's name, with `args` as the arguments to hash: by default the values
+# bound. Sums of whole numbers arrive as 64-bit integers and become doubles,
+# which hold them exactly up to 2^53; numeric sums arrive as doubles.
+run_fetch <- function(con, fetch, query, params = list(), args = params) {
   sql <- query_sql(query)
-  rows <- if (length(params) == 0L) {
-    DBI::dbGetQuery(con, sql)
-  } else {
-    DBI::dbGetQuery(con, sql, params = unname(params))
-  }
+  started <- Sys.time()
+  rows <- tryCatch(
+    if (length(params) == 0L) {
+      DBI::dbGetQuery(con, sql)
+    } else {
+      DBI::dbGetQuery(con, sql, params = unname(params))
+    },
+    error = function(e) {
+      log_fetch(fetch, args, NULL, started, error = TRUE)
+      stop(e)
+    }
+  )
   for (col in names(rows)) {
     if (inherits(rows[[col]], "integer64")) {
       rows[[col]] <- as.numeric(rows[[col]])
     }
   }
-  tibble::as_tibble(rows)
+  rows <- tibble::as_tibble(rows)
+  log_fetch(fetch, args, nrow(rows), started)
+  rows
 }
 
 # The rollup query of a drug at a level. The fetches below build their
@@ -58,7 +69,7 @@ drug_query <- function(kind, level) {
 #' }
 #' @export
 fetch_window <- function(con) {
-  run_fetch(con, "window")
+  run_fetch(con, "fetch_window", "window")
 }
 
 #' Search chemical substances and presentations
@@ -91,7 +102,7 @@ fetch_window <- function(con) {
 fetch_search_drugs <- function(con, q, limit = 20L) {
   q <- validate_search(q)
   limit <- validate_limit(limit, max = 100L)
-  run_fetch(con, "search_drugs", list(q, limit))
+  run_fetch(con, "fetch_search_drugs", "search_drugs", list(q, limit))
 }
 
 #' Search practices
@@ -115,7 +126,7 @@ fetch_search_drugs <- function(con, q, limit = 20L) {
 fetch_search_practices <- function(con, q, limit = 20L) {
   q <- validate_search(q)
   limit <- validate_limit(limit, max = 100L)
-  run_fetch(con, "search_practices", list(q, limit))
+  run_fetch(con, "fetch_search_practices", "search_practices", list(q, limit))
 }
 
 #' A drug's national monthly totals
@@ -148,7 +159,10 @@ fetch_drug_series <- function(con, level, id, months, measure) {
   id <- validate_id(id)
   months <- validate_months(months)
   measure <- validate_measure(measure, level)
-  rows <- run_fetch(con, drug_query("series", level), list(id, months[1], months[2]))
+  rows <- run_fetch(
+    con, "fetch_drug_series", drug_query("series", level), list(id, months[1], months[2]),
+    args = list(level, id, months, measure)
+  )
   tibble::as_tibble(list(
     year_month = rows$year_month,
     measure = rep(measure, nrow(rows)),
@@ -180,7 +194,9 @@ fetch_drug_series <- function(con, level, id, months, measure) {
 fetch_drug_presentations <- function(con, chemical_id, months) {
   chemical_id <- validate_id(chemical_id, "chemical_id")
   months <- validate_months(months)
-  run_fetch(con, "drug_presentations", list(chemical_id, months[1], months[2]))
+  run_fetch(
+    con, "fetch_drug_presentations", "drug_presentations", list(chemical_id, months[1], months[2])
+  )
 }
 
 #' A practice's profile
@@ -203,7 +219,7 @@ fetch_drug_presentations <- function(con, chemical_id, months) {
 #' @export
 fetch_practice_profile <- function(con, practice_id) {
   practice_id <- validate_id(practice_id, "practice_id")
-  run_fetch(con, "practice_profile", list(practice_id))
+  run_fetch(con, "fetch_practice_profile", "practice_profile", list(practice_id))
 }
 
 #' A practice's monthly totals
@@ -225,7 +241,9 @@ fetch_practice_profile <- function(con, practice_id) {
 fetch_practice_series <- function(con, practice_id, months) {
   practice_id <- validate_id(practice_id, "practice_id")
   months <- validate_months(months)
-  run_fetch(con, "practice_series", list(practice_id, months[1], months[2]))
+  run_fetch(
+    con, "fetch_practice_series", "practice_series", list(practice_id, months[1], months[2])
+  )
 }
 
 #' A practice's top drugs, a page at a time
@@ -269,7 +287,8 @@ fetch_practice_top_drugs <- function(con, practice_id, months, by = "items", lim
   first_page <- is.null(after) || (is.atomic(after) && length(after) == 1L && is.na(after))
   after <- if (first_page) NA_integer_ else validate_id(after, "after")
   run_fetch(
-    con, "practice_top_drugs", list(practice_id, months[1], months[2], by, limit, after)
+    con, "fetch_practice_top_drugs", "practice_top_drugs",
+    list(practice_id, months[1], months[2], by, limit, after)
   )
 }
 
@@ -298,7 +317,10 @@ fetch_region_comparison <- function(con, level, id, months, measure, per = "tota
   months <- validate_months(months)
   measure <- validate_measure(measure, level)
   validate_choice(per, "total", "per")
-  rows <- run_fetch(con, drug_query("regions", level), list(id, months[1], months[2]))
+  rows <- run_fetch(
+    con, "fetch_region_comparison", drug_query("regions", level), list(id, months[1], months[2]),
+    args = list(level, id, months, measure, per)
+  )
   tibble::as_tibble(list(
     region_code = rows$region_code,
     region_name = rows$region_name,
