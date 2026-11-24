@@ -4,6 +4,21 @@ Measurements of the loader and, from phase 2, of the app's queries (spec §6.3).
 
 **Units.** Database and disk sizes are in PostgreSQL's units, 1 GB = 1,024 MB, which is also what Windows and `df -h` show. The sizes of the portal's files, ZIP and CSV, are in millions of bytes, as the portal and the loader's messages give them.
 
+## At a glance (P2-06)
+
+The full window, 202510 to 202609, in the local Docker stack on the machine below, 24 November 2026:
+
+| | |
+| --- | --- |
+| Source rows | 218,504,372: for every month, the count, items, NIC and actual cost equal the portal's |
+| Fact rows, one per month × prescriber × presentation | 112,769,791 |
+| Fact table with its two covering indexes | 21,151 MB (20.7 GB) |
+| The database | 21,445 MB (20.9 GB) |
+| Loading a month | 175 s: 48 s to download, 127 s to stage, aggregate, index, check and swap |
+| The swap's transaction, the only step the app can wait for | about 1 s; the rollups are vacuumed after it, without blocking the app |
+| App queries, warm | Every check under 50 ms: the slowest, a two-letter search, takes 33 ms, and 13 of the 21 under 1 ms |
+| Fact table | Read only by index-only scans of the months asked for, with no heap fetches |
+
 ## Machine (P1-08)
 
 | | |
@@ -57,31 +72,7 @@ Five changes fix them and widen the margin elsewhere:
 
 "Before" is one run, or the median of five for 'le', 'co' and 2003; "after" is the median of five. The worst three-letter searches, such as 'sto' and 'tom', take about 30 ms and are unchanged. They are over 5,000 appliance names with "stoma" or "colostomy" in them.
 
-Every check now passes with a plan made with the values, as the app's are. These are medians of five runs on a quiet machine:
-
-| Query | Sample | Months | Custom (ms) | Slowest of 5 | Generic (ms) | Partitions read, pruned (generic) |
-| --- | --- | ---: | ---: | ---: | ---: | --- |
-| `window` | window |  | 0.12 | 0.17 | 0.02 |  |
-| `search_drugs` | large: co |  | 33.18 | 41.60 | 48.97 |  |
-| `search_drugs` | small: pitolisant |  | 0.44 | 0.57 | 17.16 |  |
-| `search_practices` | large: me |  | 8.07 | 8.20 | 11.87 |  |
-| `search_practices` | small: N81655 |  | 0.19 | 0.36 | 4.81 |  |
-| `drug_series_chemical` | large: 2003 | 12 | 0.11 | 0.26 | 0.09 |  |
-| `drug_series_chemical` | small: 0404000W0 | 3 | 0.08 | 0.11 | 0.04 |  |
-| `drug_series_presentation` | large: 0212000B0AAABAB | 12 | 0.14 | 0.14 | 0.11 |  |
-| `drug_series_presentation` | small: 0404000W0BBAAAA | 3 | 0.08 | 0.09 | 0.03 |  |
-| `drug_presentations` | large: 2003 | 12 | 24.95 | 34.58 | 39.58 |  |
-| `drug_presentations` | small: 0404000W0 | 3 | 0.16 | 0.22 | 0.06 |  |
-| `practice_profile` | large: B83033 |  | 0.03 | 0.04 | 0.02 |  |
-| `practice_profile` | small: Y03965 |  | 0.03 | 0.07 | 0.01 |  |
-| `practice_series` | large: B83033 | 12 | 0.05 | 0.11 | 0.03 |  |
-| `practice_series` | small: Y03965 | 3 | 0.04 | 0.07 | 0.02 |  |
-| `practice_top_drugs` | large: B83033 | 12 | 14.07 | 14.75 | 16.10 | 12, 0 |
-| `practice_top_drugs` | small: Y03965 | 3 | 0.60 | 1.00 | 0.33 | 3, 9 |
-| `region_comparison_chemical` | large: 2003 | 12 | 7.14 | 8.09 | 7.01 |  |
-| `region_comparison_chemical` | small: 0404000W0 | 3 | 8.67 | 15.46 | 6.92 |  |
-| `region_comparison_presentation` | large: 0212000B0AAABAB | 12 | 7.24 | 8.33 | 7.18 |  |
-| `region_comparison_presentation` | small: 0404000W0BBAAAA | 3 | 8.15 | 12.40 | 6.88 |  |
+Every check now passes with a plan made with the values, as the app's are; [The app's queries](#the-apps-queries-p2-06) has the time and plan of each.
 
 The slowest single run was 41.6 ms, the search 'co', whose median is 33 ms.
 
@@ -231,3 +222,41 @@ The fact table is 0.5% under twelve times September's 1,772 MB.
 - **The write-ahead log** peaked at 1,664 MB.
 - **Inside Docker's virtual machine**, disk use rose by up to 27.3 GB, and 19.3 GB of it remained after the load. Its virtual disk file on the host did not grow: it stayed at 246.2 GB, because the virtual machine reused space the file already held.
 - **The host drive** never had less than 724 GB free.
+
+## The app's queries (P2-06)
+
+Each query of spec §5.2 runs with its large sample, the worst case the window holds, and its small sample, over the last three months. The times are from `check_plans()` on 24 November 2026, after P2-05: medians of five runs, warm, planning plus execution, as `EXPLAIN (ANALYZE, TIMING OFF)` measures them.
+- **Custom** plans are made with the values, as the app's are: RPostgres sends unnamed statements.
+- **Generic** plans are made once without the values, as for a statement prepared once.
+
+| Query | Sample | Custom (ms) | Generic (ms) | Plan |
+| --- | --- | ---: | ---: | --- |
+| `window` | window | 0.12 | 0.02 | Bitmap scan of `load_log`'s index of live months; aggregate |
+| `search_drugs` | large: co | 33.18 | 48.97 | On each dimension, `BitmapOr` of the trigram index on the name (pg_trgm reads the word starts in `'co%'` and `'% co%'` as padded trigrams) and the code prefix index; `similarity()` for the 5,235 names that contain 'co'; top-20 sort |
+| `search_drugs` | small: pitolisant | 0.44 | 17.16 | On each dimension, `BitmapOr` of the trigram index (contains) and the code prefix index; top-20 sort |
+| `search_practices` | large: me | 8.07 | 11.87 | `BitmapOr` of the trigram index on the name (word starts) and the code prefix index; `similarity()` for the names; top-20 sort |
+| `search_practices` | small: N81655 | 0.19 | 4.81 | `BitmapOr` of the trigram index on the name and the code prefix index |
+| `drug_series_chemical` | large: 2003, 12 months | 0.11 | 0.09 | Index scan of `agg_chemical_month`'s primary key (chemical, months); grouped by month |
+| `drug_series_chemical` | small: 0404000W0, 3 months | 0.08 | 0.04 | Index scan of `agg_chemical_month`'s primary key (chemical, months); grouped by month |
+| `drug_series_presentation` | large: 0212000B0AAABAB, 12 months | 0.14 | 0.11 | Index-only scan of `agg_presentation_month`'s covering key (presentation, months); grouped by month |
+| `drug_series_presentation` | small: 0404000W0BBAAAA, 3 months | 0.08 | 0.03 | Index-only scan of `agg_presentation_month`'s covering key (presentation, months); grouped by month |
+| `drug_presentations` | large: 2003, 12 months | 24.95 | 39.58 | The chemical's 2,068 presentations by bitmap scan, each with an index-only scan of the rollup's covering key (89,282 rows); hash aggregate; sort |
+| `drug_presentations` | small: 0404000W0, 3 months | 0.16 | 0.06 | The same, for 4 presentations |
+| `practice_profile` | large: B83033 | 0.03 | 0.02 | Index scan of `dim_practice`'s primary key |
+| `practice_profile` | small: Y03965 | 0.03 | 0.01 | Index scan of `dim_practice`'s primary key |
+| `practice_series` | large: B83033, 12 months | 0.05 | 0.03 | Index scan of `agg_practice_month`'s primary key (practice, months) |
+| `practice_series` | small: Y03965, 3 months | 0.04 | 0.02 | Index scan of `agg_practice_month`'s primary key (practice, months) |
+| `practice_top_drugs` | large: B83033, 12 months | 14.07 | 16.10 | Index-only scans of the practice index of the 12 partitions (49,902 rows, no heap fetches); hash aggregate of 6,419 presentations; top-25 sort; names joined to the page |
+| `practice_top_drugs` | small: Y03965, 3 months | 0.60 | 0.33 | The same over the 3 partitions asked for; as a generic plan, the other 9 are removed when it starts |
+| `region_comparison_chemical` | large: 2003, 12 months | 7.14 | 7.01 | Index scan of the rollup's primary key; merge left join to `app.v_region`, whose scan and sort of the 10,230 prescribers is most of the time |
+| `region_comparison_chemical` | small: 0404000W0, 3 months | 8.67 | 6.92 | Index scan of the rollup's primary key; merge left join to `app.v_region`, whose scan and sort of the 10,230 prescribers is most of the time |
+| `region_comparison_presentation` | large: 0212000B0AAABAB, 12 months | 7.24 | 7.18 | The same, with an index-only scan of the presentation rollup's covering key |
+| `region_comparison_presentation` | small: 0404000W0BBAAAA, 3 months | 8.15 | 6.88 | The same, with an index-only scan of the presentation rollup's covering key |
+
+Eight checks take more than a millisecond:
+- **The searches over many names.** Their time is `similarity()` ranking every name that contains the text. In a generic plan a search can use neither of its indexes, so 'pitolisant' takes 17 ms that way instead of 0.4.
+- **A chemical's presentations, for the largest chemical.** It reads 89,282 rows of the rollup, index-only.
+- **The largest practice's top drugs.** They read 49,902 fact rows, index-only.
+- **The four region comparisons.** Most of each one's 7 ms is `app.v_region` naming the regions from every prescriber.
+
+Every other check reads a few rows by primary key. The checks run nightly in the jobs container from P6-02 (spec §6.3), so a plan that changes as the window moves will show up there.
