@@ -1,7 +1,8 @@
 # A rehearsal of the server (P6-02; docs/server.md) on this machine: the database, the
-# jobs container and the app laid out as Coolify runs them, sharing four CPUs and 15 GB
-# of memory, about the server's minimum (4 vCPUs, 16 GB). A project of its own, beside
-# the development stack, with its own volumes and network. Passwords come from
+# jobs container and the app laid out as Coolify runs them, on four CPUs, with the
+# server's memory limits and no swap: 6 GB for the database, 3 GB for jobs and 2 GB for
+# the app. A project of its own, beside the development stack, with its own volumes and
+# network. Passwords come from
 # docker/rehearsal/.env, which git ignores (docs/server.md, "Rehearse it locally"):
 #
 #   docker compose --profile app build app             the app image, from this tree
@@ -12,7 +13,10 @@
 name: prexp-rehearsal
 
 x-server: &server
-  # Four of the machine's CPUs, the same four for every container, as on a 4-vCPU host
+  # Four of the machine's CPUs, the same four for every container, as on a 4-vCPU host.
+  # Each container's mem_limit is its limit in docs/server.md, and its memswap_limit
+  # the same, so that it cannot swap: the server has no swap, and Docker would otherwise
+  # let a container swap as much again.
   cpuset: "0-3"
   restart: unless-stopped
 
@@ -38,7 +42,8 @@ services:
       - ../db/postgresql.prod.conf:/etc/postgresql/postgresql.conf:ro
     # docs/server.md's --shm-size; no published port, as on the server
     shm_size: 1gb
-    mem_limit: 10g
+    mem_limit: 6g
+    memswap_limit: 6g
     stop_grace_period: 1m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -q -h 127.0.0.1 -p 5432 -U postgres"]
@@ -67,6 +72,7 @@ services:
     volumes:
       - epd:/data/epd
     mem_limit: 3g
+    memswap_limit: 3g
 
   app:
     <<: *server
@@ -85,6 +91,7 @@ services:
       - "127.0.0.1:${HOST_PORT_REHEARSAL:-3839}:3838"
     # docs/server.md's memory limit and health check, with Coolify's default timings
     mem_limit: 2g
+    memswap_limit: 2g
     healthcheck:
       test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:3838/"]
       interval: 5s

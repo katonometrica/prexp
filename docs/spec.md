@@ -371,7 +371,7 @@ A failing scheduled task notifies by email through Coolify's notifications.
 
 | Piece | Where | Schedule |
 | --- | --- | --- |
-| Postgres 18 | Coolify database resource, `postgres:18.7-trixie` as in Compose and CI, persistent volume, not publicly exposed; its settings in `docker/db/postgresql.prod.conf` and its roles from the init scripts, `docker/db/server/00-owner.sh` first | Always on, from P6-02 |
+| Postgres 18 | Coolify database resource, `postgres:18.7-trixie`, pinned by the same digest as Compose and CI, persistent volume, not publicly exposed; its settings in `docker/db/postgresql.prod.conf` and its roles from the init scripts, `docker/db/server/00-owner.sh` first | Always on, from P6-02 |
 | `jobs` container | Coolify application from the `prexp-app` image, command `sleep infinity` (Coolify's custom Docker options), owner and loader credentials, a volume at `/data/epd` for downloads. Runs `migrate()` after each deploy | Always on, from P6-02 |
 | App container | Coolify application from `ghcr.io/katonometrica/prexp-app`, app role credentials only, a memory limit and a health check on `/`. From P6-02, on an unlisted subdomain with HTTPS | Redeployed on push to `main` |
 | Loader | Coolify scheduled task in the `jobs` container, `prexp::load_latest()` | Daily from the 18th to the 28th at 02:00: loads a newly published month and reloads a re-published one, otherwise says there is nothing to do and exits 0 |
