@@ -11,7 +11,7 @@
 #'   name in the app.
 #' @noRd
 export_formats <- function() {
-  data.frame(format = c("pptx", "docx"), label = c("PowerPoint", "Word"))
+  data.frame(format = c("pptx", "docx", "xlsx"), label = c("PowerPoint", "Word", "Excel"))
 }
 
 #' Writes a report to a file
@@ -27,7 +27,8 @@ export_report <- function(format, spec, con, path, exported = Sys.time()) {
   format <- validate_choice(format, export_formats()$format, "format")
   switch(format,
     pptx = export_pptx(spec, con, path, exported),
-    docx = export_docx(spec, con, path, exported)
+    docx = export_docx(spec, con, path, exported),
+    xlsx = export_xlsx(spec, con, path, exported)
   )
   invisible(path)
 }
@@ -284,16 +285,21 @@ table_text <- function(table) {
 #'
 #' @param chart An item's `chart`, from [export_items()].
 #' @param measure The item's measure.
+#' @param data The chart's data, or `NULL` to make it from `chart`: in Excel,
+#'   the cells of the workbook that hold it, as [openxlsx2::wb_data()] gives
+#'   them, with the columns "Month" or "Region" and the measure's label.
 #' @return An mschart chart: a line by month, or bars by region, in the
 #'   palette's blue, with the measure's label as the series' name and its
 #'   title on the values' axis.
 #' @noRd
-export_chart <- function(chart, measure) {
+export_chart <- function(chart, measure, data = NULL) {
   label <- measure_label(measure)
   line <- identical(chart$type, "line")
-  category <- if (line) "Month" else "Region"
-  data <- data.frame(factor(chart$labels, levels = unique(chart$labels)), chart$values)
-  names(data) <- c(category, label)
+  category <- chart_category(chart)
+  if (is.null(data)) {
+    data <- data.frame(factor(chart$labels, levels = unique(chart$labels)), chart$values)
+    names(data) <- c(category, label)
+  }
   graph <- if (line) {
     mschart::ms_linechart(data, x = category, y = label)
   } else {
@@ -326,6 +332,11 @@ export_chart <- function(chart, measure) {
     graph <- mschart::chart_theme(graph, title_y_rot = 0)
   }
   graph
+}
+
+# The name of a chart's categories, its data's first column
+chart_category <- function(chart) {
+  if (identical(chart$type, "line")) "Month" else "Region"
 }
 
 # The values' axis of an export's chart as the view draws it: the step of
