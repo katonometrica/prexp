@@ -11,7 +11,7 @@
 #'   name in the app.
 #' @noRd
 export_formats <- function() {
-  data.frame(format = "pptx", label = "PowerPoint")
+  data.frame(format = c("pptx", "docx"), label = c("PowerPoint", "Word"))
 }
 
 #' Writes a report to a file
@@ -26,9 +26,25 @@ export_formats <- function() {
 export_report <- function(format, spec, con, path, exported = Sys.time()) {
   format <- validate_choice(format, export_formats()$format, "format")
   switch(format,
-    pptx = export_pptx(spec, con, path, exported)
+    pptx = export_pptx(spec, con, path, exported),
+    docx = export_docx(spec, con, path, exported)
   )
   invisible(path)
+}
+
+# officer unpacks a template into a folder of tempdir(), and writes files of
+# its own there as it prints a document, all named as tempfile() names them,
+# and deletes none of them; a worker lives as long as the app. A tidier
+# notes what is there before an export and, at its end, written or not,
+# removes what it added but the file written.
+tempdir_tidier <- function() {
+  before <- list.files(tempdir(), pattern = "^file", all.files = TRUE)
+  function(keep) {
+    made <- setdiff(
+      list.files(tempdir(), pattern = "^file", all.files = TRUE), c(before, basename(keep))
+    )
+    unlink(file.path(tempdir(), made), recursive = TRUE)
+  }
 }
 
 # The most rows an item's table shows: a chemical substance can have

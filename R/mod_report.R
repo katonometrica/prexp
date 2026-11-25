@@ -491,11 +491,14 @@ report_export <- function(input, output, session, report, run) {
       ready(asked)
       # The report can change while its file is prepared: the panel and the
       # views' pins stay on
-      kept <- identical(asked$spec, report()) && identical(asked$format, chosen())
+      same_report <- identical(asked$spec, report())
+      same_format <- identical(asked$format, chosen())
       announce(session, paste0(
         "The ", label(asked$format), " file ",
-        if (kept) {
+        if (same_report && same_format) {
           "is ready: the Download button is next to Prepare."
+        } else if (same_report) {
+          paste0("is ready: choose ", label(asked$format), " to download it.")
         } else {
           "was prepared, but the report has changed since: prepare it again to download it."
         }
@@ -526,7 +529,15 @@ report_export <- function(input, output, session, report, run) {
         "Ready: prepared at ", format(prepared$exported, "%H:%M %Z", tz = "Europe/London"), "."
       ))
     }
-    if (!is.null(ready())) {
+    before <- ready()
+    if (!is.null(before) && identical(before$spec, report())) {
+      # Only the format chosen differs: the file is still the report's
+      return(paste0(
+        "The ", label(before$format), " file is prepared: choose ", label(before$format),
+        " to download it, or Prepare to make the ", label(chosen()), " file."
+      ))
+    }
+    if (!is.null(before)) {
       return("The report has changed since it was prepared: prepare it again to download it.")
     }
     if (empty()) "Pin a view to export the report." else ""
