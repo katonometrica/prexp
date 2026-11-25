@@ -1,6 +1,6 @@
 # Benchmarks
 
-Measurements of the loader, of the app's queries (from phase 2) and of the app under load (from phase 4); see spec §6.3. Until the server arrives in P6-02, everything runs in the local Docker stack, on the machine below.
+Measurements of the loader, of the app's queries (from phase 2) and of the app under load (from phase 4); see spec §6.3. Until the server arrives in P6-02, everything runs in the local Docker stack, on the machine below. [The server, rehearsed](#the-server-rehearsed-p6-02) repeats the server's setup on four of its CPUs.
 
 **Units.** Database and disk sizes are in PostgreSQL's units, 1 GB = 1,024 MB, which is also what Windows and `df -h` show. The sizes of the portal's files, ZIP and CSV, are in millions of bytes, as the portal and the loader's messages give them.
 
@@ -360,3 +360,55 @@ The package's tests check the same on every CI run (`tests/testthat/test-workers
    - for the app container, use `docker compose logs` from the replay's start;
    - for the container without the cache, use `docker logs` before it stops. `docker compose logs` leaves out containers made by `docker compose run`, and `--rm` deletes the log with the container.
 6. `bench/report.R` gives the figures above, each message's figures by its line in the recording, and writes `shinyloadtest`'s report into the run's folder. That report shows each session's slowest message, which in runs 1 and 2 is always over 300 ms, since every session has three searches.
+
+## The server (P6-02)
+
+The production server, checked in its terminal on 25 November 2026:
+
+| | |
+| --- | --- |
+| Host | A virtual server with 4 vCPUs, 15 GiB of memory and no swap; a 193 GB disk, 159 GB of it free |
+| Software | Ubuntu 24.04.2 LTS, Docker 27.0.3, Coolify v4.7.6 with its Traefik proxy |
+| Shared | Other projects run on it: 32 containers, a load average of 0.7, and 2.9 GiB of memory in use |
+
+It meets the spec's minimum: 4 vCPUs and 16 GB, as near as 15 GiB is, and 100 GB free. The rehearsal below ran on four of the development machine's CPUs and 15 GB. Because the server is shared, prexp has a network of its own and capped memory: 6 GB for the database, 3 GB for `jobs` and 2 GB for the app ([docs/server.md](server.md)).
+
+## The server, rehearsed (P6-02)
+
+The server's setup ([docs/server.md](server.md)) laid out on the machine above by `docker/rehearsal/compose.yaml`, on 25 November 2026. The database, the `jobs` container and the app share four of the machine's CPUs and 15 GB of memory (10 GB for the database, 3 GB for `jobs`, and the app's 2 GB limit), about the server's minimum. The database runs `postgres:18.7-trixie` with `postgresql.prod.conf`, Coolify's superuser and the three initialization scripts. The app image was built from `main` at `e066201`. There is no proxy, so HTTPS and the noindex header are checked on the server.
+
+**Built from empty, as on a new server.**
+- **The initialization scripts** ran in order. `prexp_owner` is an ordinary login, not a superuser, and `migrate()` ran as it, as the post-deployment command does.
+- **`load_window()`** loaded the twelve months, 202510 to 202609, from the portal in **37.6 minutes**: 188 s a month, 49 s to download and 139 s to load. On the whole machine it took 32.1 minutes ([Twelve months](#twelve-months-p2-02)). Four CPUs instead of sixteen cost about a sixth more, because the load mostly waits on the disk and on single-threaded steps. This is the time to rebuild the database from empty on a server of this size with a fast link to the portal.
+- **`check_plans()`:** all 25 checks pass, in 2 s.
+- **The app** turned healthy 8 s after it started, well inside the minute Coolify gives a new container.
+
+**The scheduled tasks' commands** (P6-03), run in the `jobs` container with `docker exec ... sh -c`, as Coolify runs them:
+
+| Task | Case | Exit status | Time |
+| --- | --- | ---: | ---: |
+| The load, `load_latest()` | Nothing new: "Nothing to load", then "No loaded month has been published again." | 0 | 1 s |
+| The nightly check, `migrate(); check_plans()` | All 25 checks pass | 0 | 2 s |
+| The load | The loader's password wrong: "password authentication failed" | 1 | 1 s |
+| The load | 202609 removed by hand, as the loader drops a month: loaded again | 0 | 205 s |
+
+A new browser session showed "Data: Oct 2025 – Aug 2026" after the removal, and "Oct 2025 – Sep 2026" after the load put the month back. The app was never restarted: the window is fetched for every session, and the cache's keys include it.
+
+**The app under load.** These are [P4-08's](#the-app-under-load-p4-08) two sessions, replayed the same way: 5 users for 5 minutes after a restart, so that the cache starts empty. The rehearsal's database numbers its drugs and practices in its own load order, so the replays use copies of the recordings with each id changed to the rehearsal's, matched by code: `bench/recording-rehearsal.log` and `bench/recording-largest-rehearsal.log`. Every session replayed to its end.
+
+| | Run R1: ordinary lookups | Run R2: the largest chemical |
+| --- | ---: | ---: |
+| Sessions, and in the steady part | 19, 11 | 32, 24 |
+| **Lookups, the searches' wait aside: p50, p95, max** | **50, 223, 304 ms** | **180, 373, 477 ms** |
+| Messages, the searches' wait aside: p95 | 181 ms | 285 ms |
+| Search results, the wait included: p50, p95 | 316, 410 ms | 318, 326 ms |
+| The page itself: p50, max | 150, 193 ms | 154, 289 ms |
+| The app's memory after the run, of its 2 GB | 613 MB | 617 MB |
+
+On the whole machine the same sessions gave lookup p95s of 191 ms (run 1) and 236 ms (run 4).
+- **Ordinary lookups stay under the 300 ms target** on four shared CPUs, at a p95 of 223 ms.
+- **The largest chemical does not: 373 ms at p95.** Its Drug view builds a table of 2,068 presentations in R, on one CPU, and the four CPUs here are shared with the database. Its two fetches took 24 and 35 ms: the time is the table, not the database.
+- **The database's part** is under 23 ms at p95 for every fetch.
+- **Memory.** The app used at most 946 MB of its 2 GB limit, in an earlier replay of 80 sessions that never got past their searches. The database used 3.6 GB of its 10 GB.
+
+P6-02 measures the same on the server.

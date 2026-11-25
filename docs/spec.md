@@ -92,7 +92,7 @@ Everything else (schemas, tables, extensions, grants) is created by migrations (
 
 ### 2.3 Production
 
-Until phase 6 everything, the full twelve months included, runs in the local Docker stack: loads run from the `rstudio` container, and the app from the `app` service. The Coolify host comes in P6-02. There the `app` image runs twice: as the app, with the app role's credentials, and as the `jobs` container, with the owner's and loader's credentials, for migrations, loads, plan checks and model fits. PostgreSQL 18 runs on the same host and is never exposed outside the Docker network. Details in section 7.
+Until phase 6 everything, the full twelve months included, runs in the local Docker stack: loads run from the `rstudio` container, and the app from the `app` service. The Coolify host comes in P6-02. There the `app` image runs twice: as the app, with the app role's credentials, and as the `jobs` container, with the owner's and loader's credentials, for migrations, loads, plan checks and model fits. PostgreSQL 18 runs on the same host and is never exposed outside the Docker network. Coolify's superuser there is `postgres`, and `prexp_owner` is an ordinary login that owns the `prexp` database (`docker/db/server/00-owner.sh`), which is all the migrations need. Details in section 7, and the setup step by step in `docs/server.md`.
 
 ## 3. Database
 
@@ -371,14 +371,14 @@ A failing scheduled task notifies by email through Coolify's notifications.
 
 | Piece | Where | Schedule |
 | --- | --- | --- |
-| Postgres 18 | Coolify database resource, persistent volume, not publicly exposed | Always on, from P6-02 |
-| `jobs` container | Coolify application from the `prexp-app` image, command `sleep infinity`, owner and loader credentials, `epd-downloads` volume. Runs `migrate()` after each deploy | Always on, from P6-02 |
-| App container | Coolify application from `ghcr.io/katonometrica/prexp-app`, app role credentials only. From P6-02, on an unlisted subdomain with HTTPS | Redeployed on push to `main` |
+| Postgres 18 | Coolify database resource, `postgres:18.7-trixie` as in Compose and CI, persistent volume, not publicly exposed; its settings in `docker/db/postgresql.prod.conf` and its roles from the init scripts, `docker/db/server/00-owner.sh` first | Always on, from P6-02 |
+| `jobs` container | Coolify application from the `prexp-app` image, command `sleep infinity` (Coolify's custom Docker options), owner and loader credentials, a volume at `/data/epd` for downloads. Runs `migrate()` after each deploy | Always on, from P6-02 |
+| App container | Coolify application from `ghcr.io/katonometrica/prexp-app`, app role credentials only, a memory limit and a health check on `/`. From P6-02, on an unlisted subdomain with HTTPS | Redeployed on push to `main` |
 | Loader | Coolify scheduled task in the `jobs` container, `prexp::load_latest()` | Daily from the 18th to the 28th at 02:00: loads a newly published month and reloads a re-published one, otherwise says there is nothing to do and exits 0 |
 | Plan check | Coolify scheduled task in the `jobs` container, `prexp::check_plans()` | Nightly at 04:00 |
 | v2 model fit | Called by `load_latest()`, `prexp::fit_variation_all()` | After each successful load |
 
-**Hiding the app.** `X-Robots-Tag: noindex, nofollow` on every response through a proxy middleware, `noindex` in the page head, a `robots.txt` that disallows everything if the proxy can serve it, and no links from the company site, the repository or the issues.
+**Hiding the app.** `X-Robots-Tag: noindex, nofollow` on every response, from Coolify's proxy (the domain's "Search engine indexing: Noindex"), `noindex` in the page head, and no links from the company site, the repository or the issues. There is no `robots.txt`: the proxy cannot serve one, and a rule that kept crawlers out would also keep them from seeing the noindex header, so a URL linked from elsewhere could still be listed. The certificate is Let's Encrypt's for the subdomain, so its name is in the public Certificate Transparency logs; noindex keeps it out of search engines. The address is shared privately, and never appears in the repository or its issues.
 
 **Backups.** The data can be rebuilt from the source, so there is no database backup. `docs/runbook.md` documents a rebuild from an empty database: `migrate()`, `load_window()`, `check_plans()`. The rebuild time comes from the window load on the server in P6-02.
 

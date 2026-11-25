@@ -1,0 +1,97 @@
+# A rehearsal of the server (P6-02; docs/server.md) on this machine: the database, the
+# jobs container and the app laid out as Coolify runs them, sharing four CPUs and 15 GB
+# of memory, about the server's minimum (4 vCPUs, 16 GB). A project of its own, beside
+# the development stack, with its own volumes and network. Passwords come from
+# docker/rehearsal/.env, which git ignores (docs/server.md, "Rehearse it locally"):
+#
+#   docker compose --profile app build app             the app image, from this tree
+#   docker compose -f docker/rehearsal/compose.yaml up -d --wait db jobs
+#   docker compose -f docker/rehearsal/compose.yaml exec jobs Rscript -e "prexp::migrate()"
+#   docker compose -f docker/rehearsal/compose.yaml up -d --wait app   http://localhost:3839
+#   docker compose -f docker/rehearsal/compose.yaml down -v            remove it, data included
+name: prexp-rehearsal
+
+x-server: &server
+  # Four of the machine's CPUs, the same four for every container, as on a 4-vCPU host
+  cpuset: "0-3"
+  restart: unless-stopped
+
+services:
+  db:
+    <<: *server
+    # As compose.yaml and CI, and the image docs/server.md names for Coolify
+    image: postgres:18.7-trixie@sha256:eb63372c1e05c755f55fa30cbd07aecc443676fc6c0fa90b9002d01537841e1a
+    # Coolify passes the custom configuration the same way
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    environment:
+      # Coolify's superuser, as on the server; the app's roles are ordinary logins
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in docker/rehearsal/.env}
+      PREXP_OWNER_PASSWORD: ${PREXP_OWNER_PASSWORD:?set PREXP_OWNER_PASSWORD}
+      PREXP_LOADER_PASSWORD: ${PREXP_LOADER_PASSWORD:?set PREXP_LOADER_PASSWORD}
+      PREXP_APP_PASSWORD: ${PREXP_APP_PASSWORD:?set PREXP_APP_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql
+      # The initialization scripts, mounted one by one as Coolify mounts them
+      - ../db/server/00-owner.sh:/docker-entrypoint-initdb.d/00-owner.sh:ro
+      - ../db/init/01-roles.sh:/docker-entrypoint-initdb.d/01-roles.sh:ro
+      - ../db/init/02-database.sql:/docker-entrypoint-initdb.d/02-database.sql:ro
+      - ../db/postgresql.prod.conf:/etc/postgresql/postgresql.conf:ro
+    # docs/server.md's --shm-size; no published port, as on the server
+    shm_size: 1gb
+    mem_limit: 10g
+    stop_grace_period: 1m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -h 127.0.0.1 -p 5432 -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 2m
+      start_interval: 2s
+
+  jobs:
+    <<: *server
+    image: prexp-app:local
+    # Coolify's custom Docker options: --init --entrypoint 'sleep infinity'
+    init: true
+    entrypoint: ["sleep", "infinity"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # The owner's and the loader's logins, never the app's
+      PREXP_DB_HOST: db
+      PREXP_DB_PORT: "5432"
+      PREXP_DB_NAME: prexp
+      PREXP_OWNER_PASSWORD: ${PREXP_OWNER_PASSWORD:?set PREXP_OWNER_PASSWORD}
+      PREXP_LOADER_PASSWORD: ${PREXP_LOADER_PASSWORD:?set PREXP_LOADER_PASSWORD}
+    volumes:
+      - epd:/data/epd
+    mem_limit: 3g
+
+  app:
+    <<: *server
+    image: prexp-app:local
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # The app's login only
+      PREXP_DB_HOST: db
+      PREXP_DB_PORT: "5432"
+      PREXP_DB_NAME: prexp
+      PREXP_APP_PASSWORD: ${PREXP_APP_PASSWORD:?set PREXP_APP_PASSWORD}
+      PREXP_LOG: "on"
+    ports:
+      - "127.0.0.1:${HOST_PORT_REHEARSAL:-3839}:3838"
+    # docs/server.md's memory limit and health check, with Coolify's default timings
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:3838/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  pgdata:
+  epd:
