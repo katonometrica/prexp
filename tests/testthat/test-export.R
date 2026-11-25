@@ -1,4 +1,4 @@
-# The exports (P5-05; spec section 5.5): each item fetched again and shaped as
+# The exports (P5-05, P5-06; spec section 5.5): each item fetched again and shaped as
 # its view shapes it, its table laid out to fit its slides, and the report
 # written to PowerPoint with native charts, tables, notes and the methods
 # last; the runner that sends an export to a worker; and the Report tab's
@@ -268,6 +268,137 @@ test_that("the PowerPoint file reads back: a title, each item, its tables and th
   expect_error(export_report("odt", spec, con, path), class = "prexp_invalid_argument")
 })
 
+test_that("the Word file reads back: a title, a heading per item, its chart, note and table", {
+  con <- fixture_app()
+  spec <- export_spec(con)
+  path <- withr::local_tempfile(fileext = ".docx")
+  before <- list.files(tempdir(), all.files = TRUE, no.. = TRUE)
+  expect_identical(export_report("docx", spec, con, path, export_time_fixed), path)
+  # Nothing left in tempdir() but the file
+  expect_setequal(
+    list.files(tempdir(), all.files = TRUE, no.. = TRUE), c(before, basename(path))
+  )
+  doc <- officer::read_docx(path)
+  parts <- officer::docx_summary(doc)
+  style <- function(name) {
+    parts$text[which(parts$content_type == "paragraph" & parts$style_name == name)]
+  }
+  items <- export_items(spec, plain_fetches(con))
+  # The title, a heading per item, then the methods as an appendix
+  expect_identical(style("Title"), "Prescription Explorer report")
+  expect_identical(style("heading 1"), c(vapply(items, `[[`, "", "title"), "Methods"))
+  sections <- methods_content(spec, fetch_window(con), export_time_fixed)
+  expect_identical(style("heading 2"), vapply(sections, `[[`, "", "title"))
+  texts <- parts$text
+  expect_true(all(c(
+    window_period(fetch_window(con)), "Exported on 25 November 2026 at 14:05 GMT", "4 items"
+  ) %in% texts))
+  # Notes, a paragraph per line, and each table's values as the app writes them
+  expect_true(all(c(
+    "Note: Costs rose after March.", "See the presentations.", "Note: The regions differ."
+  ) %in% texts))
+  expect_true(all(table_text(items[[1]]$table)$nic %in% texts))
+  expect_identical(style("Table Caption"), vapply(items, function(item) item$table$caption, ""))
+  # The methods, with the attribution exact
+  expect_true(paste(
+    "NHSBSA Copyright 2021-2026 \u00b7 Contains public sector information licensed under the",
+    "Open Government Licence v3.0."
+  ) %in% texts)
+  # Native charts that can be edited: each with its workbook, its words for
+  # screen readers, in English
+  dir <- withr::local_tempdir()
+  utils::unzip(path, exdir = dir)
+  charts <- list.files(file.path(dir, "word", "charts"), pattern = "[.]xml$", full.names = TRUE)
+  expect_length(charts, length(items))
+  workbooks <- list.files(file.path(dir, "word", "embeddings"), pattern = "[.]xlsx$")
+  expect_length(workbooks, length(items))
+  chart_xml <- unlist(lapply(charts, readLines, warn = FALSE))
+  expect_false(any(grepl("fr-FR", chart_xml, fixed = TRUE)))
+  expect_true(any(grepl("<c:smooth val=\"0\"/>", chart_xml, fixed = TRUE)))
+  body <- paste(readLines(file.path(dir, "word", "document.xml"), warn = FALSE), collapse = "")
+  xml <- xml2::read_xml(file.path(dir, "word", "document.xml"))
+  ns <- xml2::xml_ns(xml)
+  # Each chart its own words for screen readers, in order
+  drawings <- xml2::xml_find_all(xml, "//wp:docPr", ns)
+  expect_identical(
+    xml2::xml_attr(drawings, "descr"), vapply(items, function(item) item$chart$alt, "")
+  )
+  # Each table's header row its labels, marked and repeated on a page it runs
+  # onto; numbers to the right; a total in the style's last row
+  expect_identical(
+    length(regmatches(body, gregexpr("<w:tblHeader/>", body))[[1]]), length(items)
+  )
+  tables <- xml2::xml_find_all(xml, "//w:tbl", ns)
+  expect_length(tables, length(items))
+  cells <- function(row) xml2::xml_find_all(row, "w:tc", ns)
+  for (k in seq_along(items)) {
+    table <- items[[k]]$table
+    rows <- xml2::xml_find_all(tables[[k]], "w:tr", ns)
+    expect_identical(xml2::xml_text(cells(rows[[1]])), table$labels)
+    align <- vapply(cells(rows[[2]]), function(cell) {
+      xml2::xml_attr(xml2::xml_find_first(cell, ".//w:jc", ns), "val")
+    }, "")
+    expect_identical(align, ifelse(table$kinds == "text", "left", "right"))
+    look <- xml2::xml_find_first(tables[[k]], "w:tblPr/w:tblLook", ns)
+    expect_identical(xml2::xml_attr(look, "lastRow"), if (isTRUE(table$total)) "1" else "0")
+    # A wide table on landscape pages of its own, a narrow one in its item's
+    # portrait page: the next section's properties say which
+    section <- xml2::xml_find_first(tables[[k]], paste(
+      "following-sibling::w:p[w:pPr/w:sectPr][1]/w:pPr/w:sectPr",
+      "| /w:document/w:body/w:sectPr"
+    ), ns)
+    size <- xml2::xml_find_first(section, "w:pgSz", ns)
+    expect_identical(
+      xml2::xml_attr(size, "orient"), if (docx_wide(table)) "landscape" else "portrait"
+    )
+  }
+  last <- xml2::xml_find_all(tables[[4]], "w:tr", ns)
+  expect_identical(xml2::xml_text(cells(last[[length(last)]])[[1]]), "England")
+  # Pages start at each item's heading and the methods', not at break
+  # paragraphs; every section starts a page, in the template's margins
+  expect_false(grepl("w:type=\"page\"", body, fixed = TRUE))
+  types <- xml2::xml_attr(xml2::xml_find_all(xml, "//w:sectPr/w:type", ns), "val")
+  expect_true(length(types) > 1L && all(types == "nextPage"))
+  margins <- xml2::xml_find_all(xml, "//w:sectPr/w:pgMar", ns)
+  expect_true(all(xml2::xml_attr(margins, "left") == "1417"))
+  # The methods' points a list, its bullets the style's
+  expect_identical(
+    sum(parts$style_name == "List Bullet", na.rm = TRUE),
+    sum(lengths(lapply(sections, `[[`, "points")))
+  )
+  properties <- officer::doc_properties(doc)
+  expect_identical(properties$value[properties$tag == "title"], "Prescription Explorer report")
+})
+
+test_that("an item with nothing to show says so, in PowerPoint and Word", {
+  con <- fixture_app()
+  spec <- export_spec(con)
+  away <- list(id = 2147483647L)
+  gone <- report_add(new_report(), "drug", utils::modifyList(spec$items[[1]]$params, away))
+  gone <- report_add(gone, "practice", utils::modifyList(spec$items[[3]]$params, away))
+  messages <- vapply(export_items(gone, plain_fetches(con)), `[[`, "", "message")
+  for (format in c("pptx", "docx")) {
+    path <- withr::local_tempfile(fileext = paste0(".", format))
+    export_report(format, gone, con, path, export_time_fixed)
+    texts <- if (format == "pptx") {
+      officer::pptx_summary(officer::read_pptx(path))$text
+    } else {
+      officer::docx_summary(officer::read_docx(path))$text
+    }
+    expect_true(all(messages %in% texts), label = format)
+  }
+})
+
+test_that("a Word export that fails leaves nothing in tempdir()", {
+  con <- fixture_app()
+  spec <- export_spec(con)
+  path <- withr::local_tempfile(fileext = ".docx")
+  local_mocked_bindings(english_charts = function(dir) stop("injected failure"))
+  before <- list.files(tempdir(), all.files = TRUE, no.. = TRUE)
+  expect_error(export_report("docx", spec, con, path, export_time_fixed), "injected failure")
+  expect_setequal(list.files(tempdir(), all.files = TRUE, no.. = TRUE), before)
+})
+
 test_that("a long table goes on slides of its own, continued as needed", {
   con <- fixture_app()
   practice <- fetch_subject(con, "practice", "N81655")
@@ -485,7 +616,11 @@ test_that("a prepared file is named after the app and the day in the UK", {
     export_filename("pptx", as.POSIXct("2026-06-30 23:30", tz = "UTC")),
     "prescription-explorer-report-2026-07-01.pptx"
   )
-  expect_identical(export_formats()$format, "pptx")
+  expect_identical(export_formats()$format, c("pptx", "docx"))
+  expect_identical(
+    export_filename("docx", as.POSIXct("2026-01-15 12:00", tz = "UTC")),
+    "prescription-explorer-report-2026-01-15.docx"
+  )
 })
 
 # The Report tab with a runner, and what it says
@@ -545,6 +680,19 @@ test_that("Prepare runs the export as a task, and Download serves its file", {
     expect_match(wait_status(session, output, "Preparing the PowerPoint file\u2026"), "^Ready: ")
     expect_false(file.exists(first))
     expect_true(file.exists(asked[[2]]$path))
+    # Another format: the PowerPoint file is not offered for it, and is said
+    # to be still the report's; Word is made
+    session$setInputs(format = "docx")
+    expect_null(output$download_ui)
+    expect_identical(output$export_status, paste(
+      "The PowerPoint file is prepared: choose PowerPoint to download it, or Prepare to make",
+      "the Word file."
+    ))
+    session$setInputs(prepare = 4L)
+    expect_identical(asked[[3]]$format, "docx")
+    expect_match(asked[[3]]$path, "[.]docx$")
+    expect_match(wait_status(session, output, "Preparing the Word file\u2026"), "^Ready: ")
+    expect_match(output$download_ui$html, "Download Word", fixed = TRUE)
   })
 })
 
@@ -626,6 +774,33 @@ test_that("a link's value for the export's format cannot stop the page from open
     as.character(format_radio("report-format", "Export as", choices)),
     as.character(shiny::radioButtons("report-format", "Export as", choices, inline = TRUE))
   )
+})
+
+test_that("a file prepared in a format no longer chosen is said to be ready in it", {
+  said <- character()
+  local_mocked_bindings(announce = function(session, text) said <<- c(said, text))
+  finish <- NULL
+  run <- function(format, spec, path, exported) {
+    writeLines("the file", path)
+    promises::promise(function(resolve, reject) finish <<- function() resolve(path))
+  }
+  report <- shiny::reactiveVal(report_add(new_report(), "drug", export_item_params))
+  shiny::testServer(mod_report_server, args = list(report = report, run = run), {
+    session$flushReact()
+    session$setInputs(format = "docx", prepare = 1L)
+    # PowerPoint chosen while the Word file is prepared
+    session$setInputs(format = "pptx")
+    finish()
+    expect_identical(wait_status(session, output, "Preparing the Word file\u2026"), paste(
+      "The Word file is prepared: choose Word to download it, or Prepare to make the",
+      "PowerPoint file."
+    ))
+    expect_null(output$download_ui)
+    expect_identical(said[[2]], "The Word file is ready: choose Word to download it.")
+    session$setInputs(format = "docx")
+    expect_match(output$export_status, "^Ready: ")
+    expect_match(output$download_ui$html, "Download Word", fixed = TRUE)
+  })
 })
 
 test_that("an export that fails is said and logged, not swallowed", {

@@ -20,11 +20,9 @@ export_pptx <- function(spec, con, path, exported = Sys.time()) {
   fetches <- plain_fetches(con)
   window <- fetches$window()
   items <- export_items(spec, fetches)
+  tidy <- tempdir_tidier()
+  on.exit(tidy(path), add = TRUE)
   deck <- officer::read_pptx(template_file("report.pptx"))
-  # officer unpacks the template into a folder of tempdir() that print() zips
-  # but does not delete, and a worker lives as long as the app: the folder
-  # goes when the export ends, written or not
-  on.exit(unlink(deck$package_dir, recursive = TRUE), add = TRUE)
   deck <- officer::set_doc_properties(
     deck, title = "Prescription Explorer report", creator = "Prescription Explorer",
     created = exported
@@ -47,7 +45,7 @@ export_pptx <- function(spec, con, path, exported = Sys.time()) {
   for (page in methods_pages(methods_content(spec, window, exported))) {
     deck <- pptx_methods(deck, page)
   }
-  english_charts(deck)
+  english_charts(file.path(deck$package_dir, "ppt", "charts"))
   print(deck, target = path)
   invisible(path)
 }
@@ -307,13 +305,12 @@ table_header_row <- function(deck) {
 }
 
 # mschart writes each chart from its template, which says the chart's text is
-# French: the deck's charts, written into its folder as they were placed, say
-# British English instead, for Office's proofing
-english_charts <- function(deck) {
-  dir <- file.path(deck$package_dir, "ppt", "charts")
+# French: the charts of a deck or a document, written into its folder as
+# they were placed, say British English instead, for Office's proofing
+english_charts <- function(dir) {
   for (file in list.files(dir, "[.]xml$", full.names = TRUE)) {
     xml <- readLines(file, encoding = "UTF-8", warn = FALSE)
     writeLines(gsub("\"fr-FR\"", "\"en-GB\"", xml, fixed = TRUE), file, useBytes = TRUE)
   }
-  invisible(deck)
+  invisible(dir)
 }
