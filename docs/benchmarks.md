@@ -373,12 +373,12 @@ It meets the spec's minimum: 4 vCPUs and 16 GB, as near as 15 GiB is, and 100 GB
 
 ## The server, rehearsed (P6-02)
 
-The server's setup ([docs/server.md](server.md)) laid out on the machine above by `docker/rehearsal/compose.yaml`, on 25 November 2026. The database, the `jobs` container and the app run on four of the machine's CPUs with the server's memory limits and no swap: 6 GiB for the database, 3 GiB for `jobs` and 2 GiB for the app. The database runs `postgres:18.7-trixie`, pinned by digest, with `postgresql.prod.conf` (3 GB of shared buffers, `effective_cache_size = 5GB`), Coolify's superuser and the three initialization scripts. The app image was built from `main` at `637a26b`. There is no proxy, so HTTPS and the noindex header are checked on the server.
+The server's setup ([docs/server.md](server.md)) laid out on the development machine ([Machine](#machine-p1-08)) by `docker/rehearsal/compose.yaml`, on 25 November 2026. The database, the `jobs` container and the app run on four of the machine's CPUs with the server's memory limits and no swap: 6 GB for the database, 3 GB for `jobs` and 2 GB for the app. The database runs `postgres:18.7-trixie`, pinned by digest, with `postgresql.prod.conf` (3 GB of shared buffers, `effective_cache_size = 5GB`), Coolify's superuser and the three initialization scripts. The app image was built from `main` at `637a26b`. There is no proxy, so HTTPS and the noindex header are checked on the server.
 
 **Built from empty, as on a new server.**
 - **The initialization scripts** ran in order. `prexp_owner` is an ordinary login, not a superuser, and `migrate()` ran as it, as the post-deployment command does.
 - **`load_window()`** loaded the twelve months, 202510 to 202609, from the portal in **38.0 minutes**: 190 s a month, 49 s to download and 141 s to load. On the whole machine, P2-02's eleven loads took 175 s a month, 48 s to download and 127 s to load ([Twelve months](#twelve-months-p2-02)). Four CPUs instead of sixteen cost about 9% more a month, and 11% more for the load alone (11% and 15% against the nine months that tests did not slow, 171 s and 122 s), because the load mostly waits on the disk and on single-threaded steps. This is the time to rebuild the database from empty on a server of this size with a fast link to the portal.
-- **Memory, with no swap:** the database's limit held. The kernel's cache of its files filled it, as the limit allows, and the memory the database cannot give back, its shared buffers and the loads' own, peaked at about 3.8 GiB in samples taken every 5 s. No process was killed. `jobs` used at most 0.9 GiB of its 3 GiB.
+- **Memory, with no swap:** the database's limit held. The kernel's cache of its files filled it, as the limit allows, and the memory the database cannot give back, its shared buffers and the loads' own, peaked at about 3.8 GB in samples taken every 5 s. No process was killed. `jobs` used at most 0.9 GB of its 3 GB.
 - **`check_plans()`:** all 25 checks pass, in 2 s.
 - **The app** turned healthy 7 s after it started, well inside the minute Coolify gives a new container.
 
@@ -402,13 +402,13 @@ A new browser session showed "Data: Oct 2025 – Aug 2026" after the removal, an
 | Messages, the searches' wait aside: p95 | 175 ms | 268 ms |
 | Search results, the wait included: p50, p95 | 318, 379 ms | 320, 374 ms |
 | The page itself: p50, max | 145, 186 ms | 161, 378 ms |
-| The app's peak memory, of its 2 GiB | 642 MiB | 634 MiB |
+| The app's peak memory, of its 2 GB | 642 MB | 634 MB |
 
 On the whole machine the same sessions gave lookup p95s of 191 ms (run 1) and 236 ms (run 4).
 - **Ordinary lookups stay under the 300 ms target** on four shared CPUs, at a p95 of 224 ms.
 - **The largest chemical does not: 370 ms at p95.** Its Drug view builds a table of 2,068 presentations in R, on one CPU, and the four CPUs here are shared with the database. Its two fetches took 25 and 36 ms: the time is the table, not the database.
 - **The database's part** is small: in run R1 every fetch's p95 is under 18 ms, and in run R2 every fetch's is under 10 ms but the largest chemical's two presentation fetches.
 - **One stall:** one of run R2's 736 script and style requests took 7.1 s. The other sessions' requests at the same moment took at most 12 ms, so it was that connection, not the app.
-- **Memory.** The app's peak, 642 MiB, includes its two workers. A 15-item export, the worst case, grows the worker that makes it, which keeps the memory: by 168 MiB for PowerPoint, 110 MiB for Word and 70 MiB for Excel, in 2.8, 1.0 and 1.5 s. These were measured in a fresh R process in the app's container, against the twelve months. With both workers grown by a PowerPoint export, the app holds about 1 GiB. The database held 3.2 GiB it cannot give back, its shared buffers, and its cache filled the rest of its limit. No process was killed.
+- **Memory.** The app's peak, 642 MB, includes its two workers. A 15-item export, the worst case, grows the worker that makes it, which keeps the memory: by 168 MB for PowerPoint, 110 MB for Word and 70 MB for Excel, in 2.8, 1.0 and 1.5 s. These were measured in a fresh R process in the app's container, against the twelve months. With both workers grown by a PowerPoint export, the app holds about 1 GB. The database held 3.2 GB it cannot give back, its shared buffers, and its cache filled the rest of its limit. No process was killed.
 
 P6-02 measures the same on the server.
