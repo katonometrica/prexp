@@ -1,0 +1,695 @@
+# The exports (P5-05; spec section 5.5): each item fetched again and shaped as
+# its view shapes it, its table laid out to fit its slides, and the report
+# written to PowerPoint with native charts, tables, notes and the methods
+# last; the runner that sends an export to a worker; and the Report tab's
+# Prepare and Download. The fixture database holds the data
+# (helper-fixture-db.R).
+
+export_months <- c(202601L, 202609L)
+
+# The shapes of each slide of a PowerPoint file, in inches: where each
+# starts and ends, and for a table the bottom of the rows PowerPoint draws
+pptx_shapes <- function(path) {
+  dir <- withr::local_tempdir()
+  utils::unzip(path, exdir = dir)
+  files <- list.files(file.path(dir, "ppt", "slides"), "[.]xml$", full.names = TRUE)
+  do.call(rbind, lapply(files, function(file) {
+    doc <- xml2::read_xml(file)
+    ns <- xml2::xml_ns(doc)
+    shapes <- xml2::xml_find_all(doc, "//p:spTree/p:sp | //p:spTree/p:graphicFrame", ns)
+    if (length(shapes) == 0L) {
+      return(NULL)
+    }
+    inch <- function(node, xpath, attr) {
+      as.numeric(xml2::xml_attr(xml2::xml_find_first(node, xpath, ns), attr)) / 914400
+    }
+    data.frame(
+      slide = basename(file),
+      left = vapply(shapes, inch, 1, ".//a:off", "x"),
+      top = vapply(shapes, inch, 1, ".//a:off", "y"),
+      width = vapply(shapes, inch, 1, ".//a:ext", "cx"),
+      height = vapply(shapes, inch, 1, ".//a:ext", "cy"),
+      rows = vapply(shapes, function(node) {
+        sum(as.numeric(xml2::xml_attr(xml2::xml_find_all(node, ".//a:tr", ns), "h"))) / 914400
+      }, 1),
+      table = vapply(shapes, function(node) {
+        length(xml2::xml_find_all(node, ".//a:tbl", ns)) > 0L
+      }, TRUE)
+    )
+  }))
+}
+
+# That every shape is on its slide, and every table's rows within its frame
+expect_on_slides <- function(path) {
+  shapes <- pptx_shapes(path)
+  expect_true(all(shapes$top + shapes$height <= 7.5 + 1e-6), label = "every shape on its slide")
+  expect_true(all(shapes$left + shapes$width <= 13.334), label = "every shape within the width")
+  tables <- shapes[shapes$table, ]
+  expect_true(
+    all(tables$top + tables$rows <= tables$top + tables$height + 1e-6),
+    label = "every table's rows within its frame"
+  )
+  invisible(shapes)
+}
+export_time_fixed <- as.POSIXct("2026-11-25 14:05", tz = "UTC")
+
+# A report with an item of each kind, two with notes
+export_spec <- function(con) {
+  subject <- function(kind, code) fetch_subject(con, kind, code)
+  chemical <- subject("chemical", "0212000B0")
+  presentation <- subject("presentation", "0212000B0AAABAB")
+  practice <- subject("practice", "N81655")
+  drug <- function(found, level, measure) {
+    list(
+      level = level, id = found$id, code = found$code, label = found$name,
+      months = export_months, measure = measure
+    )
+  }
+  spec <- report_add(new_report(), "drug", drug(chemical, "chemical", "nic"))
+  spec <- report_set_note(spec, 1L, "Costs rose after March.\nSee the presentations.")
+  spec <- report_add(spec, "drug", drug(presentation, "presentation", "total_quantity"))
+  spec <- report_add(spec, "practice", list(
+    id = practice$id, code = practice$code, label = practice$name, months = export_months,
+    measure = "items"
+  ))
+  spec <- report_add(spec, "region", drug(chemical, "chemical", "adq_usage"))
+  report_set_note(spec, 4L, "The regions differ.")
+}
+
+test_that("each item is fetched again and shaped as its view shapes it", {
+  con <- fixture_app()
+  spec <- export_spec(con)
+  items <- export_items(spec, plain_fetches(con))
+  expect_identical(vapply(items, `[[`, "", "title"), vapply(spec$items, report_item_title, ""))
+  months <- format_month(index_month(seq(month_index(202601L), month_index(202609L))))
+  # A chemical substance: its months, and its presentations, most items first
+  chemical <- spec$items[[1]]$params
+  series <- fetch_drug_series(con, "chemical", chemical$id, export_months, "nic")
+  expect_identical(items[[1]]$chart$type, "line")
+  expect_identical(items[[1]]$chart$labels, months)
+  expect_equal(items[[1]]$chart$values[match(series$year_month, index_month(
+    seq(month_index(202601L), month_index(202609L))
+  ))], series$value)
+  presentations <- fetch_drug_presentations(con, chemical$id, export_months)
+  expect_identical(items[[1]]$table$data$code, utils::head(presentations$bnf_code, 25L))
+  expect_equal(items[[1]]$table$data$nic, utils::head(presentations$nic, 25L))
+  expect_identical(items[[1]]$note, "Costs rose after March.\nSee the presentations.")
+  expect_match(items[[1]]$chart$alt, "^Net ingredient cost by month, Jan . Sep 2026: ")
+  # A presentation: its months, as a table too
+  expect_identical(items[[2]]$table$labels, c("Month", "Quantity", "Prescribers"))
+  expect_equal(items[[2]]$table$data$value, items[[2]]$chart$values)
+  # A practice: its months of the measure, its top drugs by it, and where it is
+  practice <- spec$items[[3]]$params
+  top <- fetch_practice_top_drugs(con, practice$id, export_months, "items", 26L)
+  expect_identical(items[[3]]$table$data$code, utils::head(top$bnf_code, 25L))
+  expect_identical(items[[3]]$table$data$rank, seq_len(min(25L, nrow(top))))
+  profile <- fetch_practice_profile(con, practice$id)
+  expect_match(items[[3]]$profile, profile$region_name, fixed = TRUE)
+  # A drug by region: the largest region at the top of the chart, which
+  # Office draws from the bottom, and England's total under the regions
+  region <- spec$items[[4]]$params
+  rows <- fetch_region_comparison(con, "chemical", region$id, export_months, "adq_usage")
+  expect_identical(items[[4]]$chart$type, "bar")
+  expect_identical(items[[4]]$chart$values, sort(items[[4]]$chart$values))
+  table <- items[[4]]$table
+  expect_identical(utils::tail(table$data$region, 1L), "England")
+  expect_equal(utils::tail(table$data$value, 1L), sum(rows$value, na.rm = TRUE))
+  expect_true(table$total)
+  # What it says where there is nothing to show
+  gone <- report_add(new_report(), "drug", modifyList(chemical, list(id = 2147483647L)))
+  gone <- report_add(gone, "practice", modifyList(practice, list(id = 2147483647L)))
+  empty <- export_items(gone, plain_fetches(con))
+  expect_null(empty[[1]]$chart)
+  expect_match(empty[[1]]$message, "was not prescribed in Jan . Sep 2026.")
+  expect_identical(empty[[2]]$message, paste(practice$label, "is not in the data."))
+})
+
+test_that("a table's values are written as the app writes them", {
+  table <- export_table(
+    "A table",
+    data.frame(name = c("A", NA), n = c(1234, NA), cost = c(1234.5, 0), share = c(0.1234, NA)),
+    c("Name", "Items", "Net ingredient cost", "Share"),
+    c("text", "items", "nic", "share")
+  )
+  expect_identical(table_text(table), data.frame(
+    name = c("A", ""), n = c("1,234", "\u2013"), cost = c("\u00a31,234.50", "\u00a30.00"),
+    share = c("12.3%", "\u2013")
+  ))
+})
+
+test_that("a table is laid out to fit its width, and cut into pages that fit their height", {
+  long <- paste("A presentation with a long name", seq_len(30))
+  table <- export_table(
+    "Presentations",
+    data.frame(name = long, items = seq(1000, by = 1000, length.out = 30)),
+    c("Presentation", "Items"), c("text", "items")
+  )
+  use_chart_font()
+  wide <- table_layout(table, size = 9, width = 12)
+  expect_lte(sum(wide$widths), 12)
+  expect_true(all(wide$heights == wide$heights[[1]]))
+  # Narrow: the names wrap, so the rows are higher
+  narrow <- table_layout(table, size = 9, width = 2.5)
+  expect_lte(sum(narrow$widths), 2.5 + 1e-9)
+  expect_true(all(narrow$heights > wide$heights))
+  # Pages that each fit, every row on one of them, in order
+  pages <- table_pages(narrow, height = 2)
+  expect_gt(length(pages), 1L)
+  expect_identical(unlist(pages), seq_len(30L))
+  for (rows in pages) {
+    expect_lte(narrow$header + sum(narrow$heights[rows]), 2)
+  }
+  expect_identical(table_pages(wide, height = 100), list(seq_len(30L)))
+  # A table with no rows has no pages
+  none <- table
+  none$data <- none$data[0, ]
+  expect_identical(table_pages(table_layout(none, 9, 12), 5), list())
+})
+
+test_that("the methods are cut into pages, a section each, a long one over more", {
+  sections <- methods_content(new_report(), NULL, export_time_fixed)
+  pages <- methods_pages(sections)
+  titles <- vapply(pages, `[[`, "", "title")
+  for (section in sections) {
+    expect_true(paste("Methods:", section$title) %in% titles)
+  }
+  expect_identical(titles[[1]], "Methods: This report")
+  # Every block once, in order
+  blocks <- unlist(lapply(pages, function(page) vapply(page$blocks, `[[`, "", "text")))
+  expected <- unlist(lapply(sections, function(section) {
+    c(
+      section$text, vapply(section$points, `[[`, "", "text"),
+      vapply(section$links, `[[`, "", "text")
+    )
+  }))
+  expect_identical(blocks, expected)
+  use_chart_font()
+  expect_false("Methods: Limitations (continued)" %in% titles)
+  # A small box: the long sections go on, and say so
+  small <- methods_pages(sections, height = 1.5)
+  expect_gt(length(small), length(pages))
+  expect_true("Methods: Limitations (continued)" %in% vapply(small, `[[`, "", "title"))
+})
+
+test_that("the PowerPoint file reads back: a title, each item, its tables and the methods", {
+  con <- fixture_app()
+  spec <- export_spec(con)
+  path <- withr::local_tempfile(fileext = ".pptx")
+  before <- list.files(tempdir(), all.files = TRUE, no.. = TRUE)
+  expect_identical(export_report("pptx", spec, con, path, export_time_fixed), path)
+  # Nothing left in tempdir() but the file: officer's unpacked deck goes
+  expect_setequal(
+    list.files(tempdir(), all.files = TRUE, no.. = TRUE), c(before, basename(path))
+  )
+  deck <- officer::read_pptx(path)
+  expect_equal(officer::slide_size(deck), list(width = 13.333333, height = 7.5), tolerance = 1e-6)
+  # One slide for the title, one per item, one per page of a note or a table
+  # that has slides of its own, and one per page of the methods
+  items <- export_items(spec, plain_fetches(con))
+  own <- sum(vapply(items, function(item) {
+    frame <- pptx_frame(item)
+    tables <- if (is.null(item$table) || pptx_beside(item$table, frame)) {
+      0L
+    } else {
+      length(pptx_table_pages(item$table))
+    }
+    tables + length(pptx_note_pages(item, frame))
+  }, 1L))
+  expect_gt(own, 0L)
+  methods <- length(methods_pages(methods_content(spec, fetch_window(con), export_time_fixed)))
+  expect_identical(length(deck), 1L + length(items) + own + methods)
+  expect_on_slides(path)
+  texts <- officer::pptx_summary(deck)$text
+  expect_true(all(c(
+    "Prescription Explorer report", window_period(fetch_window(con)),
+    "Exported on 25 November 2026 at 14:05 GMT", "4 items"
+  ) %in% texts))
+  for (item in items) {
+    expect_true(item$title %in% texts, label = item$title)
+  }
+  # Notes, a paragraph per line
+  expect_true(all(c(
+    "Note: Costs rose after March.", "See the presentations.", "Note: The regions differ."
+  ) %in% texts))
+  # The tables' values as the app writes them
+  expect_true(all(table_text(items[[1]]$table)$nic %in% texts))
+  expect_true("England" %in% texts)
+  # The methods, with the attribution exact
+  expect_true(paste(
+    "NHSBSA Copyright 2021-2026 \u00b7 Contains public sector information licensed under the",
+    "Open Government Licence v3.0."
+  ) %in% texts)
+  expect_true("Methods: Filters" %in% texts)
+  # A native chart for each item, each with its words for screen readers
+  dir <- withr::local_tempdir()
+  utils::unzip(path, exdir = dir)
+  charts <- list.files(file.path(dir, "ppt", "charts"), pattern = "[.]xml$")
+  expect_length(charts, length(items))
+  slides <- unlist(lapply(list.files(file.path(dir, "ppt", "slides"), "[.]xml$", full.names = TRUE),
+                          function(file) paste(readLines(file, warn = FALSE), collapse = "")))
+  alts <- unlist(regmatches(slides, gregexpr("descr=\"[^\"]*\"", slides)))
+  expect_length(alts, length(items))
+  expect_true(any(grepl("Net ingredient cost by month", alts, fixed = TRUE)))
+  # Straight lines between the months, and charts in English
+  chart_xml <- unlist(lapply(file.path(dir, "ppt", "charts", charts), readLines, warn = FALSE))
+  expect_true(any(grepl("<c:smooth val=\"0\"/>", chart_xml, fixed = TRUE)))
+  expect_false(any(grepl("<c:smooth val=\"1\"/>", chart_xml, fixed = TRUE)))
+  expect_false(any(grepl("fr-FR", chart_xml, fixed = TRUE)))
+  expect_true(any(grepl("en-GB", chart_xml, fixed = TRUE)))
+  # Each table's first row marked as its header, for screen readers
+  props <- unlist(regmatches(slides, gregexpr("<a:tblPr[^>]*>", slides)))
+  expect_gt(length(props), 0L)
+  expect_identical(length(props), sum(lengths(regmatches(slides, gregexpr("<a:tbl>", slides)))))
+  expect_true(all(grepl("firstRow=\"1\"", props, fixed = TRUE)))
+  properties <- officer::doc_properties(deck)
+  expect_identical(properties$value[properties$tag == "title"], "Prescription Explorer report")
+  expect_identical(properties$value[properties$tag == "creator"], "Prescription Explorer")
+  # A format the app does not have
+  expect_error(export_report("odt", spec, con, path), class = "prexp_invalid_argument")
+})
+
+test_that("a long table goes on slides of its own, continued as needed", {
+  con <- fixture_app()
+  practice <- fetch_subject(con, "practice", "N81655")
+  spec <- report_add(new_report(), "practice", list(
+    id = practice$id, code = practice$code, label = practice$name, months = export_months,
+    measure = "nic"
+  ))
+  items <- export_items(spec, plain_fetches(con))
+  table <- items[[1]]$table
+  expect_false(pptx_beside(table, pptx_frame(items[[1]])))
+  # Narrow pages: more than one
+  local_mocked_bindings(pptx_table_pages = function(table) {
+    table_pages(table_layout(table, 9, 12), 1.2)
+  })
+  pages <- pptx_table_pages(table)
+  expect_gt(length(pages), 1L)
+  path <- withr::local_tempfile(fileext = ".pptx")
+  export_pptx(spec, con, path, export_time_fixed)
+  texts <- officer::pptx_summary(officer::read_pptx(path))$text
+  title <- paste("Table:", items[[1]]$title)
+  expect_true(title %in% texts)
+  expect_true(paste(title, "(continued)") %in% texts)
+  expect_on_slides(path)
+})
+
+# An item as export_items() gives it, made here
+made_item <- function(...) {
+  item <- list(
+    title = "Atorvastatin \u00b7 items \u00b7 Jan 2026 to Sep 2026",
+    summary = "Drug view \u00b7 chemical substance 0212000B0", profile = NULL, note = "",
+    clamped = FALSE, measure = "items", footnote = NULL, message = NULL, table = NULL,
+    chart = list(
+      type = "line", labels = c("Jan 2026", "Feb 2026", "Mar 2026"), values = c(3, 5, 4),
+      alt = "Items by month"
+    )
+  )
+  utils::modifyList(item, list(...))
+}
+
+# A deck of these items' slides, as export_pptx() writes them
+made_deck <- function(items) {
+  deck <- officer::read_pptx(template_file("report.pptx"))
+  for (item in items) {
+    frame <- pptx_frame(item)
+    deck <- pptx_item(deck, item, frame)
+    pages <- pptx_note_pages(item, frame)
+    for (k in seq_along(pages)) {
+      deck <- pptx_note(deck, item, item_note_lines(item)[pages[[k]]], k)
+    }
+  }
+  path <- withr::local_tempfile(fileext = ".pptx", .local_envir = parent.frame())
+  print(deck, target = path)
+  path
+}
+
+test_that("a slide holds its text: a long note goes on, a long address moves the chart", {
+  use_chart_font()
+  points <- paste(sprintf("- point %d: costs rose", 1:15), collapse = "\n")
+  short <- made_item(note = "Costs rose.", clamped = TRUE)
+  long <- made_item(note = points, clamped = TRUE)
+  many <- made_item(note = paste(rep("a", 200), collapse = "\n"))
+  where <- made_item(profile = paste(rep("A very long address, Somewhere", 8), collapse = ", "))
+  # A short note stays under the chart; a long one goes on slides of its own
+  expect_false(pptx_frame(short)$apart)
+  expect_true(pptx_frame(long)$apart)
+  expect_length(pptx_note_pages(long, pptx_frame(long)), 1L)
+  expect_gt(length(pptx_note_pages(many, pptx_frame(many))), 1L)
+  # A long address takes more lines, and the chart starts below them
+  expect_gt(pptx_frame(where)$chart$top, pptx_frame(short)$chart$top)
+  frame <- pptx_frame(where)
+  expect_gte(frame$chart$top, frame$summary$top + frame$summary$height)
+  path <- made_deck(list(short, long, many, where))
+  expect_on_slides(path)
+  texts <- officer::pptx_summary(officer::read_pptx(path))$text
+  expect_true(all(item_note_lines(long) %in% texts))
+  expect_true(paste("Note:", long$title) %in% texts)
+  expect_true(paste("Note:", many$title, "(continued)") %in% texts)
+  expect_true("The note is on the next slide." %in% texts)
+  # Each box holds its text as measured
+  for (item in list(short, long, where)) {
+    frame <- pptx_frame(item)
+    expect_gte(frame$chart$height, 3)
+  }
+})
+
+test_that("a short table with no chart takes the chart's place", {
+  use_chart_font()
+  table <- export_table(
+    "By region",
+    data.frame(
+      region = c("LONDON", "No region: unidentified prescribers", "England"),
+      value = c(0, 4, 4), share = c(0, 1, 1)
+    ),
+    c("Region", "Items", "Share of England"), c("text", "items", "share")
+  )
+  table$total <- TRUE
+  item <- made_item(chart = NULL, table = table)
+  expect_true(pptx_beside(table, pptx_frame(item)))
+  shapes <- expect_on_slides(made_deck(list(item)))
+  expect_equal(shapes$left[shapes$table], pptx_left, tolerance = 1e-3)
+})
+
+test_that("an export's chart has the view's axis: whole items, labels that differ", {
+  expect_identical(export_axis(c(0, 1, 1, 0), "items"), list(unit = "1", format = "#,##0"))
+  expect_identical(
+    export_axis(c(0, 2, 1.5), "nic"), list(unit = "0.5", format = "\u00a3#,##0.00")
+  )
+  expect_identical(
+    export_axis(c(0.6, NA), "adq_usage"), list(unit = "0.1", format = "#,##0.0")
+  )
+  expect_identical(export_axis(c(1234567, 2), "items")$unit, "300000")
+  expect_null(export_axis(c(NA, NA), "adq_usage")$unit)
+  # Bars across: the values' axis title reads across; a line's stays upright
+  bars <- list(type = "bar", labels = c("A", "B"), values = c(1, 2))
+  expect_identical(export_chart(bars, "items")$theme$title_y_rot, 0)
+  line <- list(type = "line", labels = c("A", "B"), values = c(1, 2))
+  expect_false(identical(export_chart(line, "items")$theme$title_y_rot, 0))
+})
+
+test_that("a drug's regions are charted in the view's order and said as the view says them", {
+  con <- fixture_app()
+  regions <- fetch_regions(con)
+  # Two regions that prescribed it, the others at 0, tied
+  rows <- tibble::tibble(
+    region_code = regions$region_code[c(2, 5)], region_name = regions$region_name[c(2, 5)],
+    measure = "items", value = c(5, 1)
+  )
+  fetches <- list(region_comparison = function(...) rows, regions = function() regions)
+  params <- list(
+    level = "chemical", id = 1L, code = "0212000B0", label = "Atorvastatin",
+    months = export_months, measure = "items"
+  )
+  item <- region_export(params, fetches)
+  filled <- fill_regions(rows, regions)
+  screen <- chart_bars(filled[in_region(filled), ])
+  # The view's bars, from the bottom up
+  codes <- filled$region_code[match(item$chart$labels, filled$region_name)]
+  expect_identical(codes, levels(screen$data$id))
+  # The table beside it, from the top down
+  shown <- item$table$data$region[item$table$data$region != "England"]
+  expect_identical(rev(item$chart$labels), shown)
+  expect_identical(item$chart$alt, ggplot2::get_alt_text(screen))
+})
+
+test_that("the runner exports here without workers, and on a worker with them", {
+  con <- fixture_app()
+  spec <- export_spec(con)
+  run <- export_runner(con)
+  # No workers: here, as a promise of the file's path
+  path <- withr::local_tempfile(fileext = ".pptx")
+  got <- NULL
+  promises::then(run("pptx", spec, path, export_time_fixed), function(value) got <<- value)
+  for (i in 1:50) {
+    if (!is.null(got)) break
+    later::run_now(0.05)
+  }
+  expect_identical(got, path)
+  expect_true(file.exists(path))
+  # A failure rejects the promise
+  failure <- NULL
+  promises::catch(run("odt", spec, path, export_time_fixed), function(e) failure <<- e)
+  for (i in 1:50) {
+    if (!is.null(failure)) break
+    later::run_now(0.05)
+  }
+  expect_s3_class(failure, "prexp_invalid_argument")
+  # With a worker: a mirai, on the worker's own connection, to a file here
+  start_workers(1L, setup = worker_setup(), dbname = local_fixture_db())
+  withr::defer(stop_workers())
+  path <- withr::local_tempfile(fileext = ".pptx")
+  promise <- run("pptx", spec, path, export_time_fixed)
+  expect_s3_class(promise, "mirai")
+  got <- NULL
+  promises::then(promise, function(value) got <<- value)
+  deadline <- Sys.time() + 60
+  while (is.null(got) && Sys.time() < deadline) {
+    later::run_now(0.05)
+  }
+  expect_identical(got, path)
+  expect_gt(length(officer::read_pptx(path)), 5L)
+})
+
+test_that("an export that no worker takes ends as an error, not a wait", {
+  # Daemons asked for, but none connected
+  mirai::daemons(url = mirai::local_url())
+  withr::defer(mirai::daemons(0L))
+  failure <- NULL
+  promises::catch(
+    export_runner(NULL, timeout = 0.5)("pptx", new_report(), tempfile(), Sys.time()),
+    function(e) failure <<- e
+  )
+  deadline <- Sys.time() + 10
+  while (is.null(failure) && Sys.time() < deadline) {
+    later::run_now(0.05)
+  }
+  expect_match(conditionMessage(failure), "Timed out", fixed = TRUE)
+})
+
+test_that("a worker exports on its own connection", {
+  dbname <- local_fixture_db()
+  app <- local_test_db("app", dbname = dbname)
+  spec <- export_spec(app)
+  worker_connect(dbname)
+  withr::defer({
+    DBI::dbDisconnect(worker$con)
+    worker$con <- NULL
+  })
+  path <- withr::local_tempfile(fileext = ".pptx")
+  expect_identical(worker_export("pptx", spec, path, export_time_fixed), path)
+  expect_gt(length(officer::read_pptx(path)), 5L)
+})
+
+test_that("a prepared file is named after the app and the day in the UK", {
+  expect_identical(
+    export_filename("pptx", as.POSIXct("2026-06-30 23:30", tz = "UTC")),
+    "prescription-explorer-report-2026-07-01.pptx"
+  )
+  expect_identical(export_formats()$format, "pptx")
+})
+
+# The Report tab with a runner, and what it says
+export_item_params <- list(
+  level = "chemical", id = 57L, code = "0212000B0", label = "Atorvastatin",
+  months = export_months, measure = "nic"
+)
+
+wait_status <- function(session, output, while_text) {
+  for (i in 1:100) {
+    later::run_now(0.02)
+    session$flushReact()
+    if (!identical(output$export_status, while_text)) break
+  }
+  output$export_status
+}
+
+test_that("Prepare runs the export as a task, and Download serves its file", {
+  said <- character()
+  local_mocked_bindings(announce = function(session, text) said <<- c(said, text))
+  asked <- list()
+  run <- function(format, spec, path, exported) {
+    asked[[length(asked) + 1L]] <<- list(format = format, spec = spec, path = path)
+    writeLines("the file", path)
+    promises::promise_resolve(path)
+  }
+  report <- shiny::reactiveVal(new_report())
+  shiny::testServer(mod_report_server, args = list(report = report, run = run), {
+    session$flushReact()
+    expect_identical(output$export_status, "Pin a view to export the report.")
+    # A click with nothing pinned does nothing
+    session$setInputs(prepare = 1L)
+    expect_length(asked, 0L)
+    report(report_add(new_report(), "drug", export_item_params))
+    session$setInputs(format = "pptx", prepare = 2L)
+    expect_length(asked, 1L)
+    expect_identical(asked[[1]]$format, "pptx")
+    expect_identical(asked[[1]]$spec, report())
+    expect_identical(said[[1]], "Preparing the PowerPoint file of the report's 1 item.")
+    expect_match(
+      wait_status(session, output, "Preparing the PowerPoint file\u2026"),
+      "^Ready: prepared at [0-9]{2}:[0-9]{2} (GMT|BST)[.]$"
+    )
+    expect_identical(
+      said[[2]], "The PowerPoint file is ready: the Download button is next to Prepare."
+    )
+    expect_match(output$download_ui$html, "Download PowerPoint", fixed = TRUE)
+    expect_identical(readLines(output$download), "the file")
+    # A note added since: that file is not the report's any more
+    report(report_set_note(report(), 1L, "Added later."))
+    session$flushReact()
+    expect_null(output$download_ui)
+    expect_match(output$export_status, "has changed since it was prepared", fixed = TRUE)
+    # Prepared again: the earlier file goes
+    first <- asked[[1]]$path
+    session$setInputs(prepare = 3L)
+    expect_match(wait_status(session, output, "Preparing the PowerPoint file\u2026"), "^Ready: ")
+    expect_false(file.exists(first))
+    expect_true(file.exists(asked[[2]]$path))
+  })
+})
+
+test_that("a file prepared for a report changed since is not said to be ready", {
+  said <- character()
+  local_mocked_bindings(announce = function(session, text) said <<- c(said, text))
+  finish <- NULL
+  run <- function(format, spec, path, exported) {
+    writeLines("the file", path)
+    promises::promise(function(resolve, reject) finish <<- function() resolve(path))
+  }
+  report <- shiny::reactiveVal(report_add(new_report(), "drug", export_item_params))
+  shiny::testServer(mod_report_server, args = list(report = report, run = run), {
+    session$flushReact()
+    session$setInputs(prepare = 1L)
+    # A note saved while the file is prepared
+    session$setInputs(note = list(id = 1L, note = "Added while preparing."))
+    finish()
+    expect_match(
+      wait_status(session, output, "Preparing the PowerPoint file\u2026"),
+      "has changed since it was prepared", fixed = TRUE
+    )
+    expect_null(output$download_ui)
+    expect_identical(said[[2]], paste(
+      "The PowerPoint file was prepared, but the report has changed since: prepare it",
+      "again to download it."
+    ))
+  })
+  # Only the status region says what Prepare did
+  ui <- htmltools::tagQuery(mod_report_ui("report"))
+  for (id in c("report-prepare", "report-download_ui")) {
+    expect_identical(ui$find(paste0("#", id))$selectedTags()[[1]]$attribs[["aria-live"]], "off")
+  }
+})
+
+test_that("a file an export finishes after its session ended goes too", {
+  local_mocked_bindings(announce = function(session, text) NULL)
+  written <- NULL
+  run <- function(format, spec, path, exported) {
+    promises::promise(function(resolve, reject) {
+      later::later(function() {
+        writeLines("the file", path)
+        written <<- path
+        resolve(path)
+      }, 0.2)
+    })
+  }
+  report <- shiny::reactiveVal(report_add(new_report(), "drug", export_item_params))
+  shiny::testServer(mod_report_server, args = list(report = report, run = run), {
+    session$flushReact()
+    session$setInputs(prepare = 1L)
+  })
+  # testServer ended the session as it returned, while the export ran
+  for (i in 1:100) {
+    later::run_now(0.02)
+    if (!is.null(written) && !file.exists(written)) break
+  }
+  for (i in 1:10) {
+    later::run_now(0.02)
+  }
+  expect_false(is.null(written))
+  expect_false(file.exists(written))
+})
+
+test_that("a link's value for the export's format cannot stop the page from opening", {
+  # Shiny restores a value the app never writes, as radioButtons() would take it
+  for (value in c("[\"pptx\",\"docx\"]", "{\"a\":1}", "\"odt\"", "null")) {
+    search <- paste0("?_inputs_&report-format=", utils::URLencode(value, reserved = TRUE))
+    page <- NULL
+    expect_no_error(
+      page <- shiny:::withRestoreContext(shiny:::RestoreContext$new(search), app_ui(NULL))
+    )
+    html <- htmltools::renderTags(page)$html
+    expect_match(html, "value=\"pptx\" checked=\"checked\"", fixed = TRUE)
+  }
+  # The markup is radioButtons()', which the browser's binding reads
+  choices <- c(`PowerPoint (.pptx)` = "pptx", `Word (.docx)` = "docx")
+  expect_identical(
+    as.character(format_radio("report-format", "Export as", choices)),
+    as.character(shiny::radioButtons("report-format", "Export as", choices, inline = TRUE))
+  )
+})
+
+test_that("an export that fails is said and logged, not swallowed", {
+  said <- character()
+  local_mocked_bindings(announce = function(session, text) said <<- c(said, text))
+  toasts <- character()
+  local_mocked_bindings(
+    showNotification = function(ui, ...) toasts <<- c(toasts, list(...)$type),
+    .package = "shiny"
+  )
+  run <- function(format, spec, path, exported) {
+    promises::promise_reject(simpleError("the disk is full"))
+  }
+  report <- shiny::reactiveVal(report_add(new_report(), "drug", export_item_params))
+  shiny::testServer(mod_report_server, args = list(report = report, run = run), {
+    session$flushReact()
+    # Shiny's ExtendedTask warns as well when its task fails
+    expect_warning(
+      expect_message(
+        {
+          session$setInputs(prepare = 1L)
+          status <- wait_status(session, output, "Preparing the PowerPoint file\u2026")
+        },
+        "An export failed: the disk is full"
+      ),
+      "invoking the ExtendedTask"
+    )
+    expect_identical(status, "The report could not be exported. Try again.")
+    expect_identical(toasts, "error")
+    expect_match(said[[2]], "could not be exported", fixed = TRUE)
+    expect_null(output$download_ui)
+  })
+})
+
+test_that("Prepare is off with nothing pinned or no runner, and answers clicks only", {
+  states <- list()
+  local_mocked_bindings(
+    updateActionButton = function(session, ...) {
+      args <- list(...)
+      states[[length(states) + 1L]] <<- args$disabled
+    },
+    .package = "shiny"
+  )
+  asked <- 0L
+  run <- function(...) {
+    asked <<- asked + 1L
+    promises::promise_resolve(NULL)
+  }
+  report <- shiny::reactiveVal(report_add(new_report(), "drug", export_item_params))
+  shiny::testServer(mod_report_server, args = list(report = report, run = run), {
+    # The value a link's `_inputs_` gives the button, sent as the page opens
+    session$setInputs(prepare = 1L)
+    expect_identical(asked, 0L)
+    expect_false(utils::tail(states, 1L)[[1]])
+    report(new_report())
+    session$flushReact()
+    expect_true(utils::tail(states, 1L)[[1]])
+  })
+  states <- list()
+  shiny::testServer(mod_report_server, args = list(report = report), {
+    session$flushReact()
+    expect_true(utils::tail(states, 1L)[[1]])
+  })
+  ui <- htmltools::renderTags(mod_report_ui("report"))$html
+  expect_match(ui, "id=\"report-prepare\"", fixed = TRUE)
+  expect_match(ui, "PowerPoint (.pptx)", fixed = TRUE)
+})

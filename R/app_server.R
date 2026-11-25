@@ -36,7 +36,7 @@ app_server <- function(con, cache = NULL) {
       ),
       region = mod_region_server("region", fetches, window, report, restoring$region)
     )
-    mod_report_server("report", report)
+    mod_report_server("report", report, export_runner(con))
     report_link(input, session, report, views, restoring, window, fetches$subject)
     output$window <- shiny::renderText({
       if (is.null(window())) "Data window unavailable" else window_text(window())

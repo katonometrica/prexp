@@ -37,7 +37,8 @@ Imports:
     systemfonts,
     tibble,
     tools,
-    utils
+    utils,
+    xml2
 Suggests:
     bit64,
     covr,
