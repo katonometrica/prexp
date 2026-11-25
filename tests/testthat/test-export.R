@@ -1,4 +1,4 @@
-# The exports (P5-05, P5-06; spec section 5.5): each item fetched again and shaped as
+# The exports (P5-05 to P5-07; spec section 5.5): each item fetched again and shaped as
 # its view shapes it, its table laid out to fit its slides, and the report
 # written to PowerPoint with native charts, tables, notes and the methods
 # last; the runner that sends an export to a worker; and the Report tab's
@@ -51,6 +51,28 @@ expect_on_slides <- function(path) {
   )
   invisible(shapes)
 }
+# A part of an unpacked workbook, without its namespaces, so that paths into
+# a sheet, its .rels or styles.xml need no prefix
+xlsx_part <- function(dir, ...) {
+  xml2::xml_ns_strip(xml2::read_xml(file.path(dir, "xl", ...)))
+}
+
+# The number format of each cell of a sheet, by its address: its code, or
+# "General" for none
+xlsx_cell_formats <- function(dir, sheet) {
+  styles <- xlsx_part(dir, "styles.xml")
+  numfmts <- xml2::xml_find_all(styles, "//numFmts/numFmt")
+  codes <- c("0" = "General", structure(
+    xml2::xml_attr(numfmts, "formatCode"), names = xml2::xml_attr(numfmts, "numFmtId")
+  ))
+  ids <- xml2::xml_attr(xml2::xml_find_all(styles, "//cellXfs/xf"), "numFmtId")
+  cells <- xml2::xml_find_all(sheet, "//sheetData/row/c")
+  style <- as.integer(xml2::xml_attr(cells, "s"))
+  structure(
+    unname(codes[ids[ifelse(is.na(style), 0L, style) + 1L]]), names = xml2::xml_attr(cells, "r")
+  )
+}
+
 export_time_fixed <- as.POSIXct("2026-11-25 14:05", tz = "UTC")
 
 # A report with an item of each kind, two with notes
@@ -399,6 +421,191 @@ test_that("a Word export that fails leaves nothing in tempdir()", {
   expect_setequal(list.files(tempdir(), all.files = TRUE, no.. = TRUE), before)
 })
 
+test_that("the Excel workbook reads back: a sheet per item with its tables and chart", {
+  con <- fixture_app()
+  spec <- export_spec(con)
+  path <- withr::local_tempfile(fileext = ".xlsx")
+  before <- list.files(tempdir(), all.files = TRUE, no.. = TRUE)
+  expect_identical(export_report("xlsx", spec, con, path, export_time_fixed), path)
+  expect_setequal(
+    list.files(tempdir(), all.files = TRUE, no.. = TRUE), c(before, basename(path))
+  )
+  items <- export_items(spec, plain_fetches(con))
+  sheets <- openxlsx2::wb_get_sheet_names(openxlsx2::wb_load(path))
+  # A first sheet, a sheet per item, and the methods last
+  expect_identical(unname(sheets), c("Report", xlsx_sheet_names(items), "Methods"))
+  cover <- openxlsx2::wb_to_df(path, sheet = "Report", col_names = FALSE)
+  expect_identical(cover[[1]][1:4], c(
+    "Prescription Explorer report", window_period(fetch_window(con)),
+    "Exported on 25 November 2026 at 14:05 GMT", "4 items"
+  ))
+  expect_true(all(vapply(items, `[[`, "", "title") %in% cover[[2]]))
+  # Each item's sheet: its title and note on top, its table's values as
+  # numbers equal to the fetch, and the chart's data
+  first <- openxlsx2::wb_to_df(path, sheet = 2, col_names = FALSE)
+  expect_identical(first[[1]][1], items[[1]]$title)
+  expect_true(all(c("Note: Costs rose after March.", "See the presentations.") %in% first[[1]]))
+  table <- items[[1]]$table
+  header <- which(first[[1]] == "Presentation")
+  all <- openxlsx2::wb_to_df(path, sheet = 2, start_row = header)
+  got <- all[seq_len(nrow(table$data)), ]
+  expect_identical(got[["BNF code"]], table$data$code)
+  expect_equal(got[["Net ingredient cost"]], table$data$nic)
+  expect_equal(got[["Items"]], table$data$items)
+  # The chart's data beside the table, read by position: its value column has
+  # the table's own name for the measure
+  month <- which(names(all) == "Month")
+  n <- length(items[[1]]$chart$labels)
+  expect_identical(all[[month]][seq_len(n)], items[[1]]$chart$labels)
+  expect_equal(all[[month + 1L]][seq_len(n)], items[[1]]$chart$values)
+  # The methods, with the attribution exact
+  methods <- openxlsx2::wb_to_df(path, sheet = "Methods", col_names = FALSE)[[1]]
+  expect_true(paste(
+    "NHSBSA Copyright 2021-2026 \u00b7 Contains public sector information licensed under the",
+    "Open Government Licence v3.0."
+  ) %in% methods)
+  # The file: a native chart for each item; no macros, pivots or formulas
+  dir <- withr::local_tempdir()
+  utils::unzip(path, exdir = dir)
+  parts <- list.files(dir, recursive = TRUE)
+  expect_length(grep("^xl/charts/chart[0-9]+[.]xml$", parts), length(items))
+  read_parts <- function(pattern) {
+    unlist(lapply(file.path(dir, grep(pattern, parts, value = TRUE)), readLines, warn = FALSE))
+  }
+  expect_false(any(grepl("vbaProject|pivot", parts)))
+  sheet_xml <- read_parts("^xl/worksheets/sheet[0-9]+[.]xml$")
+  expect_false(any(grepl("<f>", sheet_xml, fixed = TRUE)))
+  # The charts in British English, without PowerPoint's link to a workbook;
+  # every reference to a sheet quoted as Excel quotes it, and to a sheet there
+  chart_xml <- read_parts("^xl/charts/chart[0-9]+[.]xml$")
+  expect_false(any(grepl("fr-FR", chart_xml, fixed = TRUE)))
+  expect_true(any(grepl("en-GB", chart_xml, fixed = TRUE)))
+  expect_false(any(grepl("c:externalData", chart_xml, fixed = TRUE)))
+  # Prefixed parts: their own namespaces, which xml_ns_strip() keeps
+  prefixed <- function(file, xpath) {
+    doc <- xml2::read_xml(file)
+    xml2::xml_find_all(doc, xpath, xml2::xml_ns(doc))
+  }
+  charts <- file.path(dir, grep("^xl/charts/chart[0-9]+[.]xml$", parts, value = TRUE))
+  refs <- unlist(lapply(charts, function(file) xml2::xml_text(prefixed(file, "//c:f"))))
+  expect_gt(length(refs), 0L)
+  quoted <- "^'((?:[^']|'')+)'![$][A-Z]+[$][0-9]+(:[$][A-Z]+[$][0-9]+)?$"
+  expect_true(all(grepl(quoted, refs, perl = TRUE)))
+  named <- gsub("''", "'", sub(quoted, "\\1", refs, perl = TRUE), fixed = TRUE)
+  expect_true(all(named %in% sheets))
+  # Every relationship a part names is in its .rels, or Excel repairs the file
+  for (part in grep("[.]xml$", parts, value = TRUE)) {
+    xml <- paste(readLines(file.path(dir, part), warn = FALSE), collapse = "")
+    ids <- gsub("^r:id=\"|\"$", "", unlist(regmatches(xml, gregexpr("r:id=\"[^\"]+\"", xml))))
+    rels <- file.path(dir, dirname(part), "_rels", paste0(basename(part), ".rels"))
+    known <- if (file.exists(rels)) {
+      rel <- paste(readLines(rels, warn = FALSE), collapse = "")
+      gsub("^Id=\"|\"$", "", unlist(regmatches(rel, gregexpr("Id=\"[^\"]+\"", rel))))
+    }
+    expect_identical(setdiff(ids, known), character(), label = paste(part, "names unknown rels"))
+  }
+  # Each item's sheet: its title in A1; its tables' header row frozen; each
+  # value in the format the app writes it in, text in none; its chart's own
+  # words for screen readers
+  for (i in seq_along(items)) {
+    item <- items[[i]]
+    sheet <- xlsx_part(dir, "worksheets", paste0("sheet", i + 1L, ".xml"))
+    cells <- openxlsx2::wb_to_df(path, sheet = i + 1L, col_names = FALSE)
+    expect_identical(cells[[1]][1], item$title)
+    header <- which(cells[[1]] == item$table$labels[[1]])[1]
+    pane <- xml2::xml_find_first(sheet, "//sheetView/pane")
+    expect_identical(xml2::xml_attr(pane, "state"), "frozen")
+    expect_identical(xml2::xml_attr(pane, "topLeftCell"), paste0("A", header + 1L))
+    formats <- xlsx_cell_formats(dir, sheet)
+    rows <- header + seq_len(nrow(item$table$data))
+    for (j in seq_along(item$table$kinds)) {
+      col <- openxlsx2::int2col(j)
+      want <- xlsx_numfmt(item$table$kinds[[j]], item$table$data[[j]])
+      want[is.na(want)] <- "General"
+      got <- unname(formats[paste0(col, rows)])
+      # A blank cell has no format to check
+      blank <- is.na(item$table$data[[j]])
+      expect_identical(got[!blank], want[!blank], label = paste("sheet", i + 1L, "column", col))
+    }
+    rels <- xlsx_part(dir, "worksheets", "_rels", paste0("sheet", i + 1L, ".xml.rels"))
+    drawing <- xml2::xml_attr(
+      xml2::xml_find_first(rels, "//Relationship[contains(@Type, '/drawing')]"), "Target"
+    )
+    frame <- prefixed(
+      file.path(dir, "xl", "drawings", basename(drawing)),
+      "//xdr:graphicFrame/xdr:nvGraphicFramePr/xdr:cNvPr"
+    )
+    expect_identical(xml2::xml_attr(frame, "descr"), item$chart$alt)
+  }
+  # The methods' links, hyperlinks to their pages
+  methods_rels <- paste(readLines(file.path(
+    dir, "xl", "worksheets", "_rels", paste0("sheet", length(sheets), ".xml.rels")
+  ), warn = FALSE), collapse = "")
+  for (url in c(data_attribution()$source_url, data_attribution()$licence_url)) {
+    expect_true(grepl(url, methods_rels, fixed = TRUE), label = url)
+  }
+})
+
+test_that("Excel shows quantity and ADQ usage as the app writes them", {
+  x <- c(0.536, 0.008, 0, NA, 25936, 1.624, 97.72)
+  expect_identical(
+    xlsx_numfmt("adq_usage", x),
+    c("#,##0.000", "#,##0.000", "#,##0", NA, "#,##0", "#,##0.00", "#,##0.0")
+  )
+  expect_identical(xlsx_numfmt("total_quantity", c(28, 2.5)), c("#,##0", "#,##0.0"))
+  expect_identical(xlsx_numfmt("nic", c(1, NA)), rep("\u00a3#,##0.00", 2L))
+  expect_identical(xlsx_numfmt("text", c("a", "b")), rep(NA_character_, 2L))
+})
+
+test_that("a long note goes under the tables, so that the frozen rows leave room", {
+  con <- fixture_app()
+  spec <- export_spec(con)
+  lines <- paste("Point", seq_len(14))
+  long <- report_set_note(spec, 1L, paste(lines, collapse = "\n"))
+  short <- report_set_note(spec, 1L, "_x0041_ here")
+  for (case in list(list(spec = long, moved = TRUE), list(spec = short, moved = FALSE))) {
+    path <- withr::local_tempfile(fileext = ".xlsx")
+    export_report("xlsx", case$spec, con, path, export_time_fixed)
+    cells <- openxlsx2::wb_to_df(path, sheet = 2, col_names = FALSE)[[1]]
+    dir <- withr::local_tempdir()
+    utils::unzip(path, exdir = dir)
+    pane <- xml2::xml_find_first(xlsx_part(dir, "worksheets", "sheet2.xml"), "//sheetView/pane")
+    frozen <- as.integer(sub("^[A-Z]+", "", xml2::xml_attr(pane, "topLeftCell"))) - 1L
+    expect_lte(frozen, xlsx_frozen_rows)
+    if (case$moved) {
+      expect_identical(cells[[3]], "The note is under the table and chart.")
+      expect_gt(which(cells == "Point 14"), frozen)
+    } else {
+      # Excel reads "_xHHHH_" as a character: the note's underscore is kept
+      xml <- paste(readLines(file.path(dir, "xl", "worksheets", "sheet2.xml"), warn = FALSE),
+                   collapse = "")
+      expect_true(grepl("Note: _x005F_x0041_ here", xml, fixed = TRUE))
+    }
+  }
+})
+
+test_that("an item's sheet name is short, unique and one Excel takes", {
+  items <- list(
+    list(title = "Atorvastatin \u00b7 items \u00b7 Jan 2026 to Sep 2026"),
+    list(title = paste(
+      "'A/B: very [long] name? with * marks and more words than fit", "\u00b7 items"
+    )),
+    list(title = "Atorvastatin \u00b7 items \u00b7 Jan 2026 to Sep 2026"),
+    list(title = "ST JAMES' SURGERY \u00b7 items \u00b7 Jan 2026 to Sep 2026")
+  )
+  names <- xlsx_sheet_names(items)
+  # A straight apostrophe as a typographic one, which a chart's reference
+  # to the sheet needs no doubling for
+  expect_identical(names[[4]], "4 ST JAMES\u2019 SURGERY")
+  expect_false(any(grepl("'", names, fixed = TRUE)))
+  expect_identical(names[[1]], "1 Atorvastatin")
+  expect_identical(names[[3]], "3 Atorvastatin")
+  expect_lte(nchar(names[[2]]), 31L)
+  expect_false(grepl("[\\[\\]:*?/\\\\]", names[[2]], perl = TRUE))
+  expect_false(any(duplicated(names)))
+  expect_identical(xml_escape("a < b & \"c\" > d"), "a &lt; b &amp; &quot;c&quot; &gt; d")
+})
+
 test_that("a long table goes on slides of its own, continued as needed", {
   con <- fixture_app()
   practice <- fetch_subject(con, "practice", "N81655")
@@ -616,7 +823,7 @@ test_that("a prepared file is named after the app and the day in the UK", {
     export_filename("pptx", as.POSIXct("2026-06-30 23:30", tz = "UTC")),
     "prescription-explorer-report-2026-07-01.pptx"
   )
-  expect_identical(export_formats()$format, c("pptx", "docx"))
+  expect_identical(export_formats()$format, c("pptx", "docx", "xlsx"))
   expect_identical(
     export_filename("docx", as.POSIXct("2026-01-15 12:00", tz = "UTC")),
     "prescription-explorer-report-2026-01-15.docx"
