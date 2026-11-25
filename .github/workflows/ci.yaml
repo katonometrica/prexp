@@ -11,7 +11,8 @@
 # app-image    Pull requests: builds the app image on the tested image's layers and checks
 #              that it loads, with a read-only token.
 # app-publish  main (push, monthly schedule, manual run): the same build, then pushes
-#              :<sha>, and :main only while the commit is still main's tip.
+#              :<sha>, and :main only while the commit is still main's tip; when :main
+#              moved, Coolify redeploys production from it (P6-02).
 #
 # Third-party actions are pinned to commit SHAs, and the BuildKit image to a digest,
 # because the image jobs hold a token that can push packages; Dependabot proposes action
@@ -319,7 +320,7 @@ jobs:
           echo "image=ghcr.io/${owner}/prexp-app" >> "$GITHUB_OUTPUT"
           echo "app-cache=ghcr.io/${owner}/prexp-app:buildcache" >> "$GITHUB_OUTPUT"
 
-      # Before the build: the registry caches are private packages.
+      # Before the build, which reads the registry caches with the job's token
       - name: Log in to the GitHub Container Registry
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
@@ -438,6 +439,7 @@ jobs:
       # the commit is still main's tip. Runs on main are serialised by the concurrency
       # group, so this check cannot race a newer run.
       - name: Push the commit tag, and :main if the commit is still main's tip
+        id: push
         env:
           IMAGE: ${{ steps.ref.outputs.image }}
         run: |
@@ -445,6 +447,51 @@ jobs:
           tip="$(git ls-remote origin refs/heads/main | cut -f1)"
           if [ "$tip" = "$GITHUB_SHA" ]; then
             docker push "$IMAGE:main"
+            echo "moved=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::$GITHUB_SHA is no longer main's tip ($tip), so :main was not moved."
           fi
+
+      # Production (P6-02; docs/server.md, section 4): Coolify redeploys the app and the
+      # jobs container, and each deployment pulls :main again. One value to each secret,
+      # because Actions hides a secret in its logs only where its whole value appears,
+      # and curl names a host it cannot reach on its own. The address is built here,
+      # always over HTTPS, so the deploy-only token never crosses in clear; force=true,
+      # or Coolify skips a deployment asked for while another is queued. Coolify answers
+      # 200 even when it could not queue an application, so each entry of its answer is
+      # checked. Only the entries' messages are printed: they name the applications, not
+      # their ids; an HTTP error stops the step before the answer is printed.
+      - name: Deploy to production
+        if: ${{ steps.push.outputs.moved == 'true' }}
+        env:
+          COOLIFY_HOST: ${{ secrets.COOLIFY_HOST }}
+          COOLIFY_APP_UUID: ${{ secrets.COOLIFY_APP_UUID }}
+          COOLIFY_JOBS_UUID: ${{ secrets.COOLIFY_JOBS_UUID }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          for name in COOLIFY_HOST COOLIFY_APP_UUID COOLIFY_JOBS_UUID COOLIFY_TOKEN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::The repository secret ${name} is not set (docs/server.md, section 4)."
+              exit 1
+            fi
+          done
+          case "$COOLIFY_HOST" in
+            */* | *:*)
+              echo "::error::COOLIFY_HOST must be the host name alone, with no scheme, port or path."
+              exit 1
+              ;;
+          esac
+          url="https://${COOLIFY_HOST}/api/v1/deploy?uuid=${COOLIFY_APP_UUID},${COOLIFY_JOBS_UUID}&force=true"
+          answer="$(curl -sS --fail-with-body --retry 2 -X POST \
+            -H "Authorization: Bearer ${COOLIFY_TOKEN}" "$url")"
+          python3 -c '
+          import json, sys
+          entries = json.loads(sys.stdin.read()).get("deployments") or []
+          for entry in entries:
+              print(entry.get("message") or "")
+          queued = [e for e in entries
+                    if e.get("deployment_uuid") and "deployment queued" in (e.get("message") or "")]
+          if len(queued) != 2:
+              print(f"::error::Coolify queued {len(queued)} of the 2 deployments.")
+              sys.exit(1)
+          ' <<< "$answer"

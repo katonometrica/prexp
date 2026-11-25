@@ -79,7 +79,7 @@ curl -sSI https://<app-host>/ | grep -i x-robots-tag
 
 ## 4. Deploys from CI
 
-After CI pushes a new `:main` image, it asks Coolify to deploy the app and the `jobs` container (`.github/workflows/ci.yaml`, job `app-publish`). That step comes with these four secrets: until they exist, deploy by hand with each application's Deploy button.
+After CI pushes a new `:main` image, it asks Coolify to deploy the app and the `jobs` container (`.github/workflows/ci.yaml`, job `app-publish`). It needs the API access and the four secrets below; until they exist, the step fails, and each application deploys by hand with its Deploy button.
 
 1. **Coolify → Settings → Advanced → API access:** on. Leave **Allowed IPs** empty: GitHub's runners have no fixed addresses. Both settings apply to the whole instance: turning API access on also lets in every existing API token of every project on this Coolify, from any address. First delete the tokens no longer used (Keys & Tokens → API Tokens).
 2. **Keys & Tokens → API Tokens → New token:**
