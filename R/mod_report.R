@@ -227,12 +227,7 @@ report_item_title <- function(item) {
   if (!grepl("^[A-Z]{2}", measure)) {
     measure <- paste0(tolower(substr(measure, 1L, 1L)), substring(measure, 2L))
   }
-  months <- params$months
-  span <- if (months[1] == months[2]) {
-    format_month(months[1])
-  } else {
-    paste(format_month(months[1]), "to", format_month(months[2]))
-  }
+  span <- format_month_span(params$months)
   # Else a drug's region item would have the title, and its buttons the names,
   # of its Drug view item
   subject <- if (identical(item$view, "region")) paste(params$label, "by region") else params$label

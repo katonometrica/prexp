@@ -82,6 +82,19 @@ format_month <- function(ym) {
   out
 }
 
+#' A report item's months, in words
+#'
+#' @param months The first and last months, as YYYYMM.
+#' @return `"Jan 2026 to Sep 2026"`, or `"Sep 2026"` for one month.
+#' @noRd
+format_month_span <- function(months) {
+  if (months[1] == months[2]) {
+    format_month(months[1])
+  } else {
+    paste(format_month(months[1]), "to", format_month(months[2]))
+  }
+}
+
 #' A range of months
 #'
 #' @param first,last The first and last months, as YYYYMM.
