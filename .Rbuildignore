@@ -5,6 +5,7 @@
 ^LICENSE\.md$
 ^docker$
 ^compose\.yaml$
+^compose\.demo\.yaml$
 ^\.dockerignore$
 ^\.env$
 ^\.env\.example$
