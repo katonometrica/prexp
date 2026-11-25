@@ -78,13 +78,18 @@ test_that("the About tab shows every section, measure and limitation, and the so
   limits <- c(
     "Community dispensing only", "hospital site codes", "No patient detail",
     "not what the NHS paid", "not comparable across forms", "follow the commissioner",
-    "count in national totals but cannot be searched as practices"
+    "count in national totals but cannot be searched as practices", "(under 0.1% of",
+    "Actual cost changed method in April 2024", "about a third of items",
+    "reorganised in April 2026, from 42 to 36", "keeps its old ICB, which no longer exists"
   )
   for (limit in limits) {
     expect_match(about, limit, fixed = TRUE)
   }
   # Actual cost comes after the discount, so not every cost is a list price
   expect_no_match(about, "list prices before discounts", fixed = TRUE)
+  # A prescriber that stopped before April 2026 keeps an ICB that no longer
+  # exists, so not every ICB is today's
+  expect_no_match(about, "shown in today", fixed = TRUE)
   expect_match(about, "which the NHS Business Services Authority (NHSBSA) publishes", fixed = TRUE)
   expect_match(about, "the last month it prescribed in", fixed = TRUE)
   # The source, the attribution and the licence, with their links
