@@ -22,9 +22,13 @@ app_server <- function(con, cache = NULL) {
       })
     })
     fetches <- app_fetches(con, cache, window)
-    mod_drug_server("drug", fetches, window)
-    mod_practice_server("practice", fetches, window)
-    mod_region_server("region", fetches, window)
+    # The session's report, which the views' pin buttons and the Report tab
+    # share
+    report <- shiny::reactiveVal(new_report())
+    mod_drug_server("drug", fetches, window, report)
+    mod_practice_server("practice", fetches, window, report = report)
+    mod_region_server("region", fetches, window, report)
+    mod_report_server("report", report)
     output$window <- shiny::renderText({
       if (is.null(window())) "Data window unavailable" else window_text(window())
     })

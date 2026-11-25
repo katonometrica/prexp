@@ -38,3 +38,10 @@
   color: var(--bs-secondary-color);
   font-size: 0.875rem;
 }
+
+/* The report panel: one item after another, a rule between them */
+.prexp-report-item + .prexp-report-item {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--bs-border-color);
+}

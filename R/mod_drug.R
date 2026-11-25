@@ -30,11 +30,13 @@ mod_drug_ui <- function(id) {
 #' @param id The module's id.
 #' @param fetches The app's fetch functions, as [app_fetches()] returns them.
 #' @param window A reactive: the data window, from `fetches$window()`.
+#' @param report The session's report, a `reactiveVal()` that its "Add to
+#'   report" button adds to ([report_pin()]), or `NULL` for none.
 #' @return A reactive `current_view()`: `NULL` until a drug's series is shown,
 #'   then a list with `view` (`"drug"`), `params` (`level`, `id`, `label`,
 #'   `months`, `measure`) and `data` (the series shown).
 #' @noRd
-mod_drug_server <- function(id, fetches, window) {
+mod_drug_server <- function(id, fetches, window, report = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
     picked <- mod_search_server("search", fetches$search_drugs, "drug")
@@ -144,6 +146,7 @@ mod_drug_server <- function(id, fetches, window) {
       )
     })
     csv_download(output, ns, current, "Download the monthly totals, as CSV")
+    report_pin(input, session, current, report)
     current
   })
 }

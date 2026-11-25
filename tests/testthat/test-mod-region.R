@@ -350,3 +350,20 @@ test_that("the CSV is the drug's totals by region", {
     )
   })
 })
+
+test_that("Add to report pins the region view with its parameters", {
+  fake <- fake_region_fetches()
+  pinned <- shiny::reactiveVal(new_report())
+  local_mocked_bindings(showNotification = function(ui, ...) invisible(NULL), .package = "shiny")
+  shiny::testServer(
+    mod_region_server,
+    args = list(fetches = fake$fetches, window = shiny::reactive(region_window), report = pinned),
+    {
+      pick_region_drug(session, "presentation:300")
+      session$setInputs(pin = structure(1L, class = "shinyActionButtonValue"))
+      expect_length(pinned()$items, 1L)
+      expect_identical(pinned()$items[[1]]$view, "region")
+      expect_identical(pinned()$items[[1]]$params, session$returned()$params)
+    }
+  )
+})

@@ -137,8 +137,9 @@ output_width <- function(session, id) {
   width
 }
 
-#' A view's results card header: its title, and the CSV button once there is
-#' data to download
+#' A view's results card header: its title, the CSV button once there is data
+#' to download, and the "Add to report" button, off until there is a view to
+#' pin ([report_pin()])
 #'
 #' @param ns The view's namespace function.
 #' @return Shiny UI.
@@ -147,7 +148,11 @@ view_header <- function(ns) {
   bslib::card_header(
     class = "d-flex justify-content-between align-items-center gap-2",
     shiny::textOutput(ns("title"), inline = TRUE),
-    shiny::uiOutput(ns("csv_ui"), inline = TRUE)
+    shiny::div(
+      class = "d-flex gap-2 flex-shrink-0",
+      shiny::uiOutput(ns("csv_ui"), inline = TRUE),
+      shiny::actionButton(ns("pin"), "Add to report", class = "btn-primary btn-sm", disabled = TRUE)
+    )
   )
 }
 
