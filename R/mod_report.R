@@ -43,7 +43,8 @@ mod_report_ui <- function(id) {
       # move, the whole list would be read out. The status region says what
       # changed.
       shiny::uiOutput(ns("items"), `aria-live` = "off")
-    )
+    ),
+    report_export_ui(ns)
   )
 }
 
@@ -52,9 +53,11 @@ mod_report_ui <- function(id) {
 #' @param id The module's id.
 #' @param report The session's report: a `reactiveVal()` holding a report
 #'   ([new_report()]).
+#' @param run The exports' runner, as [export_runner()] makes it, or `NULL`
+#'   for none, which leaves Prepare off.
 #' @return Nothing useful: it changes `report`.
 #' @noRd
-mod_report_server <- function(id, report) {
+mod_report_server <- function(id, report, run = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
     limit <- report_limits()$items
@@ -153,6 +156,7 @@ mod_report_server <- function(id, report) {
         report(changed)
       }
     })
+    report_export(input, output, session, report, run)
   })
 }
 
@@ -365,4 +369,200 @@ clean_note <- function(note) {
 # (app_ui(), report.js): Shiny's toasts have no role, so are not read out
 announce <- function(session, text) {
   session$sendCustomMessage("prexp-status", text)
+}
+
+# The export (spec section 5.5; P5-05): a format, "Prepare", which runs the
+# export as a background task (export_runner()), and, once it is ready, a
+# download of the file. A file prepared for a report that has changed since,
+# or in another format, is not offered: Prepare makes a new one.
+
+# The export's controls, under the panel
+report_export_ui <- function(ns) {
+  formats <- export_formats()
+  bslib::card_footer(
+    shiny::div(
+      class = "d-flex flex-wrap align-items-center gap-3",
+      format_radio(
+        ns("format"), "Export as",
+        structure(formats$format, names = paste0(formats$label, " (.", formats$format, ")"))
+      ),
+      # Neither is a live region, as Shiny makes an output and a button it
+      # updates: the status region says what Prepare did
+      shiny::actionButton(
+        ns("prepare"), "Prepare", class = "btn-primary btn-sm", disabled = TRUE,
+        `aria-live` = "off"
+      ),
+      shiny::uiOutput(ns("download_ui"), inline = TRUE, `aria-live` = "off")
+    ),
+    shiny::p(class = "small text-muted mb-0", shiny::textOutput(ns("export_status"), inline = TRUE))
+  )
+}
+
+# Inline radio buttons, the first checked, in shiny::radioButtons()' markup.
+# radioButtons() itself takes its value from a link's `_inputs_` and stops
+# when that has more than one element, so that the page would not open; a
+# link keeps no format, and the server checks the one sent.
+format_radio <- function(id, label, choices) {
+  label_id <- paste0(id, "-label")
+  shiny::div(
+    id = id,
+    class = "form-group shiny-input-radiogroup shiny-input-container shiny-input-container-inline",
+    role = "radiogroup", `aria-labelledby` = label_id,
+    shiny::tags$label(label, class = "control-label", id = label_id, `for` = id),
+    shiny::div(class = "shiny-options-group", lapply(seq_along(choices), function(i) {
+      shiny::tags$label(
+        class = "radio-inline",
+        shiny::tags$input(
+          type = "radio", name = id, value = choices[[i]], checked = if (i == 1L) "checked"
+        ),
+        shiny::span(names(choices)[[i]])
+      )
+    }))
+  )
+}
+
+# The export's server: what Prepare asked for (`job`), what was prepared
+# (`ready`), and whether the last try failed
+report_export <- function(input, output, session, report, run) {
+  ns <- session$ns
+  formats <- export_formats()
+  # Set when the session ends: a file an export finishes after that is no
+  # one's, so it goes as it arrives
+  ended <- new.env(parent = emptyenv())
+  task <- shiny::ExtendedTask$new(function(format, spec, path, exported) {
+    promises::finally(run(format, spec, path, exported), function() {
+      if (isTRUE(ended$yes)) {
+        unlink(path)
+      }
+    })
+  })
+  job <- shiny::reactiveVal(NULL)
+  ready <- shiny::reactiveVal(NULL)
+  failed <- shiny::reactiveVal(FALSE)
+  running <- shiny::reactive(identical(task$status(), "running"))
+  empty <- changes_only(shiny::reactive(length(report()$items) == 0L))
+  chosen <- shiny::reactive({
+    if (isTRUE(input$format %in% formats$format)) input$format else formats$format[[1]]
+  })
+  label <- function(format) formats$label[match(format, formats$format)]
+  # The file prepared, while it is the report's and the format's
+  current <- shiny::reactive({
+    prepared <- ready()
+    if (!is.null(prepared) && identical(prepared$spec, report()) &&
+          identical(prepared$format, chosen())) {
+      prepared
+    }
+  })
+  shiny::observe({
+    busy <- running()
+    shiny::updateActionButton(
+      session, "prepare", label = if (busy) "Preparing\u2026" else "Prepare",
+      disabled = is.null(run) || empty() || busy
+    )
+  })
+  # Only on a click, as Copy link: a link's `_inputs_` can give the button a
+  # value, which the page sends as it opens
+  shiny::observeEvent(input$prepare, {
+    spec <- report()
+    if (is.null(run) || length(spec$items) == 0L || running()) {
+      return()
+    }
+    asked <- list(
+      format = chosen(), spec = spec, exported = Sys.time(),
+      path = tempfile("report-", fileext = paste0(".", chosen()))
+    )
+    job(asked)
+    failed(FALSE)
+    n <- length(spec$items)
+    announce(session, paste0(
+      "Preparing the ", label(asked$format), " file of the report's ", n,
+      if (n == 1L) " item." else " items."
+    ))
+    task$invoke(asked$format, asked$spec, asked$path, asked$exported)
+  }, ignoreInit = TRUE)
+  shiny::observeEvent(task$status(), {
+    asked <- job()
+    status <- task$status()
+    if (identical(status, "success")) {
+      before <- ready()
+      if (!is.null(before)) {
+        unlink(before$path)
+      }
+      ready(asked)
+      # The report can change while its file is prepared: the panel and the
+      # views' pins stay on
+      kept <- identical(asked$spec, report()) && identical(asked$format, chosen())
+      announce(session, paste0(
+        "The ", label(asked$format), " file ",
+        if (kept) {
+          "is ready: the Download button is next to Prepare."
+        } else {
+          "was prepared, but the report has changed since: prepare it again to download it."
+        }
+      ))
+    } else if (identical(status, "error")) {
+      error <- tryCatch(task$result(), error = function(e) e)
+      base::message("An export failed: ", conditionMessage(error))
+      unlink(asked$path)
+      failed(TRUE)
+      said <- paste(
+        "The report could not be exported. Try again; if it fails again, the app's log has",
+        "the cause."
+      )
+      shiny::showNotification(said, type = "error")
+      announce(session, said)
+    }
+  })
+  output$export_status <- shiny::renderText({
+    if (running()) {
+      return(paste0("Preparing the ", label(job()$format), " file\u2026"))
+    }
+    if (failed()) {
+      return("The report could not be exported. Try again.")
+    }
+    prepared <- current()
+    if (!is.null(prepared)) {
+      return(paste0(
+        "Ready: prepared at ", format(prepared$exported, "%H:%M %Z", tz = "Europe/London"), "."
+      ))
+    }
+    if (!is.null(ready())) {
+      return("The report has changed since it was prepared: prepare it again to download it.")
+    }
+    if (empty()) "Pin a view to export the report." else ""
+  })
+  output$download_ui <- shiny::renderUI({
+    prepared <- current()
+    if (is.null(prepared)) {
+      return(NULL)
+    }
+    shiny::downloadButton(
+      ns("download"), paste("Download", label(prepared$format)),
+      class = "btn-outline-primary btn-sm"
+    )
+  })
+  output$download <- shiny::downloadHandler(
+    filename = function() {
+      prepared <- shiny::isolate(ready())
+      export_filename(prepared$format, prepared$exported)
+    },
+    content = function(file) {
+      prepared <- shiny::isolate(ready())
+      if (is.null(prepared) || !file.copy(prepared$path, file, overwrite = TRUE)) {
+        stop("The prepared file is no longer there: prepare it again.", call. = FALSE)
+      }
+    }
+  )
+  # The files go with the session
+  session$onSessionEnded(function() {
+    ended$yes <- TRUE
+    unlink(c(shiny::isolate(ready())$path, shiny::isolate(job())$path))
+  })
+  invisible(NULL)
+}
+
+# A prepared file's name: the app's, and the day it was made in the UK
+export_filename <- function(format, exported) {
+  day <- format(as.POSIXct(exported), "%Y-%m-%d", tz = "Europe/London")
+  paste0("prescription-explorer-report-", day, ".", format)
 }

@@ -156,3 +156,39 @@ fetch_task <- function(name) {
     }
   )
 }
+
+#' The exports, as background tasks
+#'
+#' With the workers started, an export runs on one of them, on its own
+#' connection, so that a report of fifteen items does not hold up the other
+#' sessions; the file is written where the app's session can serve it. With
+#' none, as when the package runs from its source, it runs here, on `con`.
+#'
+#' @param con A pool or connection that can read the app's views, for an
+#'   export run here.
+#' @param timeout How long an export on a worker may take, waiting for a
+#'   worker included, in seconds. After that it fails, so that a lost or
+#'   stuck worker ends as an error the Report tab shows, not as "Preparing"
+#'   for ever.
+#' @return A function of `format`, `spec`, `path` and `exported`, as
+#'   [export_report()] takes them, that returns a promise of `path`.
+#' @noRd
+export_runner <- function(con, timeout = 120) {
+  function(format, spec, path, exported) {
+    if (mirai::daemons_set()) {
+      return(mirai::mirai(
+        worker_export(format, spec, path, exported),
+        worker_export = worker_export, format = format, spec = spec, path = path,
+        exported = exported, .timeout = timeout * 1000
+      ))
+    }
+    promises::promise(function(resolve, reject) {
+      resolve(export_report(format, spec, con, path, exported))
+    })
+  }
+}
+
+# On a daemon: an export, on the daemon's connection
+worker_export <- function(format, spec, path, exported) {
+  export_report(format, spec, worker$con, path, exported)
+}

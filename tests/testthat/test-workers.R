@@ -2,16 +2,6 @@
 # fetch_task() wrapper, on the daemon's own connection, the daemons' start and
 # stop, and the timing lines they leave in the app's output.
 
-# What a daemon runs first, so that it loads the package these tests run: the
-# source under development, or the installed package (as under covr)
-worker_setup <- function() {
-  if (pkgload::is_dev_package("prexp")) {
-    bquote(pkgload::load_all(.(getNamespaceInfo("prexp", "path")), quiet = TRUE))
-  } else {
-    bquote(.libPaths(.(.libPaths())))
-  }
-}
-
 # Runs the event loop until the task is no longer running
 wait_for <- function(task, timeout = 60) {
   deadline <- Sys.time() + timeout

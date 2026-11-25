@@ -107,3 +107,33 @@ prexp_theme <- function() {
     "web-font-path" = FALSE
   )
 }
+
+#' The theme of the exports' charts
+#'
+#' The look of [theme_prexp()] for the native Office charts that mschart
+#' draws in the PowerPoint, Word and Excel exports (P5-05 to P5-07): the
+#' charts' font, dark text with grey axis titles, a light grid on the values'
+#' axis only, no borders and no legend, as each chart shows one measure. The
+#' series takes the palette's blue on each chart (export_chart()).
+#'
+#' @return An mschart theme.
+#' @noRd
+prexp_mschart_theme <- function() {
+  text <- function(size, colour = "#333333") {
+    officer::fp_text(color = colour, font.size = size, font.family = chart_font)
+  }
+  none <- officer::fp_border(style = "none")
+  mschart::mschart_theme(
+    main_title = text(14),
+    axis_title = text(11, "#5A6470"),
+    axis_text = text(10),
+    legend_text = text(10),
+    grid_major_line_x = none,
+    grid_major_line_y = officer::fp_border(color = "#E3E6E8", width = 0.75),
+    grid_minor_line = none,
+    axis_ticks = officer::fp_border(color = "#C8CCD0", width = 0.75),
+    chart_border = none,
+    plot_border = none,
+    legend_position = "n"
+  )
+}
