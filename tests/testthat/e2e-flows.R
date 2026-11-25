@@ -58,19 +58,48 @@ type_keys <- function(app, text) {
   }
 }
 
-# Picks a drug or a practice with a view's search box: types the text, waits
-# for the server's matches in the box's own list, and clicks the option with
-# the value given ("chemical:<id>", "practice:<id>")
+# Presses a key that types no character, with its modifiers (2 Ctrl, 8
+# Shift), as a keyboard sends it: Chrome acts on it by its key code
+press_key <- function(app, key, code, keycode, modifiers = 0L) {
+  session <- app$get_chromote_session()
+  for (type in c("rawKeyDown", "keyUp")) {
+    session$Input$dispatchKeyEvent(
+      type = type, key = key, code = code, windowsVirtualKeyCode = keycode,
+      nativeVirtualKeyCode = keycode, modifiers = modifiers
+    )
+  }
+}
+
+# Puts text on the browser's clipboard as a person copies it: Ctrl+C in a
+# text box of its own, removed after
+copy_text <- function(app, text) {
+  app$run_js(sprintf(paste(
+    "var copy = document.createElement('textarea'); copy.value = %s;",
+    "document.body.appendChild(copy); copy.focus(); copy.select();"
+  ), jsonlite::toJSON(text, auto_unbox = TRUE)))
+  press_key(app, "c", "KeyC", 67L, 2L)
+  app$run_js("document.activeElement.remove();")
+}
+
+# Picks a drug or a practice with a view's search box: types the text, over
+# a pick the box holds too, waits for the server's matches in the box's own
+# list, and clicks the option with the value given ("chemical:<id>",
+# "practice:<id>")
 search_pick <- function(app, view, text, value) {
-  box <- sprintf("document.getElementById('%s-search-pick').selectize", view)
+  input <- paste0(view, "-search-pick")
+  box <- sprintf("document.getElementById('%s').selectize", input)
+  # The pick the box holds, if any: the wait below is for the new one
+  before <- app$get_value(input = input)
   app$run_js(paste0(box, ".focus();"))
   type_keys(app, text)
+  # The box took the keys
+  expect_identical(app$get_js(paste0(box, ".$control_input.val()")), text)
   option <- sprintf("%s.$dropdown[0].querySelector(\"[data-value='%s']\")", box, value)
   app$wait_for_js(paste(option, "!== null"))
   app$run_js(paste0(option, ".click();"))
-  app$wait_for_value(input = paste0(view, "-search-pick"), ignore = list(NULL, ""))
+  app$wait_for_value(input = input, ignore = list(NULL, "", before))
   app$wait_for_idle()
-  expect_identical(app$get_value(input = paste0(view, "-search-pick")), value)
+  expect_identical(app$get_value(input = input), value)
 }
 
 # Opens a tab of the app
@@ -193,6 +222,17 @@ test_that("flow 1: a drug's monthly series, then the same in another measure", {
   expect_identical(shown[[2]], listed$bnf_code)
   expect_identical(shown[[4]], format_measure(listed$items, "items"))
   expect_identical(shown[[7]], format_measure(listed$nic, "nic"))
+  # Another drug, typed straight over the first: a pick fills the box, and
+  # typing over it starts a new search (flow 6 has the box's other cases)
+  other <- fetch_search_drugs(con, "metformin")
+  other <- other[other$level == "chemical", ]
+  expect_gt(nrow(other), 0L)
+  other <- other[1L, ]
+  search_pick(app, "drug", "metformin", paste0("chemical:", other$id))
+  expect_identical(
+    app$get_text("#drug-title"),
+    paste0(other$name, ", ", format_month_range(span[1], span[2]))
+  )
 })
 
 test_that("flow 2: a practice's top drugs, page by page", {
@@ -376,4 +416,82 @@ test_that("flow 5: the report's link opens it again in a new session", {
     tab_js(tab, "document.getElementById('practice-search-pick').selectize.getValue()"),
     paste0("practice:", practice$id)
   )
+})
+
+test_that("flow 6: typing, pasting or a phone's keyboard over a picked drug, and Backspace", {
+  con <- fixture_app()
+  span <- window_span(con)
+  drug <- fetch_subject(con, "chemical", "0212000B0")
+  app <- local_app("search")
+  value <- paste0("chemical:", drug$id)
+  title <- paste0(drug$name, ", ", format_month_range(span[1], span[2]))
+  search_pick(app, "drug", "atorva", value)
+  box <- "document.getElementById('drug-search-pick').selectize"
+  # What the page sends Shiny for the box from here: nothing, while its pick
+  # is typed over and put back
+  app$run_js(paste(
+    "window.e2eSent = []; $(document).on('shiny:inputchanged', function (e) {",
+    "if (e.name === 'drug-search-pick') window.e2eSent.push(e.value); });"
+  ))
+  # While the text is in the box, the box holds no pick but Shiny and the
+  # view keep it; leaving the box puts it back, without the search's
+  # message or matches
+  kept <- function(text) {
+    expect_identical(app$get_js(paste0(box, ".$control_input.val()")), text)
+    expect_identical(app$get_js(paste0(box, ".getValue()")), "")
+    expect_identical(app$get_value(input = "drug-search-pick"), value)
+    expect_identical(app$get_text("#drug-title"), title)
+    app$run_js("document.activeElement.blur();")
+    app$wait_for_idle()
+    expect_identical(app$get_js(paste0(box, ".getValue()")), value)
+    expect_identical(app$get_value(input = "drug-search-pick"), value)
+    expect_identical(app$get_text("#drug-title"), title)
+    expect_identical(app$get_text("#drug-search-message"), "")
+    expect_identical(app$get_js(paste0("Object.keys(", box, ".options)")), list(value))
+  }
+  # Typed
+  app$run_js(paste0(box, ".focus();"))
+  type_keys(app, "zz")
+  app$wait_for_idle()
+  kept("zz")
+  # Pasted, with Ctrl+V and with Shift+Insert, the paste of Windows and Linux
+  copy_text(app, "metformin")
+  for (keys in list(list("v", "KeyV", 86L, 2L), list("Insert", "Insert", 45L, 8L))) {
+    app$run_js(paste0(box, ".focus();"))
+    press_key(app, keys[[1]], keys[[2]], keys[[3]], keys[[4]])
+    app$wait_for_idle()
+    kept("metformin")
+  }
+  # From a phone's keyboard or dictation: text that comes with no key
+  app$run_js(paste0(box, ".focus();"))
+  app$get_chromote_session()$Input$insertText(text = "metf")
+  app$wait_for_idle()
+  kept("metf")
+  # Left at once, before selectize asks for the search (50 ms after the last
+  # key): the late search changes nothing
+  app$run_js(paste(
+    paste0("var box = ", box, ";"),
+    "box.$control_input.one('input', function () {",
+    "  setTimeout(function () { document.activeElement.blur(); }, 0);",
+    "});",
+    "box.focus();"
+  ))
+  type_keys(app, "z")
+  Sys.sleep(0.2)
+  app$wait_for_idle()
+  expect_identical(app$get_js(paste0(box, ".getValue()")), value)
+  expect_identical(app$get_value(input = "drug-search-pick"), value)
+  expect_identical(app$get_text("#drug-title"), title)
+  # Shiny was never told
+  expect_length(app$get_js("window.e2eSent"), 0L)
+  # Backspace still clears the pick: the view is told, and leaving the box
+  # puts nothing back
+  app$run_js(paste0(box, ".focus();"))
+  press_key(app, "Backspace", "Backspace", 8L)
+  app$wait_for_idle()
+  expect_identical(app$get_value(input = "drug-search-pick"), "")
+  expect_identical(app$get_text("#drug-title"), "Drug")
+  app$run_js("document.activeElement.blur();")
+  app$wait_for_idle()
+  expect_identical(app$get_js(paste0(box, ".getValue()")), "")
 })

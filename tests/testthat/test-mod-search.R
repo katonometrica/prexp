@@ -251,6 +251,7 @@ test_that("the search box is a selectize input that loads through search.js", {
   expect_match(ui, "id=\"drug_search-pick\"", fixed = TRUE)
   expect_match(ui, "prexpSearch.load(this, 'drug_search-query'", fixed = TRUE)
   expect_match(ui, "prexpSearch.typed(this, 'drug_search-query', text)", fixed = TRUE)
+  expect_match(ui, "prexpSearch.init(this, 'drug_search-query')", fixed = TRUE)
   expect_match(ui, "role=\\\"option\\\" id=\\\"drug_search-option-", fixed = TRUE)
   expect_match(ui, "clear_button", fixed = TRUE)
   expect_match(ui, "Find a drug", fixed = TRUE)
