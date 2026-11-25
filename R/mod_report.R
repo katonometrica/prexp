@@ -19,11 +19,31 @@ mod_report_ui <- function(id) {
     bslib::card_header(
       class = "d-flex justify-content-between align-items-center gap-2",
       shiny::span("Pinned views"),
-      shiny::uiOutput(ns("count"), inline = TRUE)
+      shiny::div(
+        class = "d-flex align-items-center gap-2",
+        shiny::uiOutput(ns("count"), inline = TRUE),
+        shiny::actionButton(ns("copy"), "Copy link", class = "btn-outline-primary btn-sm")
+      )
     ),
-    # Not a live region, as Shiny makes an output: drawn again after a move,
-    # the whole list would be read out. The status region says what changed.
-    bslib::card_body(shiny::uiOutput(ns("items"), `aria-live` = "off"))
+    bslib::card_body(
+      # The link, once made: report.js copies it and shows it here, ready to
+      # copy by hand where the browser would not copy it
+      shiny::div(
+        class = "prexp-link-box", hidden = NA,
+        shiny::tags$label(
+          class = "form-label small w-100",
+          shiny::span(`data-report-link-label` = NA, "The report's link"),
+          shiny::tags$input(
+            type = "text", class = "form-control form-control-sm mt-1", readonly = NA,
+            `data-report-link` = NA
+          )
+        )
+      ),
+      # Not a live region, as Shiny makes an output: drawn again after a
+      # move, the whole list would be read out. The status region says what
+      # changed.
+      shiny::uiOutput(ns("items"), `aria-live` = "off")
+    )
   )
 }
 
@@ -65,6 +85,10 @@ mod_report_server <- function(id, report) {
         report_item_ui(ns, items[[i]], first = i == 1L, last = i == length(items))
       }))
     })
+    # The link: the bookmark, whose URL the app hands to report.js, as
+    # report_link() sets up. Only on a click: a link's `_inputs_` can give
+    # the button a value, which the page sends as it opens.
+    shiny::observeEvent(input$copy, session$doBookmark(), ignoreInit = TRUE)
     # A move or a removal, as report.js sends them: anything else, or one for
     # an item no longer there, does nothing
     shiny::observeEvent(input$act, {
@@ -303,7 +327,8 @@ report_pin <- function(input, session, current, report) {
     )
     shiny::showNotification(text, type = "message")
     announce(session, text)
-  })
+    # Only on a click, as Copy link
+  }, ignoreInit = TRUE)
   invisible(NULL)
 }
 

@@ -40,25 +40,34 @@ mod_practice_ui <- function(id) {
 #' @param window A reactive: the data window, from `fetches$window()`.
 #' @param report The session's report, a `reactiveVal()` that its "Add to
 #'   report" button adds to ([report_pin()]), or `NULL` for none.
+#' @param restore A `reactiveVal()` of an item to put back from a link
+#'   ([view_restorer()]), or `NULL`.
 #' @param page_size The top drugs on a page.
 #' @return A reactive `current_view()`: `NULL` until a practice's monthly
 #'   totals are shown, then a list with `view` (`"practice"`), `params` (`id`,
 #'   `label`, `months`, `measure`) and `data` (the monthly totals).
 #' @noRd
-mod_practice_server <- function(id, fetches, window, page_size = 25L, report = NULL) {
+mod_practice_server <- function(id, fetches, window, page_size = 25L, report = NULL,
+                                restore = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
-    picked <- mod_search_server("search", fetches$search_practices, "practice")
+    restorer <- view_restorer(restore)
+    picked <- mod_search_server(
+      "search", fetches$search_practices, "practice", restorer$pick
+    )
     measures <- practice_measures()
 
     output$months_ui <- shiny::renderUI({
-      months_controls(ns, window(), shiny::isolate(input$from), shiny::isolate(input$to))
+      chosen <- restorer$months(
+        shiny::isolate(input$from), shiny::isolate(input$to), months_of_window(window())
+      )
+      months_controls(ns, window(), chosen$from, chosen$to)
     })
     output$measure_ui <- shiny::renderUI({
-      measure_control(ns, measures, shiny::isolate(input$measure))
+      measure_control(ns, measures, restorer$measure(shiny::isolate(input$measure), measures))
     })
-    months <- shiny::reactive(chosen_months(input$from, input$to, window()))
-    measure <- shiny::reactive(chosen_measure(input$measure, measures))
+    months <- shiny::reactive(restorer$view_months(input$from, input$to, window()))
+    measure <- shiny::reactive(restorer$view_measure(input$measure, measures))
     # Two Try again buttons: the practice's (profile and totals), and its top
     # drugs', each fetching only what failed
     retries <- retry_clicks(input, "retry")

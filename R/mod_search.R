@@ -68,11 +68,13 @@ mod_search_ui <- function(id, type = c("drug", "practice")) {
 #'   [fetch_search_drugs()] or [fetch_search_practices()] with their
 #'   connection; the tests pass a fake.
 #' @param type `"drug"` or `"practice"`.
+#' @param preset A reactive of an option to select, as [search_option()] makes
+#'   one from a link (P5-03), or `NULL`.
 #' @return A reactive: `NULL` until something is picked, then a list with
 #'   `type`, `id` (integer), `label`, `level` (`"chemical"`,
 #'   `"presentation"` or `"practice"`) and `code` (the BNF or practice code).
 #' @noRd
-mod_search_server <- function(id, fetch, type = c("drug", "practice")) {
+mod_search_server <- function(id, fetch, type = c("drug", "practice"), preset = NULL) {
   type <- match.arg(type)
   shiny::moduleServer(id, function(input, output, session) {
     message <- shiny::reactiveVal("")
@@ -117,9 +119,19 @@ mod_search_server <- function(id, fetch, type = c("drug", "practice")) {
 
     output$message <- shiny::renderText(message())
 
+    # An option from a link: put in `seen` first, so that the pick it makes is
+    # one, then handed to the box (search.js), which selects it
+    if (!is.null(preset)) {
+      shiny::observeEvent(preset(), {
+        option <- preset()
+        seen[[option$value]] <- option
+        send_search_select(session, option)
+      })
+    }
+
     # Only an option the dropdown was offered is a pick: a value set any
     # other way (from the browser's console) is none. A pick restored from a
-    # bookmark (P5-03) is to be put in `seen` first.
+    # link is put in `seen` first.
     shiny::reactive({
       value <- input$pick
       if (!is.character(value) || length(value) != 1L || !nzchar(value)) {
@@ -177,4 +189,10 @@ send_search_results <- function(session, options, query) {
     "prexp-search-results",
     list(id = session$ns("query"), query = query, options = options)
   )
+}
+
+# An option for the box to select, as a link restores it: search.js adds it to
+# the selectize input named in `id` and selects it
+send_search_select <- function(session, option) {
+  session$sendCustomMessage("prexp-search-select", list(id = session$ns("pick"), option = option))
 }

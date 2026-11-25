@@ -36,6 +36,7 @@ Other fetch functions:
 \code{\link[=fetch_region_comparison]{fetch_region_comparison()}},
 \code{\link[=fetch_regions]{fetch_regions()}},
 \code{\link[=fetch_search_drugs]{fetch_search_drugs()}},
-\code{\link[=fetch_search_practices]{fetch_search_practices()}}
+\code{\link[=fetch_search_practices]{fetch_search_practices()}},
+\code{\link[=fetch_subject]{fetch_subject()}}
 }
 \concept{fetch functions}

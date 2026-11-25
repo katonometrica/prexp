@@ -71,7 +71,13 @@ query_registry <- function() {
     region_comparison_chemical = list(params = c("chemical_id", months), samples = chemical),
     region_comparison_presentation = list(
       params = c("presentation_id", months), samples = presentation
-    )
+    ),
+    # One row by a unique code: a sample each
+    subject_chemical = list(params = "code", samples = list(code = list(code = "0212000B0"))),
+    subject_presentation = list(
+      params = "code", samples = list(code = list(code = "0212000B0AAABAB"))
+    ),
+    subject_practice = list(params = "code", samples = list(code = list(code = "N81655")))
   )
 }
 

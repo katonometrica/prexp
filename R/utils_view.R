@@ -48,7 +48,8 @@ plain_fetches <- function(con) {
     region_comparison = function(level, id, months, measure) {
       fetch_region_comparison(con, level, id, months, measure)
     },
-    regions = function() fetch_regions(con)
+    regions = function() fetch_regions(con),
+    subject = function(kind, code) fetch_subject(con, kind, code)
   )
 }
 
