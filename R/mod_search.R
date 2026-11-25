@@ -27,9 +27,16 @@ mod_search_ui <- function(id, type = c("drug", "practice")) {
         placeholder = placeholder,
         valueField = "value", labelField = "label", searchField = c("label", "meta"),
         maxOptions = 20L, loadThrottle = 50L,
-        # A clear button for a new search, which typing cannot start while a
-        # pick fills the box; and an old pick is never listed again
+        # Typing over a pick starts a new search (search.js), and the clear
+        # button empties the box; the pick in the box is never listed, though
+        # one typed over or cleared can be
         plugins = list("clear_button"), hideSelected = TRUE,
+        # A browser can still hold a search.js from before init() came: the
+        # box then works as it did, rather than stopping the page
+        onInitialize = I(paste0(
+          "function() { if (window.prexpSearch && prexpSearch.init) { prexpSearch.init(this, '",
+          ns("query"), "'); } }"
+        )),
         # On the page, not inside the card, which would clip it
         dropdownParent = "body",
         # The server ranks the matches: keep its order
