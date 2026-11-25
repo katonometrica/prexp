@@ -4,8 +4,8 @@
 #              exists for the current docker/Dockerfile, renv.lock and month; otherwise
 #              every run reuses the stored image. The month refreshes the OS layer
 #              (apt-get upgrade) monthly.
-# checks       Runs in that image with a PostgreSQL 18 service: lint, migrate, then tests
-#              with coverage.
+# checks       Runs in that image with a PostgreSQL 18 service: lint, migrate, tests
+#              with coverage, then the end-to-end flows in Chrome.
 # test         The required check on main: a gate that passes only if "checks" passed.
 #              Keep this job id, give it no name, and make sure it can only pass by passing.
 # app-image    Pull requests: builds the app image on the tested image's layers and checks
@@ -138,7 +138,7 @@ jobs:
           secret-files: ubuntu_mirror=${{ runner.temp }}/ubuntu-mirror
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.description=prexp CI image: R, system libraries and the locked R packages
+            org.opencontainers.image.description=prexp CI image: R, system libraries, the locked R packages and Google Chrome
           cache-from: type=registry,ref=${{ steps.ref.outputs.cache }}
           cache-to: |
             type=inline
@@ -249,6 +249,35 @@ jobs:
           name: coverage-report
           path: coverage/
           if-no-files-found: warn
+          retention-days: 30
+
+      # The end-to-end flows (P6-01): the app as the app image runs it, the
+      # package installed above with its background workers, on the fixture
+      # database, driven in Google Chrome by shinytest2. Not counted in
+      # coverage: the app runs in its own process. Each app's log is kept for
+      # the artifact below. shinytest2 skips a flow, rather than failing it,
+      # when Chrome cannot start, and stop_on_failure ignores skips, so a
+      # skipped flow fails the step.
+      - name: End-to-end flows
+        env:
+          PREXP_E2E_LOGS: ${{ github.workspace }}/e2e-logs
+        run: |
+          Rscript -e '
+            res <- testthat::test_file(
+              "tests/testthat/e2e-flows.R", package = "prexp", load_package = "installed",
+              reporter = "progress", stop_on_failure = TRUE
+            )
+            skipped <- sum(as.data.frame(res)$skipped)
+            if (skipped > 0L) stop(skipped, " of the end-to-end flows were skipped.", call. = FALSE)
+          '
+
+      - name: Upload the end-to-end flows' app logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-logs
+          path: e2e-logs/
+          if-no-files-found: ignore
           retention-days: 30
 
   # The required check. It always runs, so a failed, skipped or cancelled "checks" job

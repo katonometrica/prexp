@@ -48,6 +48,7 @@ Suggests:
     httpuv,
     later,
     lintr,
+    shinytest2,
     testthat (>= 3.0.0),
     withr
 Config/roxygen2/markdown: TRUE

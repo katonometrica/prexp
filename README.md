@@ -60,6 +60,19 @@ R's site library, and renv is never switched on inside a container.
 - devtools, usethis and roxygen2 come with the development image and are not in
   `renv.lock`.
 
+### End-to-end flows
+
+`tests/testthat/e2e-flows.R` drives the app in Google Chrome, which the development
+image includes, on the fixture database. The test suite leaves it out. To run it, from
+the RStudio terminal in `~/prexp`, install the package, which the app's background
+workers load, then run the file (`NOT_CRAN=true`, or shinytest2 skips every flow):
+
+```sh
+R CMD INSTALL --no-docs .
+NOT_CRAN=true Rscript -e 'testthat::test_file("tests/testthat/e2e-flows.R",
+  package = "prexp", load_package = "installed")'
+```
+
 ### The full twelve months
 
 The default database settings suit a laptop. For the full window (21 GB of tables and
