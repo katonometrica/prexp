@@ -13,6 +13,35 @@ load_fixture <- function(ym, dbname, ...) {
   load_month(ym, file = fixture_file(ym), sha256 = fixture_sha256(ym), dbname = dbname, ...)
 }
 
+# Mocks the portal: the months in `published` are listed, with the hashes in
+# `hashes` (named by month; none by default), and a download copies the
+# month's fixture file, or fails for the months in `broken`. The download is
+# checked against the fixture's own hash, as the portal's would be.
+local_portal <- function(dir, broken = integer(), published = fixture_months(),
+                         hashes = character(), env = parent.frame()) {
+  testthat::local_mocked_bindings(
+    epd_resources = function() {
+      data.frame(
+        year_month = rev(published), name = "x",
+        sha256 = unname(hashes[as.character(rev(published))])
+      )
+    },
+    month_resource = function(year_month) {
+      list(name = paste0("EPD_SNOMED_", year_month), url = "https://example.invalid/csv",
+           sha256 = fixture_sha256(year_month))
+    },
+    download_month = function(year_month, ...) {
+      if (year_month %in% broken) {
+        stop("The portal did not answer.", call. = FALSE)
+      }
+      file <- file.path(dir, sprintf("EPD_SNOMED_%d.zip", year_month))
+      file.copy(fixture_file(year_month), file)
+      file
+    },
+    .env = env
+  )
+}
+
 # A new migrated database with fixture months loaded by the real loader
 local_loaded_db <- function(months, env = parent.frame()) {
   dbname <- local_migrated_db(env = env)

@@ -194,7 +194,7 @@ Numbered SQL files in `inst/sql/migrations/` (`001_schemas.sql`, `002_dimensions
 Entry points:
 
 - `prexp::load_month(year_month)`: loads or reloads one month
-- `prexp::load_latest()`: loads the newest published month not yet loaded, or does nothing. This is what the schedule calls
+- `prexp::load_latest()`: what the schedule calls. It loads the most recent published months that are missing, as `load_window()` does (the newest month once it is published, which drops the oldest, and any month a failed run missed), then reloads each live month whose published `sha256` is no longer the one it was loaded with, since months are sometimes re-published. A month without a hash, on the portal or in `load_log`, is never reloaded. With nothing to do it says so and returns, so the task exits 0; a failure stops with an error naming the month, so the task exits non-zero and its alert fires
 - `prexp::load_window(n)`: loads the `n` most recent published months missing from `load_log` (by default the whole window, `PREXP_WINDOW_MONTHS`), oldest first, as they were published. Used for the first load and for rebuilds. A month older than every month the window keeps is left out with a message, since it would be dropped at once. It stops at the first month that fails; running it again carries on
 
 A Postgres advisory lock stops two loads from running at once. The window size comes from `PREXP_WINDOW_MONTHS`, default 12.
@@ -374,7 +374,7 @@ A failing scheduled task notifies by email through Coolify's notifications.
 | Postgres 18 | Coolify database resource, persistent volume, not publicly exposed | Always on, from P6-02 |
 | `jobs` container | Coolify application from the `prexp-app` image, command `sleep infinity`, owner and loader credentials, `epd-downloads` volume. Runs `migrate()` after each deploy | Always on, from P6-02 |
 | App container | Coolify application from `ghcr.io/katonometrica/prexp-app`, app role credentials only. From P6-02, on an unlisted subdomain with HTTPS | Redeployed on push to `main` |
-| Loader | Coolify scheduled task in the `jobs` container, `prexp::load_latest()` | Daily from the 18th to the 28th at 02:00, does nothing if no new month is published |
+| Loader | Coolify scheduled task in the `jobs` container, `prexp::load_latest()` | Daily from the 18th to the 28th at 02:00: loads a newly published month and reloads a re-published one, otherwise says there is nothing to do and exits 0 |
 | Plan check | Coolify scheduled task in the `jobs` container, `prexp::check_plans()` | Nightly at 04:00 |
 | v2 model fit | Called by `load_latest()`, `prexp::fit_variation_all()` | After each successful load |
 
