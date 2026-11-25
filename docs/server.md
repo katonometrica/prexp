@@ -98,6 +98,21 @@ After CI pushes a new `:main` image, it asks Coolify to deploy the app and the `
 
 From then on, a merge to `main` redeploys both. The step fails when Coolify does not queue both deployments.
 
+## 5. Scheduled tasks and alerts
+
+`prexp-jobs` → **Scheduled Tasks → Add Task**, twice. Coolify runs each in the `jobs` container, in a shell, on the server's clock (UTC).
+
+| Name | Schedule | Command | Timeout (s) |
+| --- | --- | --- | ---: |
+| Monthly load | `0 2 18-28 * *` | `timeout 3h Rscript -e "prexp::load_latest()"` | 11400 |
+| Nightly check | `0 4 * * *` | `Rscript -e "prexp::migrate(); prexp::check_plans(max_ms = 150)"` | 600 |
+
+- **The monthly load** runs at 02:00 on days 18 to 28, because months are published around the 20th ([docs/dataset.md](dataset.md)). It loads a newly published month, which drops the oldest, and reloads a month the portal has published again; otherwise it logs "Nothing to load" and exits 0. A month takes about five minutes on this server. `timeout` stops a run that hangs before Coolify's own timeout, which is set just above it.
+- **The nightly check** applies any new migration, then checks the app's query plans. It allows 150 ms a query, not the default 50 ms: this server's CPUs are slower than the development machine's, and its slowest checks take 52 to 58 ms there, 78 ms on the first run after a load ([docs/benchmarks.md](benchmarks.md)). A plan that goes wrong fails whatever its time: a sequential scan, partitions not pruned, or heap fetches.
+- **Run each by hand** after setting it up, from its page: **Execute Now**, then **Executions** for its output. Both must succeed.
+
+**Alerts.** Coolify → **Notifications → Email**, with **Scheduled task failure** and **Deployment failure** among the events. The email itself goes through Coolify's own mail service, set once for the instance: **Settings → Transactional Email**, for example Resend, with its API key and a sender on a domain verified there. **Send Test** checks it. A task that fails ten times in a row is disabled, and its page says so.
+
 ## Rehearse it locally
 
 `docker/rehearsal/compose.yaml` lays the same three containers out on this machine, beside the development stack, as Coolify runs them:
