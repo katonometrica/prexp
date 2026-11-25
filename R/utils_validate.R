@@ -13,13 +13,19 @@ invalid_argument <- function(...) {
 
 # A value for an error message, as R would print it, cut short. A classed
 # value (a factor, a date, a 64-bit integer) is shown as it prints, not as
-# what it is stored as.
+# what it is stored as. Any other value, such as a list, is shown by its
+# shape: printing a list walks all of it, and one nested thousands deep, as
+# JSON from a report's link can be, takes seconds and can overflow the C
+# stack, which ends the process whatever handles the error.
 value_text <- function(x) {
   if (is.null(x)) {
     return("NULL")
   }
+  if (!is.atomic(x)) {
+    return(value_shape(x))
+  }
   x <- utils::head(x, 5L)
-  if (is.atomic(x) && !is.null(oldClass(x))) {
+  if (!is.null(oldClass(x))) {
     x <- format(x)
   }
   text <- deparse1(x, collapse = " ")
