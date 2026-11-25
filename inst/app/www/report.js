@@ -14,6 +14,10 @@
 //   new last item, or to the empty panel's text.
 // - What a change did is said by the page's status region (#prexp-status),
 //   emptied first so that the same words twice are read twice.
+// - The report's link, from the Copy link button: copied with the browser's
+//   clipboard and shown in the box under the button, its text selected to
+//   copy by hand where the browser will not copy it (an address without
+//   HTTPS, or a denied permission).
 (function () {
   'use strict';
   var pause = 400;
@@ -93,6 +97,7 @@
     if (!button || button.disabled || !window.Shiny || !window.Shiny.setInputValue) {
       return;
     }
+    hideLink();
     sendPending();
     var list = button.closest('.shiny-html-output');
     var item = button.closest('.prexp-report-item');
@@ -116,6 +121,7 @@
     if (!box) {
       return;
     }
+    hideLink();
     var counter = document.getElementById(box.dataset.reportCounter);
     if (counter) {
       var n = characters(box.value);
@@ -140,16 +146,67 @@
     }
   });
 
+  function say(text) {
+    var region = document.getElementById('prexp-status');
+    if (!region) {
+      return;
+    }
+    region.textContent = '';
+    setTimeout(function () {
+      region.textContent = text;
+    }, 100);
+  }
+
+  // The link shown is the report and the view as they were: a note, a move
+  // or a removal here, or another tab, where pins and a view's selections
+  // change, makes it stale, so it is hidden until Copy link is pressed again
+  function hideLink() {
+    var input = document.querySelector('input[data-report-link]');
+    if (!input) {
+      return;
+    }
+    input.value = '';
+    input.closest('.prexp-link-box').hidden = true;
+  }
+
+  function showLink(url, copied) {
+    var input = document.querySelector('input[data-report-link]');
+    if (!input) {
+      return;
+    }
+    var box = input.closest('.prexp-link-box');
+    var label = box.querySelector('[data-report-link-label]');
+    input.value = url;
+    box.hidden = false;
+    if (copied) {
+      label.textContent = 'Copied: the report\'s link';
+      say('Link copied.');
+    } else {
+      label.textContent = 'The report\'s link: copy it from here';
+      input.focus();
+      input.select();
+      say('The link could not be copied: it is selected in the box below the button.');
+    }
+  }
+
+  $(document).on('shiny:inputchanged', function (event) {
+    if (event.name === 'tab') {
+      hideLink();
+    }
+  });
+
   $(document).on('shiny:connected', function () {
-    window.Shiny.addCustomMessageHandler('prexp-status', function (text) {
-      var region = document.getElementById('prexp-status');
-      if (!region) {
-        return;
+    window.Shiny.addCustomMessageHandler('prexp-status', say);
+    window.Shiny.addCustomMessageHandler('prexp-copy-link', function (url) {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(url).then(function () {
+          showLink(url, true);
+        }, function () {
+          showLink(url, false);
+        });
+      } else {
+        showLink(url, false);
       }
-      region.textContent = '';
-      setTimeout(function () {
-        region.textContent = text;
-      }, 100);
     });
   });
 })();

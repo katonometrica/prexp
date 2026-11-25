@@ -202,9 +202,9 @@ test_that("a failing check stops unless it is report-only, and names the failure
   expect_error(
     expect_message(
       utils::capture.output(check_plans(con, max_ms = 0)),
-      "22 of 22 plan checks failed:\nwindow (window): ", fixed = TRUE
+      "25 of 25 plan checks failed:\nwindow (window): ", fixed = TRUE
     ),
-    "22 of 22 plan checks failed (listed above).", fixed = TRUE
+    "25 of 25 plan checks failed (listed above).", fixed = TRUE
   )
   expect_message(
     utils::capture.output(check_plans(con, max_ms = 0, report_only = TRUE)),
@@ -225,7 +225,7 @@ test_that("a sample code with no data, or a query that errors, fails its check o
     }
   )
   utils::capture.output(res <- suppressMessages(check_plans(con, report_only = TRUE)))
-  expect_identical(nrow(res), 22L)
+  expect_identical(nrow(res), 25L)
   expect_identical(
     res$problems[res$query == "practice_profile" & res$sample == "small"],
     "practice ZZZ999 has no data in the months asked for"
@@ -252,6 +252,6 @@ test_that("with no connection given, the check opens and closes its own", {
   dbname <- local_loaded_db(202609L)
   withr::local_envvar(PREXP_DB_NAME = dbname)
   utils::capture.output(res <- suppressMessages(check_plans(report_only = TRUE, generic = TRUE)))
-  expect_identical(nrow(res), 22L)
+  expect_identical(nrow(res), 25L)
   expect_false(any(is.na(res$ms)))
 })

@@ -272,6 +272,7 @@ Every function takes `con` (a pool or connection) first, validates its arguments
 | `fetch_practice_series()` | `practice_id`, `months` | Monthly totals | `v_practice_month` |
 | `fetch_practice_top_drugs()` | `practice_id`, `months`, `by` (items, NIC or actual cost), `limit`, `after` (the last presentation of the previous page; keyset paging on the total and the presentation) | Top presentations, paged | `v_practice_presentation` |
 | `fetch_region_comparison()` | `level`, `id`, `months`, `measure`, `per` (total, or per 1,000 patients in v2) | Totals per region | `v_chemical_month` or `v_presentation_month` |
+| `fetch_subject()` | `kind` (chemical, presentation or practice), `code` | The id, code and name of the subject with that code, for a report's link (§5.5); not only those with data in the window, and not the unidentified prescribers | `v_chemical`, `v_presentation` or `v_practice` |
 | `fetch_variation()` (v2) | `group`, `icb_code` | Observed, expected, ratio, interval per practice | `v_variation` |
 
 Quantity is only valid for a single presentation, because units differ across presentations.
@@ -320,7 +321,7 @@ Every view handles three states besides the normal one: nothing selected, no row
 
 **Report spec.** A report is an ordered list of items, each with a view type, its parameters (drug, practice, region, months) and a note. Items store parameters, not data, so an export re-runs the queries and stays consistent with the database.
 
-**Shareable link.** The report is encoded in the URL with Shiny URL bookmarking. Opening the link restores the selections, pinned items and notes; nothing is stored on the server. Notes are capped at 500 characters and reports at 15 items, to keep links within browser URL limits. Because the window rolls, a link can name months that have since been dropped: on restore those items are clamped to the current window and flagged in the report panel, rather than failing.
+**Shareable link.** The report is encoded in the URL with Shiny URL bookmarking. Opening the link restores the selections, pinned items and notes; nothing is stored on the server. Notes are capped at 500 characters, reports at 15 items and a report's link at 7,500 characters, to keep links within URL limits: a pin, a note or a move that would make the link longer is refused. Because the window rolls, a link can name months that have since been dropped: on restore those items are clamped to the current window and flagged in the report panel, rather than failing.
 
 **Contents of every export.** A title page with the data period and export date; one section per pinned item with its chart, table and note; and a methods section with the data source and period, the filters applied per item, measure definitions, and the NHSBSA attribution with the Open Government Licence 3.0.
 
@@ -333,8 +334,9 @@ Every view handles three states besides the normal one: nothing selected, no row
 Implementation notes:
 
 - The report spec is a list of items `{id, view, params, note}`. Pure functions in `fct_report_spec.R` add, remove, move, validate and clamp it, and encode it for the URL (compact JSON, gzip, base64url)
-- `enableBookmarking("url")` stores only the active tab, the active view's selections and the encoded spec. Limits: 15 items, 500 characters per note, which keeps the worst case under 8,000 characters
-- On restore, `clamp_report(spec, window)` limits each item's months to the current window and marks changed items `clamped`, which the report panel shows
+- `enableBookmarking("url")` stores only the active tab, the selections of the view last shown (the Copy link button is on the Report tab), or, in a session opened from a link that has shown no view yet, those the link put back, and the encoded spec: the selections as a one-item report, so that `decode_report()` checks both whole when a link is opened. Every other input is excluded as the URL is written. The Copy link button copies the URL with the browser's clipboard and shows it, selected, where the browser will not copy it; it answers clicks only, not a value a link's `_inputs_` gives it. Limits: 15 items, 500 characters per note and 7,500 characters for the report's link, which leaves room for the rest of the URL under the 8,000 that RFC 9110 asks servers to accept. Notes of English prose at the first two limits take about 4,500; notes that compress poorly reach the link's limit first
+- On restore, `clamp_report(spec, window)` limits each item's months to the current window and marks changed items `clamped`, which the report panel shows. A link opened while the window cannot be fetched waits for it
+- A link names each drug and practice by its code, which a rebuilt database keeps while ids change. On restore, `fetch_subject()` looks each one up by its code, not only within the window, and the id and the name come from there, never from the link, which could name any id anything. An item whose code the data does not hold is left out and the user told; a part of the link that is not what the app writes, or that Shiny dropped because it was cut short, is refused and the user told
 - Exports run each item's fetch again, build charts with `mschart` using `theme.R`, and add `fct_methods.R` content last. They run as an `ExtendedTask`: "Prepare", then "Download"
 - PowerPoint: one slide per item (title, chart, note), with the table on a following slide if it has more than 12 rows. Word: one heading per item, chart, note, table. Excel: one sheet per item with the note in the first rows, an Excel table and a native chart; Methods sheet last; no macros, no pivots
 

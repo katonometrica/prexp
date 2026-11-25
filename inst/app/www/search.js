@@ -44,6 +44,17 @@
   };
 
   $(document).on("shiny:connected", function () {
+    // A pick from a link: its option added to its box and selected, which
+    // sends it as any pick is sent
+    Shiny.addCustomMessageHandler("prexp-search-select", function (message) {
+      var element = document.getElementById(message.id);
+      var selectize = element && element.selectize;
+      if (!selectize) {
+        return;
+      }
+      selectize.addOption(message.option);
+      selectize.setValue(message.option.value);
+    });
     Shiny.addCustomMessageHandler("prexp-search-results", function (message) {
       var pending = waiting[message.id];
       if (pending && pending.query === message.query) {

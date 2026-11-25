@@ -150,6 +150,43 @@ fetch_search_practices <- function(con, q, limit = 20L) {
   run_fetch(con, "fetch_search_practices", "search_practices", list(q, limit))
 }
 
+#' A drug's or a practice's id and name, by its code
+#'
+#' A report's link names each drug and practice by its code, which stays the
+#' same when the database is rebuilt, while its id does not. Opening a link
+#' takes the id and the name from here, never from the link, which could name
+#' any id anything. Not only those with data in the window: a link keeps its
+#' subjects after they leave it.
+#'
+#' @inheritParams fetch_window
+#' @param kind `"chemical"`, `"presentation"` or `"practice"`.
+#' @param code Its code: a chemical substance's or a presentation's BNF code,
+#'   or a practice's code.
+#' @return A tibble with one row, or none for a code the data does not hold:
+#'   `id` (integer), `code` and `name`. The unidentified prescribers have none,
+#'   as the search does not find them either.
+#' @family fetch functions
+#' @examples
+#' \dontrun{
+#' pool <- db_pool()
+#' fetch_subject(pool, "chemical", "0212000B0")
+#' pool::poolClose(pool)
+#' }
+#' @export
+fetch_subject <- function(con, kind, code) {
+  kind <- validate_choice(kind, c("chemical", "presentation", "practice"), "kind")
+  code <- validate_code(code)
+  if (is.na(code)) {
+    invalid_argument("`code` must be one code of 1 to 20 letters and digits, not NA.")
+  }
+  query <- switch(kind,
+    chemical = "subject_chemical",
+    presentation = "subject_presentation",
+    practice = "subject_practice"
+  )
+  run_fetch(con, "fetch_subject", query, list(code))
+}
+
 #' A drug's national monthly totals
 #'
 #' @inheritParams fetch_window

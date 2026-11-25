@@ -34,7 +34,10 @@ test_that("every query prepares as the app role, with the parameter types expect
     practice_series = months,
     practice_top_drugs = c(months, "text", "bigint", "integer"),
     region_comparison_chemical = months,
-    region_comparison_presentation = months
+    region_comparison_presentation = months,
+    subject_chemical = "text",
+    subject_presentation = "text",
+    subject_practice = "text"
   )
   files <- query_files()
   expect_setequal(sub("[.]sql$", "", basename(files)), names(expected))
@@ -78,7 +81,10 @@ test_that("every query runs as the app role on loaded months, with its columns",
     practice_series = c(practice, months),
     practice_top_drugs = c(practice, months, list("nic", 25L, NA)),
     region_comparison_chemical = c(chemical, months),
-    region_comparison_presentation = c(presentation, months)
+    region_comparison_presentation = c(presentation, months),
+    subject_chemical = list("0212000B0"),
+    subject_presentation = list("0212000B0AAABAB"),
+    subject_practice = list("N81655")
   )
   measures <- c("items", "adq_usage", "nic", "actual_cost")
   columns <- list(
@@ -108,7 +114,10 @@ test_that("every query runs as the app role on loaded months, with its columns",
     region_comparison_chemical = c("region_code", "region_name", measures),
     region_comparison_presentation = c(
       "region_code", "region_name", "items", "total_quantity", measures[-1]
-    )
+    ),
+    subject_chemical = c("id", "code", "name"),
+    subject_presentation = c("id", "code", "name"),
+    subject_practice = c("id", "code", "name")
   )
   expect_setequal(names(calls), sub("[.]sql$", "", basename(query_files())))
   for (query in names(calls)) {

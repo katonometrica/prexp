@@ -32,27 +32,33 @@ mod_drug_ui <- function(id) {
 #' @param window A reactive: the data window, from `fetches$window()`.
 #' @param report The session's report, a `reactiveVal()` that its "Add to
 #'   report" button adds to ([report_pin()]), or `NULL` for none.
+#' @param restore A `reactiveVal()` of an item to put back from a link
+#'   ([view_restorer()]), or `NULL`.
 #' @return A reactive `current_view()`: `NULL` until a drug's series is shown,
 #'   then a list with `view` (`"drug"`), `params` (`level`, `id`, `label`,
 #'   `months`, `measure`) and `data` (the series shown).
 #' @noRd
-mod_drug_server <- function(id, fetches, window, report = NULL) {
+mod_drug_server <- function(id, fetches, window, report = NULL, restore = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
-    picked <- mod_search_server("search", fetches$search_drugs, "drug")
+    restorer <- view_restorer(restore)
+    picked <- mod_search_server("search", fetches$search_drugs, "drug", restorer$pick)
 
     output$months_ui <- shiny::renderUI({
-      months_controls(ns, window(), shiny::isolate(input$from), shiny::isolate(input$to))
+      chosen <- restorer$months(
+        shiny::isolate(input$from), shiny::isolate(input$to), months_of_window(window())
+      )
+      months_controls(ns, window(), chosen$from, chosen$to)
     })
     measures <- shiny::reactive({
       pick <- picked()
       measures_for_level(if (is.null(pick)) "chemical" else pick$level)
     })
     output$measure_ui <- shiny::renderUI({
-      measure_control(ns, measures(), shiny::isolate(input$measure))
+      measure_control(ns, measures(), restorer$measure(shiny::isolate(input$measure), measures()))
     })
-    months <- shiny::reactive(chosen_months(input$from, input$to, window()))
-    measure <- changes_only(shiny::reactive(chosen_measure(input$measure, measures())))
+    months <- shiny::reactive(restorer$view_months(input$from, input$to, window()))
+    measure <- changes_only(shiny::reactive(restorer$view_measure(input$measure, measures())))
     retries <- retry_clicks(input)
 
     series <- shiny::reactive({

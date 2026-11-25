@@ -76,6 +76,10 @@ test_that("each fetch returns a tibble with its documented columns and types", {
   )
   regions <- c(region_code = chr, region_name = chr, measure = chr, value = dbl)
   expect_columns(fetch_region_comparison(con, "chemical", chemical, months, "items"), regions)
+  subject <- c(id = int, code = chr, name = chr)
+  expect_columns(fetch_subject(con, "chemical", "0212000B0"), subject)
+  expect_columns(fetch_subject(con, "presentation", "0212000B0AAABAB"), subject)
+  expect_columns(fetch_subject(con, "practice", "N81655"), subject)
   expect_columns(
     fetch_region_comparison(con, "presentation", presentation, months, "adq_usage"), regions
   )
@@ -186,6 +190,32 @@ test_that("every fetch checks its arguments before it queries", {
   refused(fetch_practice_profile(con, tibble::tibble(practice_id = 1:2)))
   refused(fetch_region_comparison(con, "chemical", 1, months, "total_quantity"))
   refused(fetch_region_comparison(con, "chemical", 1, months, "items", per = "per_1000"))
+  refused(fetch_subject(con, "drug", "0212000B0"))
+  refused(fetch_subject(con, "chemical", NA))
+  refused(fetch_subject(con, "practice", "N81655; --"))
+  refused(fetch_subject(con, "practice", c("N81655", "Y03965")))
+})
+
+test_that("fetch_subject() gives a subject's id and name by its code, as the views name it", {
+  con <- fixture_app()
+  chemical <- fetch_subject(con, "chemical", "0212000B0")
+  expect_identical(chemical$id, id_of(con, "chemical", "0212000B0"))
+  expect_identical(chemical$name, "Atorvastatin")
+  presentation <- fetch_subject(con, "presentation", "0212000B0AAABAB")
+  expect_identical(presentation$id, id_of(con, "presentation", "0212000B0AAABAB"))
+  practice <- fetch_subject(con, "practice", "N81655")
+  expect_identical(practice$id, id_of(con, "practice", "N81655"))
+  expect_identical(practice$name, fetch_practice_profile(con, practice$id)$practice_name)
+  # A code of another kind, an unknown one, and an unidentified prescriber,
+  # which the search does not find: no row
+  expect_identical(nrow(fetch_subject(con, "presentation", "0212000B0")), 0L)
+  expect_identical(nrow(fetch_subject(con, "chemical", "ZZZZZZZZZ")), 0L)
+  unidentified <- DBI::dbGetQuery(con, "
+    SELECT practice_code FROM app.v_practice
+    WHERE is_unidentified AND practice_code ~ '^[0-9A-Za-z]+$'
+    ORDER BY practice_code LIMIT 1")$practice_code
+  expect_length(unidentified, 1L)
+  expect_identical(nrow(fetch_subject(con, "practice", unidentified)), 0L)
 })
 
 test_that("a search matches %, _ and \\ as themselves", {
