@@ -2,8 +2,8 @@
 #   docker build -f docker/Dockerfile --target <stage> -t prexp-<stage>:local .
 #
 #   base  R 4.6.1, system libraries, psql 18 and every package in renv.lock
-#   ci    base; Google Chrome is added in phase 6 (P6-01)  -> ghcr.io/katonometrica/prexp-ci
-#   dev   base, RStudio Server, git and development tools   -> Compose service rstudio
+#   ci    base and Google Chrome, for the end-to-end flows -> ghcr.io/katonometrica/prexp-ci
+#   dev   ci, RStudio Server, git and development tools     -> Compose service rstudio
 #   app   base and the installed prexp package, non-root    -> ghcr.io/katonometrica/prexp-app
 
 # ------------------------------------------------------------------- base
@@ -124,11 +124,52 @@ EOF
 
 # ------------------------------------------------------------------- ci
 FROM base AS ci
-# Google Chrome for shinytest2 is added here in phase 6 (P6-01), after the package layer.
-# No USER: GitHub Actions job containers must run as root to use the workspace.
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Google Chrome, which shinytest2 drives (through chromote) for the end-to-end flows
+# (tests/testthat/e2e-flows.R, P6-01).
+# - From Google's apt repository, which has amd64 and arm64 builds: Ubuntu's chromium
+#   package is a snap, which does not run in a container.
+# - After the package layers, so a new Chrome never rebuilds them; CI's monthly
+#   OS_REFRESH rebuild installs the stable Chrome of the day.
+# - The repository is removed afterwards: Google's package replaces this stage's
+#   google-chrome.sources with its own copy and writes its keyring and a daily cron
+#   job; all of them go, so the image's apt setup stays standard and the dev stage's
+#   apt-get update never reaches Google. /etc/default/google-chrome stays: its
+#   repo_add_once="false" stops a reinstall of the package adding the repository.
+# - The same Ubuntu mirror secret as the base stage, for Chrome's dependencies.
+# No USER: GitHub Actions job containers must run as root to use the workspace, and
+# chromote starts Chrome with --no-sandbox, which root needs.
+RUN --mount=type=secret,id=ubuntu_mirror <<'EOF'
+set -eux
+mirror="$(cat /run/secrets/ubuntu_mirror 2>/dev/null || true)"
+if [ -n "${mirror}" ]; then
+  cp /etc/apt/sources.list.d/ubuntu.sources /tmp/ubuntu.sources.orig
+  sed -E -i "s#https?://(archive|security)\.ubuntu\.com/ubuntu/?#${mirror}#g" /etc/apt/sources.list.d/ubuntu.sources
+fi
+curl -fsSL --retry 3 -o /usr/share/keyrings/google-linux.asc https://dl.google.com/linux/linux_signing_key.pub
+{
+  echo 'Types: deb'
+  echo 'URIs: https://dl.google.com/linux/chrome/deb/'
+  echo 'Suites: stable'
+  echo 'Components: main'
+  echo 'Signed-By: /usr/share/keyrings/google-linux.asc'
+} > /etc/apt/sources.list.d/google-chrome.sources
+apt-get update
+apt-get install -y --no-install-recommends google-chrome-stable
+rm -f /etc/apt/sources.list.d/google-chrome.sources /usr/share/keyrings/google-chrome.gpg \
+  /usr/share/keyrings/google-linux.asc /etc/cron.daily/google-chrome
+if [ -f /tmp/ubuntu.sources.orig ]; then
+  mv /tmp/ubuntu.sources.orig /etc/apt/sources.list.d/ubuntu.sources
+fi
+rm -rf /var/lib/apt/lists/*
+google-chrome --version
+EOF
+ENV CHROMOTE_CHROME=/usr/bin/google-chrome
 
 # ------------------------------------------------------------------- dev
-FROM base AS dev
+# On ci, so the end-to-end flows run from RStudio as in CI.
+FROM ci AS dev
 ARG DEBIAN_FRONTEND=noninteractive
 
 # RStudio Server through rocker's script, pinned to the version rocker ships with R 4.6.1
