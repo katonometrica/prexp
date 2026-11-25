@@ -799,3 +799,88 @@ load_window <- function(n = window_months(), dbname = NULL) {
   message("Loaded ", n_months(nrow(done)), " in ", round(sum(done$seconds) / 60, 1), " min.")
   invisible(done)
 }
+
+#' Load the newest published month, and any month published again
+#'
+#' What the monthly scheduled task runs (spec sections 4 and 7). First it
+#' loads the most recent published months that are missing, as
+#' [load_window()] does: the newest month once the portal publishes it, which
+#' drops the oldest from the window, and any month an earlier run failed to
+#' load. Then it reloads each loaded month whose published SHA-256 is no
+#' longer the one it was loaded with, since the portal sometimes publishes a
+#' month again. A month whose hash is unknown, on the portal or in the load
+#' log (a month loaded from a local file without one), is never reloaded.
+#'
+#' With nothing to do it says so and returns, so that
+#' `Rscript -e "prexp::load_latest()"` exits with status 0. A failure stops
+#' with an error naming the month, so the command exits with a non-zero status
+#' and the scheduler's failure alert fires; the next run carries on.
+#'
+#' @param dbname Database name; defaults to `PREXP_DB_NAME`.
+#' @return A data frame with one row per month loaded or reloaded:
+#'   `year_month`, `source_rows`, `loaded_rows`, `seconds` and `reloaded`
+#'   (`TRUE` for a month published again), invisibly.
+#' @export
+load_latest <- function(dbname = NULL) {
+  done <- load_window(dbname = dbname)
+  done$reloaded <- rep(FALSE, nrow(done))
+  # After the loads: a month just loaded carries the portal's current hash,
+  # and a month just dropped is no longer live
+  con <- db_connect("loader", dbname = dbname)
+  live <- tryCatch(
+    DBI::dbGetQuery(con, "
+      SELECT year_month, source_sha256 FROM core.load_log
+      WHERE status = 'loaded' ORDER BY year_month"),
+    finally = DBI::dbDisconnect(con)
+  )
+  published <- tryCatch(epd_resources(), error = function(e) {
+    stop(
+      "Checking the loaded months against the portal failed",
+      if (nrow(done) > 0L) paste0(", after loading ", toString(done$year_month)),
+      ": ", conditionMessage(e), " The next run checks them again.",
+      call. = FALSE
+    )
+  })
+  now <- published$sha256[match(live$year_month, published$year_month)]
+  was <- live$source_sha256
+  again <- live$year_month[!is.na(now) & !is.na(was) & tolower(now) != tolower(was)]
+  if (length(again) == 0L) {
+    message("No loaded month has been published again.")
+    return(invisible(done))
+  }
+  for (ym in again) {
+    message("Reloading ", ym, ": the portal has published it again.")
+    old <- was[match(ym, live$year_month)]
+    res <- tryCatch(load_month(ym, dbname = dbname), error = function(e) {
+      # Said only while the month's live data is still the old: the swap can
+      # have committed before the error, or another load dropped the month
+      kept <- identical(live_sha256(ym, dbname), old)
+      stop(
+        "Reloading ", ym, ", published again, failed: ", conditionMessage(e),
+        if (kept) " The month's previous data stays live; the next run tries again.",
+        call. = FALSE
+      )
+    })
+    done[nrow(done) + 1L, ] <- list(ym, res$source_rows, res$loaded_rows, res$seconds, TRUE)
+  }
+  invisible(done)
+}
+
+# The hash a month's live data was loaded with: NA when the month has no
+# loaded row, or when the load log cannot be read
+live_sha256 <- function(ym, dbname = NULL) {
+  tryCatch(
+    {
+      con <- db_connect("loader", dbname = dbname)
+      hash <- tryCatch(
+        DBI::dbGetQuery(con, "
+          SELECT source_sha256 FROM core.load_log WHERE year_month = $1 AND status = 'loaded'",
+          params = list(ym)
+        )$source_sha256,
+        finally = DBI::dbDisconnect(con)
+      )
+      if (length(hash) == 1L) hash else NA_character_
+    },
+    error = function(e) NA_character_
+  )
+}

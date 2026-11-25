@@ -2,30 +2,6 @@
 # months missing from load_log, oldest first. The portal and the download are
 # mocked; the months are the fixtures.
 
-# Mocks the portal: the months in `published` are listed, and a download
-# copies the month's fixture file, or fails for the months in `broken`
-local_portal <- function(dir, broken = integer(), published = fixture_months(),
-                         env = parent.frame()) {
-  testthat::local_mocked_bindings(
-    epd_resources = function() {
-      data.frame(year_month = rev(published), name = "x", sha256 = NA_character_)
-    },
-    month_resource = function(year_month) {
-      list(name = paste0("EPD_SNOMED_", year_month), url = "https://example.invalid/csv",
-           sha256 = fixture_sha256(year_month))
-    },
-    download_month = function(year_month, ...) {
-      if (year_month %in% broken) {
-        stop("The portal did not answer.", call. = FALSE)
-      }
-      file <- file.path(dir, sprintf("EPD_SNOMED_%d.zip", year_month))
-      file.copy(fixture_file(year_month), file)
-      file
-    },
-    .env = env
-  )
-}
-
 test_that("the most recent months missing are loaded oldest first, then nothing", {
   withr::local_envvar(PREXP_WINDOW_MONTHS = "3")
   dbname <- local_migrated_db()
