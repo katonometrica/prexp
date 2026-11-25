@@ -1,6 +1,6 @@
 Package: prexp
 Title: Prescription Explorer for the English Prescribing Dataset
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R: c(
     person("Marcelo", "Katogui", , "60530366+mkatogui@users.noreply.github.com", role = c("aut", "cre")),
     person("Katonométrica", role = c("cph", "fnd"))

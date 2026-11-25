@@ -26,6 +26,12 @@ test_that("the page has the five tabs, the robots meta in its head, and the foot
     ),
     fixed = TRUE
   )
+  # The source, linked from every page: the repository in DESCRIPTION
+  expect_identical(source_url(), "https://github.com/katonometrica/prexp")
+  expect_match(
+    footer, "<a href=\"https://github.com/katonometrica/prexp\">Source on GitHub</a>",
+    fixed = TRUE
+  )
 })
 
 test_that("the tabs are the page's main landmark, and each tab has an h1", {
