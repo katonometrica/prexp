@@ -10,7 +10,9 @@
 # Where a site value falls short of WCAG AA the app uses a stronger one
 # (brand_tokens()). The charts are drawn once, in the light theme's colours,
 # which the page recolours for the dark theme (chart_css()). The Office
-# exports keep their own look, at the end of this file.
+# exports take the light theme's colours and IBM Plex Sans too, at the end of
+# this file: their palette, their templates' colour scheme and fonts, and the
+# fonts their text is measured in.
 
 #' The brand's colours, for the dark theme and the light one
 #'
@@ -299,7 +301,8 @@ chart_font_set <- function() {
 }
 
 # What the charts make once and keep, for the process: the fonts registered,
-# the themes and the font set
+# the themes and the font set; and the advances of the glyphs the exports'
+# text is measured with (glyph_advances())
 chart_state <- new.env(parent = emptyenv())
 
 #' The app's Bootstrap theme
@@ -380,78 +383,230 @@ table_theme <- function() {
   )
 }
 
-# The Office exports' look (P5-05 to P5-07), which the brand does not reach
-# yet: Okabe and Ito's colour-blind-safe palette and Arial, which Office
-# readers have. A font with Arial's metrics measures their text where Arial is
-# not installed, as in the containers.
+# The Office exports' look (P5-05 to P5-07): the brand's light theme, which
+# it keeps for print and daytime presentations, in IBM Plex Sans. An Office
+# file cannot carry the font: the templates and the workbook name it as their
+# theme's font, with IBM's classification of it, and the text takes the
+# theme's font. Microsoft 365 downloads IBM Plex Sans and IBM Plex Mono as
+# cloud fonts the first time a file names them, so most Office readers see
+# Plex itself. Office without cloud fonts, and LibreOffice, draw a sans of
+# their own, chosen by the declared PANOSE and family. The text is measured
+# in both Plex and Arial, so that it fits in either (export_text_width()).
 
 #' The exports' colours
 #'
-#' Okabe and Ito's palette, whose colours stay apart for the common colour
-#' vision deficiencies. Black is left out: it is the text colour. The
-#' exports' charts draw their series in blue (5.2 to 1 on white), and their
-#' links are blue too.
+#' The light theme's (brand_tokens()), by role: the text, and the maker's
+#' wordmark, as the site and the app draw it; the secondary text of
+#' summaries, captions, footnotes and the charts' tick labels; the charts'
+#' mark, the app's charts' own, so that an export shows what the screen
+#' shows; links, which are underlined as well; the tables' rules, in the text
+#' colour under a header and over a total, and the light theme's strong
+#' border between rows; the charts' gridlines, the app's charts' own. On the
+#' white of a slide or a page, text reads at 4.5:1 or more and the mark at
+#' 3:1 (test-theme.R); the rules and gridlines only separate what the text
+#' says. The tables have no bands and the charts no axis lines or ticks, as
+#' the app's have none.
 #'
 #' @return A named character vector of hex colours.
 #' @noRd
 export_palette <- function() {
+  light <- brand_tokens()$light
+  chart <- chart_colours()
   c(
-    blue = "#0072B2", orange = "#E69F00", green = "#009E73", vermillion = "#D55E00",
-    sky = "#56B4E9", purple = "#CC79A7", yellow = "#F0E442"
+    text = toupper(light$text), secondary = toupper(light$text_secondary), mark = chart$mark,
+    link = toupper(light$accent), rule = toupper(light$text),
+    row_rule = toupper(blend(light$border_strong, light$bg)), grid = chart$grid
   )
 }
 
-# The exports' font. Where Arial is not installed, as in the containers,
-# use_export_font() registers Liberation Sans, which has Arial's metrics,
-# under Arial's name, so the exports' text is measured as Office lays it out.
-export_font <- "Arial"
+#' The exports' Office colour scheme
+#'
+#' The theme colours of the templates and of the workbook, which Office
+#' offers for anything a reader adds, so that a chart, a table or a shape
+#' added in Office takes the brand's colours too. Dark 1 and light 1 are the
+#' text and white; dark 2 and light 2 the dark theme's panel and the light
+#' theme's alternate page; the accents the light and dark charts' marks, the
+#' gold of links, the secondary text, the rules between rows and the dark
+#' theme's gold; links are in the gold, and followed links in the secondary
+#' text's colour.
+#'
+#' @return A named character vector of six-digit hex colours with no "#", in
+#'   the scheme's order.
+#' @noRd
+export_scheme <- function() {
+  light <- brand_tokens()$light
+  dark <- brand_tokens()$dark
+  colours <- export_palette()
+  scheme <- c(
+    dk1 = colours[["text"]], lt1 = "#FFFFFF", dk2 = dark$bg_alt, lt2 = light$bg_alt,
+    accent1 = colours[["mark"]], accent2 = colours[["link"]], accent3 = colours[["secondary"]],
+    accent4 = dark$chart_mark, accent5 = colours[["row_rule"]], accent6 = dark$accent,
+    hlink = colours[["link"]], folHlink = colours[["secondary"]]
+  )
+  toupper(sub("#", "", scheme, fixed = TRUE))
+}
 
+# The font the exports name, the app's
+export_font <- "IBM Plex Sans"
+
+#' The exports' fonts, as Office files declare them
+#'
+#' IBM Plex Sans for the text and IBM Plex Mono for the maker's wordmark,
+#' each with what Office picks a substitute by where it is not installed:
+#' IBM's PANOSE classification of its Regular, as IBM's own files give it,
+#' and its pitch and family, a sans of variable pitch and a font of fixed
+#' pitch, both as OOXML's `pitchFamily` and as Word's font table writes them.
+#'
+#' @return A list of two fonts, `sans` and `mono`, each a list of `typeface`,
+#'   `panose`, `pitch_family`, `family` and `pitch`.
+#' @noRd
+export_fonts <- function() {
+  list(
+    sans = list(
+      typeface = export_font, panose = "020B0503050203000203", pitch_family = "34",
+      family = "swiss", pitch = "variable"
+    ),
+    mono = list(
+      typeface = "IBM Plex Mono", panose = "020B0509050203000203", pitch_family = "49",
+      family = "modern", pitch = "fixed"
+    )
+  )
+}
+
+# The maker's name, as it writes it: the name of the colour, font and shape
+# schemes of the exports' themes, and of the Word template's and the
+# workbook's themes
+brand_name <- "Katonom\u00e9trica"
+
+#' An Office theme in the exports' colours and font
+#'
+#' Changes a theme part (`a:theme`) of a template or of the workbook: its
+#' colour scheme to export_scheme(); its fonts, major and minor, to IBM Plex
+#' Sans, declared as export_fonts() declares it; and its styles for shapes to
+#' the brand's flat ones, solid fills with no gradient, shadow or bevel. Its
+#' three schemes take the brand's name.
+#'
+#' @param doc The theme, an xml2 document, changed in place.
+#' @param name The theme's new name, or `NULL` to keep its own: officer names
+#'   a PowerPoint's master after its theme, and the exports choose layouts on
+#'   the master "Office Theme".
+#' @return `doc`, invisibly.
+#' @noRd
+brand_office_theme <- function(doc, name = NULL) {
+  ns <- c(a = "http://schemas.openxmlformats.org/drawingml/2006/main")
+  if (!is.null(name)) {
+    xml2::xml_set_attr(xml2::xml_root(doc), "name", name)
+  }
+  elements <- xml2::xml_find_first(doc, "/a:theme/a:themeElements", ns)
+  colours <- export_scheme()
+  scheme <- xml2::xml_find_first(elements, "a:clrScheme", ns)
+  xml2::xml_set_attr(scheme, "name", brand_name)
+  for (slot in names(colours)) {
+    node <- xml2::xml_find_first(scheme, paste0("a:", slot), ns)
+    xml2::xml_remove(xml2::xml_children(node))
+    xml2::xml_add_child(node, "a:srgbClr", val = colours[[slot]])
+  }
+  fonts <- xml2::xml_find_first(elements, "a:fontScheme", ns)
+  xml2::xml_set_attr(fonts, "name", brand_name)
+  sans <- export_fonts()$sans
+  for (latin in xml2::xml_find_all(fonts, "a:majorFont/a:latin | a:minorFont/a:latin", ns)) {
+    xml2::xml_set_attrs(latin, c(
+      typeface = sans$typeface, panose = sans$panose, pitchFamily = sans$pitch_family,
+      charset = "0"
+    ))
+  }
+  shapes <- xml2::xml_find_first(elements, "a:fmtScheme", ns)
+  xml2::xml_set_attr(shapes, "name", brand_name)
+  for (fill in xml2::xml_find_all(shapes, "a:fillStyleLst/* | a:bgFillStyleLst/*", ns)) {
+    if (xml2::xml_name(fill) != "solidFill") {
+      solid <- xml2::xml_add_sibling(fill, "a:solidFill", .where = "before")
+      xml2::xml_add_child(solid, "a:schemeClr", val = "phClr")
+      xml2::xml_remove(fill)
+    }
+  }
+  for (effect in xml2::xml_find_all(shapes, "a:effectStyleLst/a:effectStyle", ns)) {
+    xml2::xml_remove(xml2::xml_children(effect))
+    xml2::xml_add_child(effect, "a:effectLst")
+  }
+  invisible(doc)
+}
+
+# The fonts the exports' text is measured in: IBM Plex Sans, which they name
+# and Microsoft 365 draws, and Arial, for an office suite without Plex that
+# draws a sans of its own in its place
+export_measure_fonts <- c(export_font, "Arial")
+
+# The app's IBM Plex Sans is two files, as the page loads it: the Latin
+# subset, which the charts measure with, and Latin Extended (Polish, Czech or
+# Romanian letters, for example), registered under a name of its own for the
+# exports' letters the first lacks
+export_font_ext <- "IBM Plex Sans Latin Ext"
+
+# Registers both for measuring: IBM Plex Sans as the charts do, from the app's
+# own copy (use_chart_font()); and where Arial is not installed, as in the
+# containers, Liberation Sans, which has Arial's metrics, under Arial's name
 use_export_font <- function() {
   if (isTRUE(chart_state$export_font)) {
-    return(invisible(export_font))
+    return(invisible(export_measure_fonts))
   }
+  use_chart_font()
   installed <- systemfonts::system_fonts()
   known <- c(installed$family, systemfonts::registry_fonts()$family)
   liberation <- installed[installed$family == "Liberation Sans", c("path", "style")]
-  if (!export_font %in% known && nrow(liberation) > 0L) {
+  if (!"Arial" %in% known && nrow(liberation) > 0L) {
     path <- function(style) {
       found <- liberation$path[liberation$style == style]
       if (length(found) > 0L) found[1] else liberation$path[1]
     }
     systemfonts::register_font(
-      export_font,
+      "Arial",
       plain = path("Regular"), bold = path("Bold"), italic = path("Italic"),
       bolditalic = path("Bold Italic")
     )
   }
+  ext <- system.file("app", "www", "fonts", "ibm-plex-sans-var-latin-ext.woff2", package = "prexp")
+  if (nzchar(ext) && !export_font_ext %in% known) {
+    systemfonts::register_font(export_font_ext, plain = ext)
+  }
+  chart_state$plex_ext <- nzchar(ext)
   chart_state$export_font <- TRUE
-  invisible(export_font)
+  invisible(export_measure_fonts)
+}
+
+# The theme's body font, IBM Plex Sans, by reference, as Office's own charts
+# and tables name it, for text that sets its font: the font Office then draws
+# and substitutes is the theme's, as it declares it
+theme_text <- function(...) {
+  officer::fp_text(
+    ..., font.family = "+mn-lt", cs.family = "+mn-cs", eastasia.family = "+mn-ea",
+    hansi.family = "+mn-lt"
+  )
 }
 
 #' The theme of the exports' charts
 #'
 #' The native Office charts that mschart draws in the PowerPoint, Word and
-#' Excel exports (P5-05 to P5-07): the exports' font, dark text with grey
-#' axis titles, a light grid on the values' axis only, no borders and no
-#' legend, as each chart shows one measure. The series takes the palette's
-#' blue on each chart (export_chart()).
+#' Excel exports (P5-05 to P5-07), as the app draws its charts: in the
+#' theme's font, tick labels in the secondary text colour and axis titles in
+#' the text colour, gridlines as faint as the app's on the values' axis only,
+#' no axis lines or ticks, no borders and no legend, as each chart shows one
+#' measure. The series takes the mark's colour (export_chart()).
 #'
 #' @return An mschart theme.
 #' @noRd
 prexp_mschart_theme <- function() {
-  text <- function(size, colour = "#333333") {
-    officer::fp_text(color = colour, font.size = size, font.family = export_font)
-  }
+  colours <- export_palette()
+  text <- function(size, colour) theme_text(color = colour, font.size = size)
   none <- officer::fp_border(style = "none")
   mschart::mschart_theme(
-    main_title = text(14),
-    axis_title = text(11, "#5A6470"),
-    axis_text = text(10),
-    legend_text = text(10),
+    main_title = text(14, colours[["text"]]),
+    axis_title = text(11, colours[["text"]]),
+    axis_text = text(10, colours[["secondary"]]),
+    legend_text = text(10, colours[["text"]]),
     grid_major_line_x = none,
-    grid_major_line_y = officer::fp_border(color = "#E3E6E8", width = 0.75),
+    grid_major_line_y = officer::fp_border(color = colours[["grid"]], width = 0.75),
     grid_minor_line = none,
-    axis_ticks = officer::fp_border(color = "#C8CCD0", width = 0.75),
+    axis_ticks = none,
     chart_border = none,
     plot_border = none,
     legend_position = "n"

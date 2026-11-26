@@ -6,7 +6,8 @@
 # header row, and its months or regions beside it as a small table with a
 # native chart under it; and a Methods sheet last. Numbers stay numbers, formatted
 # as the app writes them. No macros, no pivots and no formulas, so that it
-# opens without a security warning.
+# opens without a security warning. Its base font is IBM Plex Sans, and its
+# theme the templates', in the brand's colours (xlsx_brand()).
 #
 # The workbook is built with its own methods, which change it in place:
 # openxlsx2's wb_*() functions copy the whole workbook at every call, which
@@ -27,6 +28,7 @@ export_xlsx <- function(spec, con, path, exported = Sys.time()) {
     creator = "Prescription Explorer", title = "Prescription Explorer report",
     datetime_created = exported
   )
+  xlsx_brand(wb)
   sheets <- xlsx_sheet_names(items)
   xlsx_cover(wb, items, sheets, window, exported)
   for (i in seq_along(items)) {
@@ -35,6 +37,29 @@ export_xlsx <- function(spec, con, path, exported = Sys.time()) {
   xlsx_methods(wb, methods_content(spec, window, exported))
   wb$save(path, overwrite = TRUE)
   invisible(path)
+}
+
+# The workbook in the exports' font and colours: IBM Plex Sans as its base
+# font, which its cells and links take, and the templates' theme, its colour
+# scheme and IBM Plex Sans declared with IBM's classification
+# (brand_office_theme()), which its tables' style, its charts and anything a
+# reader adds take
+xlsx_brand <- function(wb) {
+  sans <- export_fonts()$sans
+  wb$set_base_font(font_size = 11, font_name = sans$typeface, font_panose = sans$panose)
+  theme <- xml2::read_xml(wb$theme)
+  brand_office_theme(theme, name = brand_name)
+  wb$theme <- as.character(theme, options = "no_declaration")
+  invisible(wb)
+}
+
+# A cell's text in the exports' font, as a font of the Swiss family, which
+# Excel substitutes by where it is not installed, and in the text's colour
+# unless another is given
+xlsx_font <- function(wb, sheet, dims, colour = export_palette()[["text"]], ...) {
+  wb$add_font(
+    sheet, dims, name = export_font, family = "2", color = openxlsx2::wb_color(hex = colour), ...
+  )
 }
 
 #' Each item's sheet name
@@ -60,6 +85,15 @@ xlsx_sheet_names <- function(items) {
 # A cell's or a range's address, from row and column numbers
 xlsx_cells <- function(row, col, last_row = row, last_col = col) {
   openxlsx2::wb_dims(rows = row:last_row, cols = col:last_col)
+}
+
+# A sheet of the workbook, with its gridlines on the screen but not in print:
+# openxlsx2 prints them too, which boxes every cell used in black, on paper
+# or in a PDF, over the tables' own rules
+xlsx_sheet <- function(wb, sheet) {
+  wb$add_worksheet(sheet)
+  wb$set_grid_lines(sheet, show = TRUE, print = FALSE)
+  invisible(wb)
 }
 
 # Lines of text down column A from a row, one a row. Excel reads "_xHHHH_" in
@@ -98,18 +132,21 @@ xlsx_numfmt <- function(kind, x) {
 
 xlsx_cover <- function(wb, items, sheets, window, exported) {
   sheet <- "Report"
-  wb$add_worksheet(sheet)
+  xlsx_sheet(wb, sheet)
   n <- length(items)
   xlsx_lines(wb, sheet, c(
     "Prescription Explorer report", window_period(window),
     paste("Exported on", export_time(exported)), paste(n, if (n == 1L) "item" else "items")
   ), row = 1L)
-  wb$add_font(sheet, xlsx_cells(1L, 1L), bold = TRUE, size = 16)
+  xlsx_font(wb, sheet, xlsx_cells(1L, 1L), bold = TRUE, size = 16)
+  # The period, the time and the items in the secondary text's colour, as on
+  # the PowerPoint's cover and the Word's title page
+  xlsx_font(wb, sheet, xlsx_cells(2L, 1L, 4L, 1L), colour = export_palette()[["secondary"]])
   if (n > 0L) {
     contents <- data.frame(Sheet = sheets, Item = vapply(items, `[[`, "", "title"))
     wb$add_data_table(
       sheet, contents, dims = xlsx_cells(6L, 1L), table_name = "Contents",
-      table_style = "TableStyleLight1", with_filter = FALSE
+      table_style = xlsx_table_style, with_filter = FALSE, banded_rows = FALSE
     )
   }
   wb$set_col_widths(sheet, cols = 1:2, widths = c(36, 90))
@@ -124,7 +161,7 @@ xlsx_cover <- function(wb, items, sheets, window, exported) {
 xlsx_frozen_rows <- 12L
 
 xlsx_item <- function(wb, item, sheet, i) {
-  wb$add_worksheet(sheet)
+  xlsx_sheet(wb, sheet)
   head <- c(
     item$title, paste(c(item$summary, item$profile), collapse = " \u00b7 "), item$message,
     item$footnote
@@ -138,7 +175,14 @@ xlsx_item <- function(wb, item, sheet, i) {
   )
   top <- c(head, if (apart) moved else note)
   xlsx_lines(wb, sheet, top, row = 1L)
-  wb$add_font(sheet, xlsx_cells(1L, 1L), bold = TRUE, size = 14)
+  xlsx_font(wb, sheet, xlsx_cells(1L, 1L), bold = TRUE, size = 14)
+  # Its view and subject, and a footnote, in the secondary text's colour, as
+  # the other formats write them
+  secondary <- export_palette()[["secondary"]]
+  xlsx_font(wb, sheet, xlsx_cells(2L, 1L), colour = secondary)
+  if (!is.null(item$footnote)) {
+    xlsx_font(wb, sheet, xlsx_cells(length(head), 1L), colour = secondary)
+  }
   # The tables' captions, then their header rows, which stay in view
   caption <- length(top) + 2L
   header <- caption + 1L
@@ -175,17 +219,24 @@ xlsx_item <- function(wb, item, sheet, i) {
   invisible(wb)
 }
 
-# A table of values under its caption, as an Excel table: numbers as numbers
-# in their formats, blank where there is none, a total in bold; its columns
-# as wide as their values, within reason
+# The tables' style: Excel's Light 1, whose rules take the theme's dark 1, the
+# text's colour, under the header and around the table; with no bands, as the
+# other formats' tables, and the sheet's gridlines between rows
+xlsx_table_style <- "TableStyleLight1"
+
+# A table of values under its caption, which is in the secondary text's
+# colour, as the other formats' captions, as an Excel table: numbers as
+# numbers in their formats, blank where there is none, a total in bold over
+# a rule; its columns as wide as their values, within reason
 xlsx_table <- function(wb, sheet, table, caption, header, col, name) {
   wb$add_data(sheet, table$caption, dims = xlsx_cells(caption, col))
-  wb$add_font(sheet, xlsx_cells(caption, col), bold = TRUE)
+  xlsx_font(wb, sheet, xlsx_cells(caption, col), colour = export_palette()[["secondary"]])
   data <- table$data
   names(data) <- table$labels
   wb$add_data_table(
     sheet, data, dims = xlsx_cells(header, col), table_name = name,
-    table_style = "TableStyleLight1", with_filter = FALSE, na = "_openxlsx_NULL"
+    table_style = xlsx_table_style, with_filter = FALSE, banded_rows = FALSE,
+    na = "_openxlsx_NULL"
   )
   n <- nrow(data)
   cols <- col + seq_along(table$kinds) - 1L
@@ -217,7 +268,16 @@ xlsx_table <- function(wb, sheet, table, caption, header, col, name) {
   }, 1)
   wb$set_col_widths(sheet, cols = cols, widths = widths)
   if (isTRUE(table$total) && n > 0L) {
-    wb$add_font(sheet, xlsx_cells(header + n, col, header + n, max(cols)), bold = TRUE)
+    total <- xlsx_cells(header + n, col, header + n, max(cols))
+    xlsx_font(wb, sheet, total, bold = TRUE)
+    # Its rule over it, in the text colour, as the other formats and the app
+    # draw it: Light 1 rules only an Excel table's own totals row, which
+    # these tables do not have
+    wb$add_border(
+      sheet, dims = total, top_border = "thin",
+      top_color = openxlsx2::wb_color(hex = export_palette()[["rule"]]),
+      bottom_border = NULL, left_border = NULL, right_border = NULL
+    )
   }
   invisible(wb)
 }
@@ -247,14 +307,14 @@ xlsx_alt_text <- function(wb, sheet, alt) {
 
 # mschart writes a chart from its template for PowerPoint and Word: a link to
 # the workbook those embed, which a workbook's chart does not have and whose
-# relationship is not there, and French as its text's language. The chart
-# just added keeps neither.
+# relationship is not there, French as its text's language, and nothing to
+# stop Excel's frame around it. The chart just added keeps none of them.
 xlsx_chart_clean <- function(wb) {
   k <- nrow(wb$charts)
   chart <- sub(
     "(?s)<c:externalData[^>]*>.*?</c:externalData>", "", wb$charts$chart[k], perl = TRUE
   )
-  wb$charts$chart[k] <- gsub("\"fr-FR\"", "\"en-GB\"", chart, fixed = TRUE)
+  wb$charts$chart[k] <- flat_chart_space(english_chart(chart))
   invisible(wb)
 }
 
@@ -266,13 +326,19 @@ xml_escape <- function(text) {
   gsub("\"", "&quot;", text, fixed = TRUE)
 }
 
+# The Methods sheet's column, 120 of the base font's digits wide, as Excel
+# counts a column's width: about 10 inches where Excel draws Arial in IBM
+# Plex Sans's place, and more in Plex, whose digits are wider. Its text has
+# a little less, inside the cell's margins.
+xlsx_methods_width <- list(digits = 120, text = 9.9)
+
 xlsx_methods <- function(wb, sections) {
   sheet <- "Methods"
-  wb$add_worksheet(sheet)
+  xlsx_sheet(wb, sheet)
   row <- 1L
   for (section in sections) {
     xlsx_lines(wb, sheet, section$title, row)
-    wb$add_font(sheet, xlsx_cells(row, 1L), bold = TRUE, size = 12)
+    xlsx_font(wb, sheet, xlsx_cells(row, 1L), bold = TRUE, size = 12)
     lines <- c(
       section$text,
       vapply(section$points, function(point) {
@@ -286,20 +352,23 @@ xlsx_methods <- function(wb, sections) {
       wb$add_cell_style(
         sheet, xlsx_cells(min(rows), 1L, max(rows), 1L), wrap_text = TRUE, vertical = "top"
       )
-      # Excel does not grow a row to fit wrapped text it did not write
-      wb$set_row_heights(sheet, rows = rows, heights = 15 * pmax(1, ceiling(nchar(lines) / 110)))
+      # Excel does not grow a row to fit wrapped text it did not write: each
+      # row as high as its lines at 11 points, measured as the exports' text
+      # is, with Excel's margin of a point and a half above and below them.
+      # Excel draws a line of 11-point IBM Plex Sans 15 points high (a row it
+      # fits to its text is 15, 30, 45 points), more than a line of Arial
+      # (13.5) and than PowerPoint's 1.2 em.
+      wrapped <- text_lines(lines, 11, xlsx_methods_width$text)
+      wb$set_row_heights(sheet, rows = rows, heights = wrapped * 15 + 3)
     }
-    # The links last, each a hyperlink to its page, in the exports' palette's blue
+    # The links last, each a hyperlink to its page, in the links' colour
     for (k in seq_along(section$links)) {
       cell <- xlsx_cells(row + length(lines) - length(section$links) + k, 1L)
       wb$add_hyperlink(sheet, cell, target = section$links[[k]]$url)
-      wb$add_font(
-        sheet, cell, color = openxlsx2::wb_color(hex = export_palette()[["blue"]]),
-        underline = "single"
-      )
+      xlsx_font(wb, sheet, cell, colour = export_palette()[["link"]], underline = "single")
     }
     row <- row + length(lines) + 2L
   }
-  wb$set_col_widths(sheet, cols = 1L, widths = 120)
+  wb$set_col_widths(sheet, cols = 1L, widths = xlsx_methods_width$digits)
   invisible(wb)
 }

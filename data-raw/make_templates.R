@@ -1,14 +1,25 @@
 # Writes the exports' templates in inst/templates/ (spec section 5.5; tickets
-# P5-05 and P5-06) from the templates officer ships, so that they hold only
-# what this script puts in them. Run from the repository root in the rstudio
-# container:
+# P5-05, P5-06 and P7-03) from the templates officer ships, so that they hold
+# only what this script puts in them. Run from the repository root in the
+# rstudio container:
 #
 #   Rscript data-raw/make_templates.R
+#
+# The brand's colours and fonts come from the package (R/theme.R), which the
+# script loads, so that the templates and the exports cannot drift apart:
+# export_scheme(), export_fonts() and export_palette().
 #
 # report.pptx is officer's template.pptx:
 # - widened to 16:9, 13.333 by 7.5 inches, with every shape of its master and
 #   layouts widened in proportion, so that the layouts keep their margins;
-# - in Arial, the exports' font (export_font), rather than Calibri;
+# - in the brand's theme (brand_office_theme()): its colour scheme, IBM Plex
+#   Sans as its fonts, declared with IBM's classification so that Office
+#   substitutes a sans where Plex is not installed, and flat shapes, with no
+#   gradients, shadows or bevels. The theme keeps its name, Office Theme:
+#   officer names the master after it, and the exports choose layouts on it;
+# - with titles left-aligned, as the slides' own are, and the title slide's
+#   title and subtitle at the content's left margin, across the master's
+#   title box, the subtitle in the secondary text's colour;
 # - with neutral document properties in English, rather than officer's
 #   author's name and French ones, with no revision number or counts that
 #   officer would not update, and without its 4:3 thumbnail and its printer
@@ -16,8 +27,8 @@
 # - with the editor's vertical guide at the wide slide's centre.
 #
 # report.docx is officer's template.docx, A4 with 2.5 cm margins, cleaned the
-# same way, in Arial, with a Title style and its styles named in English
-# (make_docx_template() below).
+# same way, in the brand's theme, renamed, with a Title style and its styles
+# named in English (make_docx_template() below).
 
 make_pptx_template <- function(target) {
   dir <- tempfile("pptx-")
@@ -47,10 +58,41 @@ make_pptx_template <- function(target) {
     })
   }
 
-  # The theme's fonts
-  edit_part(part("ppt", "theme", "theme1.xml"), function(doc, ns) {
-    fonts <- xml2::xml_find_all(doc, "//a:majorFont/a:latin | //a:minorFont/a:latin", ns)
-    xml2::xml_set_attr(fonts, "typeface", "Arial")
+  # The brand's theme, under its own name
+  edit_part(part("ppt", "theme", "theme1.xml"), function(doc, ns) brand_office_theme(doc))
+
+  # Titles left-aligned, as the slides' own titles and their text are
+  master <- part("ppt", "slideMasters", "slideMaster1.xml")
+  edit_part(master, function(doc, ns) {
+    level <- xml2::xml_find_first(doc, "/p:sldMaster/p:txStyles/p:titleStyle/a:lvl1pPr", ns)
+    xml2::xml_set_attr(level, "algn", "l")
+  })
+
+  # The title slide's title and subtitle at the content's left margin, across
+  # the master's title box, both left-aligned; the subtitle in the secondary
+  # text's colour
+  doc <- xml2::read_xml(master)
+  box <- xml2::xml_find_first(
+    doc, "//p:sp[p:nvSpPr/p:nvPr/p:ph/@type = 'title']/p:spPr/a:xfrm", xml2::xml_ns(doc)
+  )
+  left <- xml2::xml_attr(xml2::xml_child(box, "a:off"), "x")
+  width <- xml2::xml_attr(xml2::xml_child(box, "a:ext"), "cx")
+  secondary <- sub("#", "", export_palette()[["secondary"]], fixed = TRUE)
+  edit_part(part("ppt", "slideLayouts", "slideLayout1.xml"), function(doc, ns) {
+    placeholder <- function(type) {
+      xml2::xml_find_first(doc, sprintf("//p:sp[p:nvSpPr/p:nvPr/p:ph/@type = '%s']", type), ns)
+    }
+    for (type in c("ctrTitle", "subTitle")) {
+      xfrm <- xml2::xml_find_first(placeholder(type), "p:spPr/a:xfrm", ns)
+      xml2::xml_set_attr(xml2::xml_child(xfrm, "a:off"), "x", left)
+      xml2::xml_set_attr(xml2::xml_child(xfrm, "a:ext"), "cx", width)
+    }
+    levels <- xml2::xml_find_all(placeholder("subTitle"), "p:txBody/a:lstStyle/*", ns)
+    xml2::xml_set_attr(levels, "algn", "l")
+    for (fill in xml2::xml_find_all(levels, "a:defRPr/a:solidFill", ns)) {
+      xml2::xml_remove(xml2::xml_children(fill))
+      xml2::xml_add_child(fill, "a:srgbClr", val = secondary)
+    }
   })
 
   # The document's properties
@@ -127,13 +169,18 @@ app_properties <- paste0(
 )
 
 # report.docx is officer's template.docx, A4 with 2.5 cm margins:
-# - in Arial, the exports' font (export_font), rather than Calibri and Cambria;
+# - in the brand's theme (brand_office_theme()), renamed from officer's
+#   French one, with IBM Plex Sans as its fonts, and IBM Plex Sans and Mono
+#   in the font table, with what Word picks a substitute by (export_fonts());
+# - in the text's colour, its headings' rule too, with captions in the
+#   secondary text's colour, upright and left-aligned, as the PowerPoint's;
 # - with its styles' names and ids in English, as Word names them, rather
 #   than in French, and headings that are not numbered;
 # - with a Title style for the report's title, 6 points after a paragraph,
 #   and a table style, Report Table, with its paragraph style, Table Text:
-#   9 points, a bold header row and total row between rules, every other
-#   row shaded, as the PowerPoint's tables;
+#   9 points, a bold header row over a rule in the text colour, a light rule
+#   under each row, and a bold total row under a rule in the text colour, as
+#   the PowerPoint's tables;
 # - with a page started by each Heading 1, a table's caption kept with its
 #   table, and a List Bullet style that is a list, which screen readers
 #   announce as one;
@@ -148,10 +195,15 @@ make_docx_template <- function(target) {
   utils::unzip(system.file("template", "template.docx", package = "officer"), exdir = dir)
   part <- function(...) file.path(dir, ...)
 
-  # The theme's fonts
+  # The brand's theme, under the brand's name
   edit_part(part("word", "theme", "theme1.xml"), function(doc, ns) {
-    fonts <- xml2::xml_find_all(doc, "//a:majorFont/a:latin | //a:minorFont/a:latin", ns)
-    xml2::xml_set_attr(fonts, "typeface", "Arial")
+    brand_office_theme(doc, name = brand_name)
+  })
+  # The exports' fonts in the font table
+  edit_part(part("word", "fontTable.xml"), function(doc, ns) {
+    for (font in export_fonts()) {
+      xml2::xml_add_child(xml2::xml_root(doc), xml2::read_xml(font_entry(font)))
+    }
   })
 
   # The styles' ids, wherever they are named
@@ -168,7 +220,8 @@ make_docx_template <- function(target) {
     writeLines(xml, file, useBytes = TRUE)
   }
   # The styles: English names, headings not numbered, space after a
-  # paragraph, and the report's own styles
+  # paragraph, the text's colour, and the report's own styles
+  colours <- sub("#", "", export_palette(), fixed = TRUE)
   edit_part(part("word", "styles.xml"), function(doc, ns) {
     english <- c(
       "Titre 1 Car" = "Heading 1 Char", "Titre 2 Car" = "Heading 2 Char",
@@ -183,20 +236,30 @@ make_docx_template <- function(target) {
     ))
     normal <- xml2::xml_find_first(doc, "//w:style[@w:styleId = 'Normal']", ns)
     xml2::xml_add_child(normal, xml2::read_xml(normal_spacing))
-    # British English, as the charts, for Word's proofing
-    lang <- xml2::xml_find_first(doc, "/w:styles/w:docDefaults/w:rPrDefault/w:rPr/w:lang", ns)
-    xml2::xml_set_attr(lang, "w:val", "en-GB")
+    # British English, as the charts, for Word's proofing; every text in the
+    # text's colour, after the fonts, as a run's properties order them
+    defaults <- xml2::xml_find_first(doc, "/w:styles/w:docDefaults/w:rPrDefault/w:rPr", ns)
+    xml2::xml_set_attr(xml2::xml_child(defaults, "w:lang"), "w:val", "en-GB")
+    xml2::xml_add_sibling(
+      xml2::xml_child(defaults, "w:rFonts"), "w:color", "w:val" = colours[["text"]],
+      .where = "after"
+    )
     # An item, and the methods, start a page: no break paragraph, which would
     # leave a blank page when a table ends at the foot of one. In the order
     # of a paragraph's properties: after keepLines, before the border.
-    keep <- xml2::xml_find_first(
-      doc, "//w:style[@w:styleId = 'Heading1']/w:pPr/w:keepLines", ns
-    )
-    xml2::xml_add_sibling(keep, "w:pageBreakBefore", .where = "after")
-    # A table's caption on the page of its table's first row
+    heading <- xml2::xml_find_first(doc, "//w:style[@w:styleId = 'Heading1']/w:pPr", ns)
+    xml2::xml_add_sibling(xml2::xml_child(heading, "w:keepLines"), "w:pageBreakBefore",
+                          .where = "after")
+    # Its rule in the text's colour, not Word's automatic black
+    rule <- xml2::xml_find_first(heading, "w:pBdr/w:bottom", ns)
+    xml2::xml_set_attr(rule, "w:color", colours[["text"]])
+    # A table's caption on the page of its table's first row, as the
+    # PowerPoint's: upright, left-aligned, in the secondary text's colour
     caption <- xml2::xml_find_first(doc, "//w:style[@w:styleId = 'TableCaption']", ns)
-    xml2::xml_add_child(caption, xml2::read_xml(keep_with_next))
-    for (style in c(title_style, table_text_style, report_table_style, list_bullet_style)) {
+    xml2::xml_add_child(caption, xml2::read_xml(caption_paragraph))
+    xml2::xml_add_child(caption, xml2::read_xml(caption_text(colours[["secondary"]])))
+    styles <- c(title_style, table_text_style, report_table_style(colours), list_bullet_style)
+    for (style in styles) {
       xml2::xml_add_child(xml2::xml_root(doc), xml2::read_xml(style))
     }
   })
@@ -256,11 +319,32 @@ english_ids <- c(
 
 w_ns <- "xmlns:w='http://schemas.openxmlformats.org/wordprocessingml/2006/main'"
 
+# A font of the font table: its classification, its character set, and its
+# family and pitch, in the order of the table's schema
+font_entry <- function(font) {
+  paste0(
+    "<w:font ", w_ns, " w:name='", font$typeface, "'>",
+    "<w:panose1 w:val='", font$panose, "'/><w:charset w:val='00'/>",
+    "<w:family w:val='", font$family, "'/><w:pitch w:val='", font$pitch, "'/></w:font>"
+  )
+}
+
 # 6 points after a paragraph of the body
 normal_spacing <- paste0("<w:pPr ", w_ns, "><w:spacing w:after='120'/></w:pPr>")
 
-# A paragraph kept on the page of the next
-keep_with_next <- paste0("<w:pPr ", w_ns, "><w:keepNext/></w:pPr>")
+# A caption: kept on the page of the next paragraph, its table's, left-aligned
+# rather than centred as officer's Image Caption, which it is based on; and
+# 10 points, upright and of normal weight, rather than bold and italic, in a
+# colour
+caption_paragraph <- paste0(
+  "<w:pPr ", w_ns, "><w:keepNext/><w:jc w:val='left'/></w:pPr>"
+)
+caption_text <- function(colour) {
+  paste0(
+    "<w:rPr ", w_ns, "><w:b w:val='0'/><w:bCs w:val='0'/><w:i w:val='0'/><w:iCs w:val='0'/>",
+    "<w:color w:val='", colour, "'/><w:sz w:val='20'/><w:szCs w:val='20'/></w:rPr>"
+  )
+}
 
 # List Bullet: a list of one level, a bullet hanging to the left of the text.
 # Its numbering's ids, which officer's template does not use.
@@ -292,30 +376,34 @@ table_text_style <- paste0(
   "<w:rPr><w:sz w:val='18'/><w:szCs w:val='18'/></w:rPr></w:style>"
 )
 
-# The report's tables: rules above and below, a bold header row and total
-# row set off by rules, every other row shaded, narrow cell margins
-report_table_style <- paste0(
-  "<w:style ", w_ns, " w:type='table' w:customStyle='1' w:styleId='ReportTable'>",
-  "<w:name w:val='Report Table'/><w:basedOn w:val='TableNormal'/>",
-  "<w:uiPriority w:val='59'/><w:qFormat/>",
-  "<w:pPr><w:spacing w:before='0' w:after='0'/></w:pPr>",
-  "<w:rPr><w:sz w:val='18'/><w:szCs w:val='18'/></w:rPr>",
-  "<w:tblPr><w:tblStyleRowBandSize w:val='1'/><w:tblBorders>",
-  "<w:top w:val='single' w:sz='8' w:space='0' w:color='5A6470'/>",
-  "<w:bottom w:val='single' w:sz='8' w:space='0' w:color='5A6470'/>",
-  "</w:tblBorders><w:tblCellMar><w:top w:w='20' w:type='dxa'/>",
-  "<w:left w:w='80' w:type='dxa'/><w:bottom w:w='20' w:type='dxa'/>",
-  "<w:right w:w='80' w:type='dxa'/></w:tblCellMar></w:tblPr>",
-  "<w:tblStylePr w:type='firstRow'><w:rPr><w:b/><w:bCs/></w:rPr><w:tcPr><w:tcBorders>",
-  "<w:bottom w:val='single' w:sz='8' w:space='0' w:color='5A6470'/>",
-  "</w:tcBorders></w:tcPr></w:tblStylePr>",
-  "<w:tblStylePr w:type='lastRow'><w:rPr><w:b/><w:bCs/></w:rPr><w:tcPr><w:tcBorders>",
-  "<w:top w:val='single' w:sz='8' w:space='0' w:color='5A6470'/>",
-  "</w:tcBorders></w:tcPr></w:tblStylePr>",
-  "<w:tblStylePr w:type='band2Horz'><w:tcPr>",
-  "<w:shd w:val='clear' w:color='auto' w:fill='F2F4F6'/></w:tcPr></w:tblStylePr>",
-  "</w:style>"
-)
+# The report's tables, as the PowerPoint's: a bold header row over a 1 pt
+# rule in the text colour, a light half-point rule under each row, a bold
+# total row under a 1 pt rule in the text colour, no bands, narrow cell
+# margins. Rules in eighths of a point.
+report_table_style <- function(colours) {
+  rule <- function(side, size, colour) {
+    sprintf("<w:%s w:val='single' w:sz='%d' w:space='0' w:color='%s'/>", side, size, colour)
+  }
+  paste0(
+    "<w:style ", w_ns, " w:type='table' w:customStyle='1' w:styleId='ReportTable'>",
+    "<w:name w:val='Report Table'/><w:basedOn w:val='TableNormal'/>",
+    "<w:uiPriority w:val='59'/><w:qFormat/>",
+    "<w:pPr><w:spacing w:before='0' w:after='0'/></w:pPr>",
+    "<w:rPr><w:sz w:val='18'/><w:szCs w:val='18'/></w:rPr>",
+    "<w:tblPr><w:tblStyleRowBandSize w:val='1'/><w:tblBorders>",
+    rule("bottom", 4L, colours[["row_rule"]]), rule("insideH", 4L, colours[["row_rule"]]),
+    "</w:tblBorders><w:tblCellMar><w:top w:w='20' w:type='dxa'/>",
+    "<w:left w:w='80' w:type='dxa'/><w:bottom w:w='20' w:type='dxa'/>",
+    "<w:right w:w='80' w:type='dxa'/></w:tblCellMar></w:tblPr>",
+    "<w:tblStylePr w:type='firstRow'><w:rPr><w:b/><w:bCs/></w:rPr><w:tcPr><w:tcBorders>",
+    rule("bottom", 8L, colours[["rule"]]),
+    "</w:tcBorders></w:tcPr></w:tblStylePr>",
+    "<w:tblStylePr w:type='lastRow'><w:rPr><w:b/><w:bCs/></w:rPr><w:tcPr><w:tcBorders>",
+    rule("top", 8L, colours[["rule"]]),
+    "</w:tcBorders></w:tcPr></w:tblStylePr>",
+    "</w:style>"
+  )
+}
 
 # A Title paragraph style: 26 points, as the first line of the report
 title_style <- paste0(
@@ -336,6 +424,8 @@ docx_app_properties <- paste0(
   "<AppVersion>16.0000</AppVersion></Properties>"
 )
 
+# The brand's colours and fonts, from the package
+pkgload::load_all(".", quiet = TRUE)
 dir.create("inst/templates", showWarnings = FALSE)
 make_pptx_template("inst/templates/report.pptx")
 size <- officer::slide_size(officer::read_pptx("inst/templates/report.pptx"))
