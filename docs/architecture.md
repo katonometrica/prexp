@@ -6,7 +6,7 @@ How Prescription Explorer is built, and why: each decision below names what it c
 
 The English Prescribing Dataset (EPD) publishes each month as one CSV of about 18 million rows, 7.7 GB, around the 20th of the second month after it. A row is a practice's prescriptions of one product in one quantity per item. The app answers questions across a rolling twelve months: a drug's national series and its presentations, a practice's top drugs, a drug compared across the regions. That is about 220 million source rows, which a lookup must not read.
 
-![How it fits together: the NHSBSA portal; a jobs container that loads each month into PostgreSQL 18 and checks every query's plan nightly; and the app container, which reads the database's views through a query registry and a shared cache, runs exports on mirai workers, and answers the browser through an HTTPS proxy](images/architecture.svg)
+![How it fits together: the NHSBSA portal; a jobs container that loads each month into PostgreSQL 18 and checks every query's plan nightly; and the app container, which reads the database's views through a query registry and a shared cache, runs exports on mirai workers, which read the views over their own connections, and answers the browser through an HTTPS proxy](images/architecture.svg)
 
 ## The data layer
 

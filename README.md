@@ -41,13 +41,13 @@ It is a Shiny app built as an R package, and it runs in production at **[prexp.k
 ## How it was built
 
 1. **The specification came first.** The design was written before any code: what the app must answer, the architecture, the data model, the queries, how it is tested and how it runs, with measurable targets. It is [docs/spec.md](docs/spec.md).
-2. **Then the plan, as GitHub issues.** The specification was broken down into 55 issues in [nine milestones](https://github.com/katonometrica/prexp/milestones?state=all): eight phases and a second version. Each issue gives its estimate, the issues it depends on, the section of the specification it implements, its tasks and its "done when" checks. All 55 existed before the first pull request.
-3. **Then every change through a pull request.** Each issue was built on its own branch and squash-merged through a pull request that names it, once CI had passed. `main` accepts nothing else: no direct pushes, no force pushes, and no exceptions for administrators. So every commit on `main` traces back to an issue, and every issue to a section of the specification. The one exception is the first commit, which holds only the line-ending settings.
+2. **Then the plan, as GitHub issues.** The specification was broken down into 55 issues in [nine milestones](https://github.com/katonometrica/prexp/milestones?state=all): eight phases and a second version. Each issue gives its estimate, the issues it depends on, its tasks and its "done when" checks, and all but three documentation issues also name the section of the specification they implement. All 55, numbered #1 to #55, existed before the first pull request, #56; two bugs found along the way, [#101](https://github.com/katonometrica/prexp/issues/101) and [#115](https://github.com/katonometrica/prexp/issues/115), became issues of their own.
+3. **Then every change through a pull request.** Each issue is built on its own branch and squash-merged through a pull request that names it; from P0-06, which set up CI, only once CI has passed. `main` accepts nothing else: no direct pushes, no force pushes, and no exceptions for administrators. The one commit pushed directly is the first, made before `main` was protected: the line-ending and editor settings, part of P0-01. So every commit on `main` traces back to an issue.
 4. **The code, written with Claude Code.** The developer wrote the specification and the architecture. The code was written with [Claude Code](https://claude.com/claude-code), Anthropic's coding agent, one issue at a time, with each issue's tasks and checks as its brief. Its changes went through the same branches, pull requests and CI, and the work stopped at the end of each phase for the developer's review. That is why the commits name Claude as a co-author.
 
 ## How it fits together
 
-![How it fits together: the NHSBSA portal; a jobs container that loads each month into PostgreSQL 18 and checks every query's plan nightly; and the app container, which reads the database's views through a query registry and a shared cache, runs exports on mirai workers, and answers the browser through an HTTPS proxy](docs/images/architecture.svg)
+![How it fits together: the NHSBSA portal; a jobs container that loads each month into PostgreSQL 18 and checks every query's plan nightly; and the app container, which reads the database's views through a query registry and a shared cache, runs exports on mirai workers, which read the views over their own connections, and answers the browser through an HTTPS proxy](docs/images/architecture.svg)
 
 [docs/architecture.md](docs/architecture.md) gives each decision and what it costs.
 
@@ -62,7 +62,7 @@ docker compose -f compose.demo.yaml up
 The first run downloads about 0.75 GB of images. The real loader then loads a sample into PostgreSQL 18, which takes about 20 seconds; once the app's log says it is listening, open <http://localhost:3838>. There is nothing to install or configure.
 
 - **The sample is test data, not statistics:** every row of eight real prescribers, and a sample of the prescribing NHSBSA could not attribute to a prescriber, from September 2026, plus twelve earlier months made from them with every figure scaled (the test fixtures).
-- **The images are built for x86-64 only.** Docker Desktop on an Apple Silicon Mac runs them under emulation; on an Arm Linux machine, Docker needs amd64 emulation installed first.
+- **The app's image is built for x86-64 only.** Docker Desktop on an Apple Silicon Mac runs it under emulation; on an Arm Linux machine, Docker needs amd64 emulation installed first.
 - **The demo's database asks for no password** and publishes no port. With Docker Engine on Linux, though, any user of the machine can reach it while the demo runs: use a machine you do not share.
 - **`docker compose -f compose.demo.yaml down -v`** removes the containers and the data. The downloaded images stay; `--rmi all` removes them too, the PostgreSQL image included, which the development stack also uses.
 
