@@ -1,10 +1,10 @@
 # Prescription Explorer
 
-[![CI](https://github.com/katonometrica/prexp/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/katonometrica/prexp/actions/workflows/ci.yaml)
-[![line coverage 98.9%; CI fails below 85%](https://img.shields.io/badge/coverage-98.9%25-brightgreen)](.github/workflows/ci.yaml)
-![R 4.6.1](https://img.shields.io/badge/R-4.6.1-276DC3)
-![PostgreSQL 18](https://img.shields.io/badge/PostgreSQL-18-336791)
-[![licence MIT](https://img.shields.io/badge/licence-MIT-green)](LICENSE.md)
+[![CI](https://img.shields.io/github/actions/workflow/status/katonometrica/prexp/ci.yaml?branch=main&label=CI&style=flat-square&labelColor=0b1222)](https://github.com/katonometrica/prexp/actions/workflows/ci.yaml)
+[![line coverage 98.9%; CI fails below 85%](https://img.shields.io/badge/coverage-98.9%25-7d6523?style=flat-square&labelColor=0b1222)](.github/workflows/ci.yaml)
+![R 4.6.1](https://img.shields.io/badge/R-4.6.1-7d6523?style=flat-square&labelColor=0b1222)
+![PostgreSQL 18](https://img.shields.io/badge/PostgreSQL-18-7d6523?style=flat-square&labelColor=0b1222)
+[![licence MIT](https://img.shields.io/badge/licence-MIT-7d6523?style=flat-square&labelColor=0b1222)](LICENSE.md)
 
 Every month the NHS Business Services Authority (NHSBSA) publishes the prescriptions that NHS primary care prescribers in England issued and that were dispensed in the community: one CSV of about 18 million rows, 7.7 GB, far too big for a spreadsheet. Prescription Explorer keeps the latest twelve months in PostgreSQL. Look up a drug or a practice, compare a drug across England's regions, pin what you find to a report with notes, and export it to PowerPoint, Word or Excel.
 
