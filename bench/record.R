@@ -1,7 +1,7 @@
 # Records a session for the load test (P4-08) through shinyloadtest's proxy,
 # in a container of its own on the Compose network, so that the host's browser
 # can reach the proxy. The recording goes to bench/recording.log, or to the
-# file in bench/ that its argument names:
+# file in bench/ that its first argument names:
 #
 #   docker compose run --rm -p 127.0.0.1:8600:8600 --entrypoint bash rstudio \
 #     -c 'Rscript -e "install.packages(\"shinyloadtest\", quiet = TRUE)" &&
@@ -32,16 +32,18 @@
 # then http://127.0.0.1:8601), an address the browser had not visited.
 # Turning the cache off in the browser's developer tools also gives a first
 # visit.
-# The app must be the app container (docker compose --profile app up -d --build app).
+# By default the app is the app container (docker compose --profile app up -d --build app).
 #
-# Since P6-02 a pick's view is one message, so the recordings made before
-# (bench/recording.log, bench/recording-largest.log) no longer replay against
+# Since #125 a pick's view is one message, so the recordings made before it
+# (bench/recording.log, bench/recording-largest.log and their -rehearsal
+# copies) no longer replay against
 # the app: bench/recording-p602.log and bench/recording-largest-p602.log are
 # the same sessions recorded again, by bench/drive.R in the rstudio container,
 # which has shinyloadtest (bench/setup.sh) and Chrome. The second argument is
 # the app (http://app:3838 by default), the third the proxy's port:
 #
 #   Rscript bench/record.R recording-p602.log http://app:3838 8600 &
+#   # once it has printed "Listening on 0.0.0.0:8600":
 #   Rscript bench/drive.R ordinary http://127.0.0.1:8600/
 #   Rscript bench/tidy.R bench/recording-p602.log
 #

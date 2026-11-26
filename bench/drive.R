@@ -10,23 +10,36 @@
 # Previous. Region: search "metformin hydro", pick Metformin hydrochloride.
 # largest (bench/recording-largest-p602.log): Drug: search "2003", pick Wound
 # Management & Other Dressings; From Jan 2026; the measure Actual cost.
-# Each action waits for its time in the session (seconds from the page's
-# connection, as in bench/recording.log) and for the app to be idle. A search
-# is put in at once, as a paste is, so the browser sends the server one query
-# and gets one answer. Typed, the browser sends the first letter and then the
-# whole text, and on a busy server the 300 ms wait for typing to stop can
-# pass between the two: the first is answered too (an empty list), and a
-# replay, which expects the recording's messages in order, fails.
+# Each action waits for its time and for the app to be idle. The times are
+# the first recordings' seconds from their page request (bench/recording.log,
+# bench/recording-largest.log), counted here from the page's connection, and
+# the socket closes only when the tab is closed, 3 s after "leave": the gaps
+# between actions are the first recordings', but each session lasts 3.6 to
+# 5.1 s longer. A search is put in at once, as a paste is, so the browser
+# sends the server one query and gets one answer. Typed, the browser sends
+# the first letter at once and then the text after each pause of 50 ms
+# between keys (mod_search.R, search.js): the whole text in the first
+# recordings, every longer prefix when typed more slowly. On a busy server
+# the 300 ms wait for typing to stop can pass between two of them: the
+# earlier is answered too, and a replay, which expects the recording's
+# messages in order, fails.
 # Each run is a new Chrome, so a first visit: the page asks for all its files.
 suppressPackageStartupMessages(library(chromote))
 argv <- commandArgs(trailingOnly = TRUE)
 scenario <- argv[[1L]]
 url <- argv[[2L]]
+if (!scenario %in% c("ordinary", "largest")) stop("no such scenario: ", scenario)
 
 b <- ChromoteSession$new(width = 1920, height = 1080)
 b$default_timeout <- 60
 js <- function(x) b$Runtime$evaluate(x, returnByValue = TRUE)$result$value
-run <- function(x) invisible(b$Runtime$evaluate(paste0("void (", x, ")")))
+# A step that throws in the page (a renamed control, say) stops the drive:
+# chromote reports a page exception only in the result
+run <- function(x) {
+  r <- b$Runtime$evaluate(paste0("void (", x, ")"))
+  if (!is.null(r$exceptionDetails)) stop("failed in the page: ", x, call. = FALSE)
+  invisible(r)
+}
 pump <- function(secs) {
   end <- Sys.time() + secs
   while (Sys.time() < end) later::run_now(0.02)
@@ -80,6 +93,8 @@ pick <- function(second, view, kind, text) {
 from_month <- function(second, view, month) {
   at(second, paste(view, "from", month))
   run(sprintf("document.getElementById('%s-from').selectize.setValue('%s')", view, month))
+  # setValue() ignores a value that is not an option, without an error
+  wait(sprintf("document.getElementById('%s-from').selectize.getValue() === '%s'", view, month))
   idle()
 }
 set_measure <- function(second, view, measure) {

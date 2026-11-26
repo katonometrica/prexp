@@ -24,7 +24,7 @@ The app on the production server, 26 November 2026 ([One message for each lookup
 | | |
 | --- | --- |
 | Lookups, five users, the network included | 141 ms at the median and 540 ms at the 95th percentile, against a target of 300 ms; 699 ms at the 95th percentile for the chemical with the most presentations |
-| What sets the 95th percentile | Opening a session, about half a second |
+| What sets the 95th percentile | Opening a session, about half a second (about 0.4 s before #125), and the lookups that wait behind it |
 
 ## Machine (P1-08)
 
@@ -468,8 +468,8 @@ The production server again, on 26 November 2026, with the app image CI built fr
 
 "Repeated" is a lookup another session has made, whose chart comes from the cache.
 
-**The sessions, recorded again.** P4-08's recordings encode the messages before #125, so they no longer replay. `bench/drive.R` goes through the same two sessions ([The app under load](#the-app-under-load-p4-08)) in a headless Chrome, at the first recordings' times, through `shinyloadtest`'s proxy (`bench/record.R`).
-- **Each search is put in at once, as a paste is.** Typed, the browser sends the first letter and then the whole text. On a busy server the 300 ms wait for typing to stop can pass between the two, so the first letter is answered too, and a replay, which expects the recording's messages in order, fails.
+**The sessions, recorded again.** P4-08's recordings encode the messages before #125, so they no longer replay. `bench/drive.R` goes through the same two sessions ([The app under load](#the-app-under-load-p4-08)) in a headless Chrome, through `shinyloadtest`'s proxy (`bench/record.R`), with the first recordings' gaps between actions. Each new session lasts 3.6 to 5.1 s longer than the first recordings', and each is a first visit, so the page asks for all its files.
+- **Each search is put in at once, as a paste is.** Typed, the browser sends the first letter at once, then the text after each pause of 50 ms between keys: the whole text in the first recordings, every longer prefix when typed more slowly. On a busy server the 300 ms wait for typing to stop can pass between two of them, so the earlier is answered too, and a replay, which expects the recording's messages in order, fails.
 - **The recordings:**
   - `bench/recording-server-p602.log` and `bench/recording-largest-server-p602.log` were recorded against the server, with its address replaced by `<app-host>`;
   - `bench/recording-p602.log` and `bench/recording-largest-p602.log` were recorded against the development stack.
@@ -483,6 +483,7 @@ The production server again, on 26 November 2026, with the app image CI built fr
 | The same before #125, runs S1 and S2: p50, p95, max | 192, 569, 2,436 ms | 501, 957, 1,545 ms |
 | Lookups counted | 120 | 100 |
 | Opening a session, its first message: p50, p95 | 527, 579 ms | 490, 1,036 ms |
+| The same before #125, runs S1 and S2: p50, p95 | 384, 520 ms | 404, 504 ms |
 | The pick: p50, p95 | Drug 243, 654 ms; practice 176, 253 ms; region 137, 209 ms | 291, 699 ms |
 | Search results, the wait included: p50, p95 | 360, 614 ms | 359, 679 ms |
 | The page itself: p50, max | 409, 723 ms | 422, 1,939 ms |
@@ -492,6 +493,7 @@ The production server again, on 26 November 2026, with the app image CI built fr
   - At the 95th percentile: 540 ms against 569, and 699 ms against 957.
 
   A pick is now one message, and a chart another session drew comes from the cache.
-- **The 95th percentile is still over the 300 ms target.** What sets it now is opening a session: the first message, which brings the outputs every view starts with, takes about half a second on the server. In S3 that is 10 of the 120 lookups, at 424 to 579 ms, and with a few slow tab changes and picks they make the top 5%.
+- **Opening a session is slower than before #125:** 527 ms at the median against 384 in S1, and 490 against 404 in S2. Since #125 every view's chart, table and CSV link is computed as a session opens, shown or not (`compute_always()`), so its first message also brings every view's download link and an empty answer for each chart and table.
+- **The 95th percentile is still over the 300 ms target.** What sets it now is opening a session: the first message, which brings the outputs every view starts with, takes about half a second on the server. In S3 the 10 openings take 424 to 579 ms, and the 95th percentile, 540 ms, is one of them. The six slowest lookups, the top 5%, are four openings, a tab change to Region (864 ms) and a drug pick (654 ms), both answered while another session was opening. In S4 the 95th percentile, 699 ms, is a pick answered while another session was opening.
 - **The development machine has not been measured again since #125.**
 - **S4 ran while the development machine, which plays the five users, was busy** with other measurements for about half the run. Its figures may include some delay on that side.

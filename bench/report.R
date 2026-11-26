@@ -21,11 +21,11 @@
 # - Per lookup: a user's action (a message the browser sends after a pause of
 #   a second or more, or its first) and the app's messages that answer it, up
 #   to the first that brings a table or chart (an htmlwidget), or all of them
-#   if none does: the sum of their waits. Since P6-02 a pick's view comes in
+#   if none does: the sum of their waits. Since #125 a pick's view comes in
 #   one message; before, in two or three (its frame; a drug's CSV link; its
 #   table and chart), each timed from the event before it. The browser's own
 #   work between them (loading libraries, drawing) is not counted, nor is a
-#   chart drawn again after the view (before P6-02, after every drug and
+#   chart drawn again after the view (before #125, after every drug and
 #   practice pick).
 # - Per message (WS_RECV), and each message by its line in the recording.
 # - A search's answer includes the 300 ms the server waits for typing to stop
