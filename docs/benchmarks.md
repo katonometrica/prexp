@@ -411,4 +411,37 @@ On the whole machine the same sessions gave lookup p95s of 191 ms (run 1) and 23
 - **One stall:** one of run R2's 736 script and style requests took 7.1 s. The other sessions' requests at the same moment took at most 12 ms, so it was that connection, not the app.
 - **Memory.** The app's peak, 642 MB, includes its two workers. A 15-item export, the worst case, grows the worker that makes it, which keeps the memory: by 168 MB for PowerPoint, 110 MB for Word and 70 MB for Excel, in 2.8, 1.0 and 1.5 s. These were measured in a fresh R process in the app's container, against the twelve months. With both workers grown by a PowerPoint export, the app holds about 1 GB. The database held 3.2 GB it cannot give back, its shared buffers, and its cache filled the rest of its limit. No process was killed.
 
-P6-02 measures the same on the server.
+[The server, measured](#the-server-measured-p6-02) has the same on the server.
+
+## The server, measured (P6-02)
+
+The same steps on the production server ([The server](#the-server-p6-02)), on 25 November 2026, with the app image CI built from `main` at `f17118f`.
+
+**The twelve-month load.** `load_window()`, in the `jobs` container's terminal, from 21:51 to 22:55 UTC: **63.6 minutes**, 318 s a month, 8 s of it downloading.
+- **Every step is about twice the rehearsal's,** on four of the development machine's CPUs: staging 66 s against 31, the dimensions 40 s against 18, the build 140 s against 63 and the check 38 s against 19. The server's CPU is an AMD EPYC 9354P at 3.25 GHz, and the steal from other tenants was 0 to 2%: its cores are about half as fast as the development machine's for this work.
+- **The download is six times faster,** 8 s against 49 s.
+- **This is the time to rebuild the database from empty** on this server.
+
+**`check_plans()`.** Every plan is right: index-only reads, partitions pruned, no heap fetches. But two of the 25 checks take more than the 50 ms set on the development machine, which a third approaches:
+
+| Check | Server, warm | Server, first run after the load | Development machine (the rehearsal) |
+| --- | ---: | ---: | ---: |
+| The search "co" (`search_drugs`, large) | 57, 58 ms | 78 ms | 33 ms |
+| The largest chemical's presentations (`drug_presentations`, large) | 52, 54 ms | 54 ms | 26 ms |
+| The largest practice's top drugs (`practice_top_drugs`, large) | 36, 40 ms | | 15 ms |
+
+So the nightly scheduled task, which must fail only when a plan goes wrong, allows 150 ms a query (P6-03).
+
+**The app under load.** [P4-08's](#the-app-under-load-p4-08) two sessions, replayed against `https://<app-host>` from the development machine: 5 users for 5 minutes after a restart, with the rehearsal's recordings, whose 42 ids all match the server's database. Every figure includes the round trip from the development machine to the server, about 37 ms (TCP connect, median of six), and every HTTP request a TLS handshake.
+
+| | Run S1: ordinary lookups | Run S2: the largest chemical |
+| --- | ---: | ---: |
+| Sessions, and in the steady part | 19, 10 | 29, 21 |
+| **Lookups, the searches' wait aside: p50, p95, max** | **192, 569, 2,436 ms** | **501, 957, 1,545 ms** |
+| Messages, the searches' wait aside: p95 | 552 ms | 717 ms |
+| Search results, the wait included: p50, p95 | 359, 611 ms | 362, 749 ms |
+| The page itself: p50, max | 406, 640 ms | 446, 1,098 ms |
+
+- **Neither run meets the 300 ms target.** Ordinary lookups take about 2.5 times the rehearsal's (p95 569 ms against 224), and the largest chemical 2.6 times (957 ms against 370).
+- **The time is the app's own work,** as in the rehearsal: building the charts and tables in R, on cores about half as fast. A message that only updates a few outputs takes 95 to 115 ms, against about 35 ms on the development machine, the round trip included.
+- **One session of S1 failed,** with a 502 on its first request, about 26 s after the restart began and 12 s after the app first answered again, while the proxy was still switching to the new container. S2 started only once the app had answered for 30 s straight, and all its sessions replayed to the end.
