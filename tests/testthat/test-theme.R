@@ -39,12 +39,18 @@ test_that("every text the page draws reads in both themes (WCAG AA, 4.5:1)", {
   for (mode in c("light", "dark")) {
     t <- brand_tokens()[[mode]]
     grounds <- surfaces(t)
-    # Text in each of its colours, on every surface it can sit on: body text,
-    # labels and secondary text, links and the outline buttons' text, their
-    # hover, errors and successes, the charts' tick labels and axis titles
-    for (colour in c("text", "text_secondary", "accent", "accent_hover", "error", "success",
-                     "chart_tick", "chart_title")) {
-      for (ground in names(grounds)) {
+    # Text in each of its colours, on every surface it sits on: body text,
+    # in a table's row under the pointer too; labels and secondary text; links,
+    # the outline buttons' text and its hover, an option chosen in a list;
+    # errors and successes; the charts' tick labels and axis titles, in cards
+    on <- list(
+      text = names(grounds), text_secondary = c("bg", "bg_alt", "card"),
+      accent = c("bg", "bg_alt", "card"), accent_hover = c("bg", "bg_alt", "card"),
+      error = c("bg", "bg_alt", "card"), success = c("bg", "bg_alt", "card"),
+      chart_tick = c("bg", "card"), chart_title = c("bg", "card")
+    )
+    for (colour in names(on)) {
+      for (ground in on[[colour]]) {
         expect_gte(
           contrast_on(t[[colour]], grounds[[ground]]), 4.5,
           label = paste(mode, colour, "on", ground)
