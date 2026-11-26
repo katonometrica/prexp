@@ -592,9 +592,17 @@ font_widths <- function(strings, size, weight = "normal") {
     return(lapply(fonts, function(family) numeric(length(strings))))
   }
   advances <- lapply(fonts, function(family) glyph_advances(glyphs, family, size, weight))
-  # A glyph one font lacks (the app's IBM Plex Sans is a Latin subset) takes
-  # the other's width; one neither has (Chinese, emoji) takes an em, as
-  # Office draws it from a font of its own that has it
+  # A letter the app's Latin subset of IBM Plex Sans lacks, from its Latin
+  # Extended file: Plex draws some of them, the Polish barred l among them,
+  # wider than Arial does
+  plex <- advances[[export_font]]
+  if (anyNA(plex) && isTRUE(chart_state$plex_ext)) {
+    plex[is.na(plex)] <- glyph_advances(glyphs[is.na(plex)], export_font_ext, size, weight)
+    advances[[export_font]] <- plex
+  }
+  # A glyph one font still lacks takes the other's width; one neither has
+  # (Chinese, emoji) takes an em, as Office draws it from a font of its own
+  # that has it
   widest <- do.call(pmax, c(unname(advances), na.rm = TRUE))
   widest[is.na(widest)] <- size
   lapply(advances, function(advance) {

@@ -536,6 +536,12 @@ brand_office_theme <- function(doc, name = NULL) {
 # draws a sans of its own in its place
 export_measure_fonts <- c(export_font, "Arial")
 
+# The app's IBM Plex Sans is two files, as the page loads it: the Latin
+# subset, which the charts measure with, and Latin Extended (Polish, Czech or
+# Romanian letters, for example), registered under a name of its own for the
+# exports' letters the first lacks
+export_font_ext <- "IBM Plex Sans Latin Ext"
+
 # Registers both for measuring: IBM Plex Sans as the charts do, from the app's
 # own copy (use_chart_font()); and where Arial is not installed, as in the
 # containers, Liberation Sans, which has Arial's metrics, under Arial's name
@@ -558,6 +564,11 @@ use_export_font <- function() {
       bolditalic = path("Bold Italic")
     )
   }
+  ext <- system.file("app", "www", "fonts", "ibm-plex-sans-var-latin-ext.woff2", package = "prexp")
+  if (nzchar(ext) && !export_font_ext %in% known) {
+    systemfonts::register_font(export_font_ext, plain = ext)
+  }
+  chart_state$plex_ext <- nzchar(ext)
   chart_state$export_font <- TRUE
   invisible(export_measure_fonts)
 }

@@ -368,7 +368,7 @@ test_that("the exports' text is measured in the wider of IBM Plex Sans and Arial
   expect_equal(text_height(c("One line", "Another"), 12), 2 * 12 * export_line / 72 + pptx_inset)
 })
 
-test_that("a glyph neither font has is an em wide, and one only Arial has is Arial's width", {
+test_that("a glyph neither font has is an em wide, and one the Latin subset lacks is Plex's own", {
   use_export_font()
   # Chinese, which notes may be written in (report_limits()): Office draws it
   # from a font of its own, an em a character, so that 70 characters at 12
@@ -376,11 +376,16 @@ test_that("a glyph neither font has is an em wide, and one only Arial has is Ari
   han <- intToUtf8(0x4e2d)
   expect_identical(text_lines(strrep(han, 70), 12, pptx_width - 2 * pptx_inset), 1L)
   expect_identical(text_lines(strrep(han, 71), 12, pptx_width - 2 * pptx_inset), 2L)
-  # A letter that the app's IBM Plex Sans, a Latin subset, lacks: Arial's
-  # width in both, not an em
+  # A letter that the app's Latin subset of IBM Plex Sans lacks: Plex's own
+  # width, from its Latin Extended file, which is wider than Arial's, as
+  # Microsoft 365 draws it. A note of such letters then wraps as PowerPoint
+  # wraps it: 29 five-letter words, each with two barred l's, take two lines
   barred <- font_widths(intToUtf8(0x142), 10)
-  expect_equal(barred[["IBM Plex Sans"]], barred[["Arial"]])
-  expect_lt(barred[["Arial"]] * 72, 3)
+  expect_equal(barred[["IBM Plex Sans"]] * 72, 2.78, tolerance = 1e-3)
+  expect_equal(barred[["Arial"]] * 72, 2.22, tolerance = 1e-3)
+  word <- paste0(intToUtf8(0x142), "owi", intToUtf8(0x142))
+  note <- paste("Note:", paste(rep(word, 29L), collapse = " "))
+  expect_identical(text_lines(note, 12, pptx_width - 2 * pptx_inset), 2L)
 })
 
 test_that("a table's total is measured in bold, as it is drawn", {
