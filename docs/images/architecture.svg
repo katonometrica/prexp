@@ -2,9 +2,9 @@
   <title id="title">How Prescription Explorer fits together</title>
   <desc id="desc">The NHSBSA portal publishes a CSV a month. A jobs container loads each month into PostgreSQL 18, through a staging table into a fact table with a partition a month, rollup tables and read-only views for the app; a nightly check reads every query's plan. The app container reads the views through a query registry and a shared cache, draws them in Shiny modules, runs exports on mirai workers, which read the views over their own connections, and answers the browser through an HTTPS proxy.</desc>
   <style>
-    svg { --bg: #ffffff; --frame: #f6f8fa; --edge: #d0d7de; --box: #ffffff; --line: #59636e; --text: #1f2328; --sub: #59636e; --label: #7d6523; }
+    svg { --bg: #FDFCFB; --frame: rgba(0,0,0,0.05); --edge: rgba(0,0,0,0.25); --box: #F7F5F2; --line: #5a5650; --text: #0b1222; --sub: #5a5650; --label: #7d6523; }
     @media (prefers-color-scheme: dark) {
-      svg { --bg: #0d1117; --frame: #151b23; --edge: #3d444d; --box: #0d1117; --line: #9198a1; --text: #f0f6fc; --sub: #9198a1; --label: #c9a84c; }
+      svg { --bg: #0b1222; --frame: rgba(200,195,185,0.04); --edge: rgba(200,195,185,0.14); --box: #0f1730; --line: #8b8579; --text: #e2dfd8; --sub: #8b8579; --label: #c9a84c; }
     }
     .bg { fill: var(--bg); }
     .frame { fill: var(--frame); stroke: var(--edge); }
@@ -12,11 +12,11 @@
     .line { fill: none; stroke: var(--line); stroke-width: 1.25; }
     .plan { stroke-dasharray: 3 4; }
     .head { fill: var(--line); }
-    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; }
-    .label { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 11px; fill: var(--label); }
+    text { font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; }
+    .label { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 11px; fill: var(--label); }
     .title { font-size: 13px; font-weight: 600; fill: var(--text); }
     .sub { font-size: 12px; fill: var(--sub); }
-    .code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 11px; fill: var(--sub); }
+    .code { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 11px; fill: var(--sub); }
   </style>
   <defs>
     <marker id="head" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
