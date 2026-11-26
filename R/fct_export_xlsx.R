@@ -87,6 +87,15 @@ xlsx_cells <- function(row, col, last_row = row, last_col = col) {
   openxlsx2::wb_dims(rows = row:last_row, cols = col:last_col)
 }
 
+# A sheet of the workbook, with its gridlines on the screen but not in print:
+# openxlsx2 prints them too, which boxes every cell used in black, on paper
+# or in a PDF, over the tables' own rules
+xlsx_sheet <- function(wb, sheet) {
+  wb$add_worksheet(sheet)
+  wb$set_grid_lines(sheet, show = TRUE, print = FALSE)
+  invisible(wb)
+}
+
 # Lines of text down column A from a row, one a row. Excel reads "_xHHHH_" in
 # a string as the character HHHH, so an underscore before an x is written as
 # "_x005F_", which Excel reads as the underscore: a note shows as typed.
@@ -123,13 +132,16 @@ xlsx_numfmt <- function(kind, x) {
 
 xlsx_cover <- function(wb, items, sheets, window, exported) {
   sheet <- "Report"
-  wb$add_worksheet(sheet)
+  xlsx_sheet(wb, sheet)
   n <- length(items)
   xlsx_lines(wb, sheet, c(
     "Prescription Explorer report", window_period(window),
     paste("Exported on", export_time(exported)), paste(n, if (n == 1L) "item" else "items")
   ), row = 1L)
   xlsx_font(wb, sheet, xlsx_cells(1L, 1L), bold = TRUE, size = 16)
+  # The period, the time and the items in the secondary text's colour, as on
+  # the PowerPoint's cover and the Word's title page
+  xlsx_font(wb, sheet, xlsx_cells(2L, 1L, 4L, 1L), colour = export_palette()[["secondary"]])
   if (n > 0L) {
     contents <- data.frame(Sheet = sheets, Item = vapply(items, `[[`, "", "title"))
     wb$add_data_table(
@@ -149,7 +161,7 @@ xlsx_cover <- function(wb, items, sheets, window, exported) {
 xlsx_frozen_rows <- 12L
 
 xlsx_item <- function(wb, item, sheet, i) {
-  wb$add_worksheet(sheet)
+  xlsx_sheet(wb, sheet)
   head <- c(
     item$title, paste(c(item$summary, item$profile), collapse = " \u00b7 "), item$message,
     item$footnote
@@ -164,6 +176,13 @@ xlsx_item <- function(wb, item, sheet, i) {
   top <- c(head, if (apart) moved else note)
   xlsx_lines(wb, sheet, top, row = 1L)
   xlsx_font(wb, sheet, xlsx_cells(1L, 1L), bold = TRUE, size = 14)
+  # Its view and subject, and a footnote, in the secondary text's colour, as
+  # the other formats write them
+  secondary <- export_palette()[["secondary"]]
+  xlsx_font(wb, sheet, xlsx_cells(2L, 1L), colour = secondary)
+  if (!is.null(item$footnote)) {
+    xlsx_font(wb, sheet, xlsx_cells(length(head), 1L), colour = secondary)
+  }
   # The tables' captions, then their header rows, which stay in view
   caption <- length(top) + 2L
   header <- caption + 1L
@@ -205,12 +224,13 @@ xlsx_item <- function(wb, item, sheet, i) {
 # other formats' tables, and the sheet's gridlines between rows
 xlsx_table_style <- "TableStyleLight1"
 
-# A table of values under its caption, as an Excel table: numbers as numbers
-# in their formats, blank where there is none, a total in bold; its columns
-# as wide as their values, within reason
+# A table of values under its caption, which is in the secondary text's
+# colour, as the other formats' captions, as an Excel table: numbers as
+# numbers in their formats, blank where there is none, a total in bold over
+# a rule; its columns as wide as their values, within reason
 xlsx_table <- function(wb, sheet, table, caption, header, col, name) {
   wb$add_data(sheet, table$caption, dims = xlsx_cells(caption, col))
-  xlsx_font(wb, sheet, xlsx_cells(caption, col), bold = TRUE)
+  xlsx_font(wb, sheet, xlsx_cells(caption, col), colour = export_palette()[["secondary"]])
   data <- table$data
   names(data) <- table$labels
   wb$add_data_table(
@@ -248,7 +268,16 @@ xlsx_table <- function(wb, sheet, table, caption, header, col, name) {
   }, 1)
   wb$set_col_widths(sheet, cols = cols, widths = widths)
   if (isTRUE(table$total) && n > 0L) {
-    xlsx_font(wb, sheet, xlsx_cells(header + n, col, header + n, max(cols)), bold = TRUE)
+    total <- xlsx_cells(header + n, col, header + n, max(cols))
+    xlsx_font(wb, sheet, total, bold = TRUE)
+    # Its rule over it, in the text colour, as the other formats and the app
+    # draw it: Light 1 rules only an Excel table's own totals row, which
+    # these tables do not have
+    wb$add_border(
+      sheet, dims = total, top_border = "thin",
+      top_color = openxlsx2::wb_color(hex = export_palette()[["rule"]]),
+      bottom_border = NULL, left_border = NULL, right_border = NULL
+    )
   }
   invisible(wb)
 }
@@ -305,7 +334,7 @@ xlsx_methods_width <- list(digits = 120, text = 9.9)
 
 xlsx_methods <- function(wb, sections) {
   sheet <- "Methods"
-  wb$add_worksheet(sheet)
+  xlsx_sheet(wb, sheet)
   row <- 1L
   for (section in sections) {
     xlsx_lines(wb, sheet, section$title, row)

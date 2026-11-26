@@ -165,13 +165,13 @@ docx_secondary <- function(doc, text) {
 
 # The maker's wordmark at the top of the title page, as on the PowerPoint's
 # cover: its name in IBM Plex Mono, which the template's font table declares,
-# its letters spaced, in the secondary text's colour, linked to its site. Word
-# draws a link's text in the link's own colour.
+# its letters spaced, in the text colour, as the site and the app draw it,
+# linked to its site. Word draws a link's text in the link's own colour.
 docx_wordmark <- function(doc) {
   mono <- export_fonts()$mono$typeface
   size <- 10
   prop <- officer::fp_text_lite(
-    font.size = size, color = export_palette()[["secondary"]], font.family = mono,
+    font.size = size, color = export_palette()[["text"]], font.family = mono,
     hansi.family = mono, cs.family = mono, eastasia.family = mono
   )
   doc <- officer::body_add_fpar(doc, officer::fpar(

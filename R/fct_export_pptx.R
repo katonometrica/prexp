@@ -164,14 +164,15 @@ pptx_title <- function(deck, window, exported, n) {
 }
 
 # The maker's wordmark at the top of the cover, as on its site: its name in
-# IBM Plex Mono, its letters spaced, in the secondary text's colour, the text
-# box a link to its site. PowerPoint draws a link on text in the theme's link
-# colour, underlined; on a box, the text keeps its own.
+# IBM Plex Mono, its letters spaced, in the text colour, as the site and the
+# app draw it, the text box a link to its site. PowerPoint draws a link on
+# text in the theme's link colour, underlined; on a box, the text keeps its
+# own.
 pptx_wordmark <- function(deck) {
   mono <- export_fonts()$mono
   size <- 12
   prop <- officer::fp_text(
-    font.size = size, color = export_palette()[["secondary"]], font.family = mono$typeface
+    font.size = size, color = export_palette()[["text"]], font.family = mono$typeface
   )
   deck <- officer::ph_with(
     deck, officer::fpar(officer::ftext(export_wordmark$text, prop)),

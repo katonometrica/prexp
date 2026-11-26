@@ -395,16 +395,17 @@ table_theme <- function() {
 
 #' The exports' colours
 #'
-#' The light theme's (brand_tokens()), by role: the text; the secondary text
-#' of summaries, captions, footnotes, the charts' tick labels and the maker's
-#' wordmark; the charts' mark, the app's charts' own, so that an export shows
-#' what the screen shows; links, which are underlined as well; the tables'
-#' rules, in the text colour under a header and over a total, and the light
-#' theme's strong border between rows; the charts' gridlines, the app's
-#' charts' own. On the white of a slide or a page, text reads at
-#' 4.5:1 or more and the mark at 3:1 (test-theme.R); the rules and gridlines
-#' only separate what the text says. The tables have no bands and the charts
-#' no axis lines or ticks, as the app's have none.
+#' The light theme's (brand_tokens()), by role: the text, and the maker's
+#' wordmark, as the site and the app draw it; the secondary text of
+#' summaries, captions, footnotes and the charts' tick labels; the charts'
+#' mark, the app's charts' own, so that an export shows what the screen
+#' shows; links, which are underlined as well; the tables' rules, in the text
+#' colour under a header and over a total, and the light theme's strong
+#' border between rows; the charts' gridlines, the app's charts' own. On the
+#' white of a slide or a page, text reads at 4.5:1 or more and the mark at
+#' 3:1 (test-theme.R); the rules and gridlines only separate what the text
+#' says. The tables have no bands and the charts no axis lines or ticks, as
+#' the app's have none.
 #'
 #' @return A named character vector of hex colours.
 #' @noRd

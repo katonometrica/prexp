@@ -73,6 +73,35 @@ xlsx_cell_formats <- function(dir, sheet) {
   )
 }
 
+# How each cell of a sheet looks, by its address: its font's colour (as
+# ARGB, NA for the base font's), whether the font is bold, and the style and
+# colour of the cell's top border (NA for none)
+xlsx_cell_looks <- function(dir, sheet) {
+  styles <- xlsx_part(dir, "styles.xml")
+  attr <- function(nodes, xpath, name) {
+    vapply(nodes, function(node) xml2::xml_attr(xml2::xml_find_first(node, xpath), name), "")
+  }
+  fonts <- xml2::xml_find_all(styles, "//fonts/font")
+  borders <- xml2::xml_find_all(styles, "//borders/border")
+  xfs <- xml2::xml_find_all(styles, "//cellXfs/xf")
+  cells <- xml2::xml_find_all(sheet, "//sheetData/row/c")
+  xf <- as.integer(xml2::xml_attr(cells, "s"))
+  xf <- ifelse(is.na(xf), 0L, xf) + 1L
+  font <- as.integer(xml2::xml_attr(xfs, "fontId"))[xf] + 1L
+  border <- as.integer(xml2::xml_attr(xfs, "borderId"))[xf] + 1L
+  # A font is bold with a b element whose value, if it has one, is true
+  has_b <- vapply(fonts, function(node) length(xml2::xml_find_all(node, "b")) > 0L, TRUE)
+  b <- attr(fonts, "b", "val")
+  bold <- has_b & (is.na(b) | b %in% c("1", "true"))
+  data.frame(
+    row.names = xml2::xml_attr(cells, "r"),
+    colour = attr(fonts, "color", "rgb")[font],
+    bold = bold[font],
+    top = attr(borders, "top", "style")[border],
+    top_colour = attr(borders, "top/color", "rgb")[border]
+  )
+}
+
 # The fonts the parts of an unpacked Office file name, the parts whose names
 # match `pattern`: each typeface of a drawing's runs (slides, charts), each
 # font of a Word run, each font of a workbook's styles
@@ -106,6 +135,9 @@ drawn_colours <- function(dir, pattern) {
 
 # The exports' colours as six hex digits, and white, the page's
 export_colours <- function() c(sub("#", "", export_palette(), fixed = TRUE), "FFFFFF")
+
+# One of the exports' colours as a workbook's styles write it, opaque ARGB
+argb <- function(role) paste0("FF", sub("#", "", export_palette()[[role]], fixed = TRUE))
 
 # That chart parts draw no frame around the chart: the chart space's one
 # shape property straight after the chart, as the schema orders it, with no
@@ -731,11 +763,12 @@ test_that("the cover and the title page carry the maker's wordmark, linked to it
   )
   expect_identical(xml2::xml_attr(target, "Target"), "https://katonometrica.com")
   # In IBM Plex Mono, declared so that PowerPoint substitutes a font of fixed
-  # pitch; in the secondary text's colour, its letters spaced 0.18 em
+  # pitch; in the text colour, as the site and the app draw it, its letters
+  # spaced 0.18 em
   run <- xml2::xml_find_first(shape, ".//a:r/a:rPr", ns)
   expect_identical(xml2::xml_attr(run, "spc"), "216")
   colour <- xml2::xml_find_first(run, "a:solidFill/a:srgbClr", ns)
-  expect_identical(xml2::xml_attr(colour, "val"), sub("#", "", export_palette()[["secondary"]]))
+  expect_identical(xml2::xml_attr(colour, "val"), sub("#", "", export_palette()[["text"]]))
   latin <- xml2::xml_attrs(xml2::xml_find_first(run, "a:latin", ns))
   expect_identical(
     latin[c("typeface", "panose", "pitchFamily")],
@@ -762,7 +795,7 @@ test_that("the cover and the title page carry the maker's wordmark, linked to it
   run <- xml2::xml_find_first(link, "w:r/w:rPr", w)
   property <- function(name, attr) xml2::xml_attr(xml2::xml_child(run, name, w), attr, w)
   expect_identical(property("w:rFonts", "w:ascii"), "IBM Plex Mono")
-  expect_identical(property("w:color", "w:val"), sub("#", "", export_palette()[["secondary"]]))
+  expect_identical(property("w:color", "w:val"), sub("#", "", export_palette()[["text"]]))
   expect_identical(property("w:spacing", "w:val"), "36")
 })
 
@@ -893,6 +926,42 @@ test_that("the Excel workbook reads back: a sheet per item with its tables and c
       "//xdr:graphicFrame/xdr:nvGraphicFramePr/xdr:cNvPr"
     )
     expect_identical(xml2::xml_attr(frame, "descr"), item$chart$alt)
+    # Its view and subject, a footnote and its tables' captions in the
+    # secondary text's colour, as the other formats write them, the captions
+    # in the regular weight
+    looks <- xlsx_cell_looks(dir, sheet)
+    captions <- paste0(openxlsx2::int2col(c(1L, ncol(item$table$data) + 2L)), header - 1L)
+    expect_identical(
+      c(cells[[1]][header - 1L], cells[[ncol(item$table$data) + 2L]][header - 1L]),
+      c(item$table$caption, "The chart's data")
+    )
+    footnote <- if (!is.null(item$footnote)) paste0("A", which(cells[[1]] == item$footnote))
+    secondary <- c("A2", captions, footnote)
+    expect_identical(looks[secondary, "colour"], rep(argb("secondary"), length(secondary)))
+    expect_false(any(looks[captions, "bold"]))
+    # A total in bold under a rule in the text colour, the only rule drawn
+    total <- if (isTRUE(item$table$total)) {
+      paste0(openxlsx2::int2col(seq_along(item$table$kinds)), header + nrow(item$table$data))
+    }
+    expect_true(all(looks[total, "bold"]))
+    expect_identical(looks[total, "top"], rep("thin", length(total)))
+    expect_identical(looks[total, "top_colour"], rep(argb("rule"), length(total)))
+    expect_true(all(is.na(looks[setdiff(rownames(looks), total), "top"])))
+  }
+  expect_true(any(vapply(items, function(item) isTRUE(item$table$total), TRUE)))
+  expect_true(any(vapply(items, function(item) !is.null(item$footnote), TRUE)))
+  # The cover's period, time and items in the secondary text's colour
+  cover <- xlsx_cell_looks(dir, xlsx_part(dir, "worksheets", "sheet1.xml"))
+  expect_identical(cover[c("A2", "A3", "A4"), "colour"], rep(argb("secondary"), 3L))
+  expect_true(cover["A1", "bold"])
+  # Gridlines on the screen, between the tables' rows, but not in print,
+  # where they would box every cell used in black
+  for (part in grep("^xl/worksheets/sheet[0-9]+[.]xml$", parts, value = TRUE)) {
+    sheet <- xlsx_part(dir, sub("^xl/", "", part))
+    printed <- xml2::xml_attr(xml2::xml_find_all(sheet, "//printOptions"), "gridLines")
+    expect_false(any(printed %in% c("1", "true")), label = part)
+    shown <- xml2::xml_attr(xml2::xml_find_first(sheet, "//sheetView"), "showGridLines")
+    expect_false(identical(shown, "0"), label = part)
   }
   # The methods' links, hyperlinks to their pages
   methods_rels <- paste(readLines(file.path(
