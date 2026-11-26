@@ -225,7 +225,7 @@ presentations_table <- function(rows) {
     data,
     columns = list(
       presentation = reactable::colDef(name = "Presentation", minWidth = 220),
-      code = reactable::colDef(name = "BNF code", minWidth = 160, style = nowrap),
+      code = reactable::colDef(name = "BNF code", minWidth = 160, style = code_style),
       kind = reactable::colDef(name = "Brand or generic", minWidth = 90),
       items = count_column("Items"),
       total_quantity = measure_column("Quantity", "total_quantity", label = "quantity_text"),
@@ -235,7 +235,7 @@ presentations_table <- function(rows) {
       quantity_text = reactable::colDef(show = FALSE),
       adq_text = reactable::colDef(show = FALSE)
     ),
-    defaultPageSize = 10, compact = TRUE, striped = TRUE, highlight = TRUE,
+    defaultPageSize = 10, compact = TRUE, highlight = TRUE, theme = table_theme(),
     defaultSorted = list(items = "desc")
   )
 }

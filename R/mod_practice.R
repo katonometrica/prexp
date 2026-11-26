@@ -364,14 +364,15 @@ top_drugs_table <- function(rows, first = 1L) {
     columns = list(
       rank = reactable::colDef(name = "#", width = 56, align = "right"),
       presentation = reactable::colDef(name = "Presentation", minWidth = 220),
-      code = reactable::colDef(name = "BNF code", minWidth = 140),
+      code = reactable::colDef(name = "BNF code", minWidth = 160, style = code_style),
       kind = reactable::colDef(name = "Brand or generic", minWidth = 90),
       items = count_column("Items"),
       adq_usage = measure_column("ADQ usage", "adq_usage"),
       nic = pounds_column("Net ingredient cost"),
       actual_cost = pounds_column("Actual cost")
     ),
-    pagination = FALSE, sortable = FALSE, compact = TRUE, striped = TRUE, highlight = TRUE
+    pagination = FALSE, sortable = FALSE, compact = TRUE, highlight = TRUE,
+    theme = table_theme()
   )
 }
 
