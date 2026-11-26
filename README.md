@@ -8,7 +8,7 @@
 
 Every month the NHS Business Services Authority (NHSBSA) publishes the prescriptions that NHS primary care prescribers in England issued and that were dispensed in the community: one CSV of about 18 million rows, 7.7 GB, far too big for a spreadsheet. Prescription Explorer keeps the latest twelve months in PostgreSQL. Look up a drug or a practice, compare a drug across England's regions, pin what you find to a report with notes, and export it to PowerPoint, Word or Excel.
 
-It is a Shiny app built as an R package, and it runs in production on a small shared server, 4 CPUs and 15 GB of memory, where a scheduled task loads each new month. It was built spec-first, from a written specification and a plan of GitHub issues: see [How it was built](#how-it-was-built). Its code is meant to be read: [What this demonstrates](#what-this-demonstrates) maps each technique to the files that show it. Built by [Katonométrica](https://katonometrica.com).
+It is a Shiny app built as an R package, and it runs in production at **[prexp.katonometrica.com](https://prexp.katonometrica.com/)**, on a small shared server, 4 CPUs and 15 GB of memory, where a scheduled task loads each new month. It was built spec-first with Claude Code, from a written specification and a plan of GitHub issues: see [How it was built](#how-it-was-built). Its code is meant to be read: [What this demonstrates](#what-this-demonstrates) maps each technique to the files that show it. Built by [Katonométrica](https://katonometrica.com).
 
 ![The Region view: metformin across England's seven regions over twelve months, with each region's share of England](docs/images/region.png)
 
@@ -43,6 +43,7 @@ It is a Shiny app built as an R package, and it runs in production on a small sh
 1. **The specification came first.** The design was written before any code: what the app must answer, the architecture, the data model, the queries, how it is tested and how it runs, with measurable targets. It is [docs/spec.md](docs/spec.md).
 2. **Then the plan, as GitHub issues.** The specification was broken down into 55 issues in [nine milestones](https://github.com/katonometrica/prexp/milestones?state=all): eight phases and a second version. Each issue gives its estimate, the issues it depends on, the section of the specification it implements, its tasks and its "done when" checks. All 55 existed before the first pull request.
 3. **Then every change through a pull request.** Each issue was built on its own branch and squash-merged through a pull request that names it, once CI had passed. `main` accepts nothing else: no direct pushes, no force pushes, and no exceptions for administrators. So every commit on `main` traces back to an issue, and every issue to a section of the specification. The one exception is the first commit, which holds only the line-ending settings.
+4. **The code, written with Claude Code.** The developer wrote the specification and the architecture. The code was written with [Claude Code](https://claude.com/claude-code), Anthropic's coding agent, one issue at a time, with each issue's tasks and checks as its brief. Its changes went through the same branches, pull requests and CI, and the work stopped at the end of each phase for the developer's review. That is why the commits name Claude as a co-author.
 
 ## How it fits together
 

@@ -1,6 +1,6 @@
 # Runbook
 
-How to run Prescription Explorer in production: what is where, the routine jobs, and what to do when something goes wrong. [docs/server.md](server.md) sets the server up; this page operates it. Private values (the app's and Coolify's addresses, ids, passwords and tokens) never appear here: they are `<app-host>`, `<coolify-host>`, `<db-id>`, `<app-id>` and `<jobs-id>`, as in server.md.
+How to run Prescription Explorer in production: what is where, the routine jobs, and what to do when something goes wrong. [docs/server.md](server.md) sets the server up; this page operates it. Private values (Coolify's address, ids, passwords and tokens) never appear here: they are `<coolify-host>`, `<db-id>`, `<app-id>` and `<jobs-id>`, as in server.md. The app's address is public: `<app-host>` below is [prexp.katonometrica.com](https://prexp.katonometrica.com/).
 
 ## The parts
 
