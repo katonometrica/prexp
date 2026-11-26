@@ -116,7 +116,7 @@ footer_ui <- function() {
       ),
       "."
     ),
-    " · ",
+    " \u00b7 ",
     shiny::tags$a(href = source_url(), "Source on GitHub")
   )
 }
