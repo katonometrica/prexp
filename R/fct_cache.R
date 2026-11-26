@@ -1,12 +1,13 @@
-# The app's cache of fetch results (spec section 5.4; P4-07): one cachem
-# memory cache for the process, shared by every session, so a request another
-# session made is not fetched again.
+# The app's cache of fetch results and charts (spec section 5.4; P4-07): one
+# cachem memory cache for the process, shared by every session, so a request
+# another session made is not fetched again, nor a chart it drew drawn again.
 #
-# The cache sits around the fetch functions the views call, not on the views'
-# reactives with shiny::bindCache(): bindCache() keeps an error as it keeps a
-# value, so one session's passing database error would be served to every
-# session asking the same, until the cache dropped it. Here an error is never
-# kept: the next request fetches again.
+# The cache sits around the fetch functions the views call, and around the
+# drawing of their charts, not on the views' reactives or outputs with
+# shiny::bindCache(): bindCache() keeps an error as it keeps a value, so one
+# session's passing database error would be served to every session asking
+# the same, until the cache dropped it. Here an error is never kept: the next
+# request fetches or draws again.
 
 #' The app's cache
 #'
@@ -29,17 +30,32 @@ app_cache <- function(max_size = 200 * 1024^2) {
 #' @return A function taking the fetch's arguments.
 #' @noRd
 cache_fetch <- function(cache, name, fetch, window) {
+  force(fetch)
+  kept <- cache_value(cache, name, window)
+  function(...) kept(list(...), function() fetch(...))
+}
+
+#' A value made once for every session asking the same, such as a chart drawn
+#'
+#' Kept only once made, as a fetch's result is ([cache_fetch()]): a value
+#' whose making fails is never kept, and the next request makes it again.
+#'
+#' @inheritParams cache_fetch
+#' @param name The kind of value, part of the key.
+#' @return A function of a key, a list of what the value is made from, and of
+#'   a function that makes the value.
+#' @noRd
+cache_value <- function(cache, name, window) {
   force(cache)
   force(name)
-  force(fetch)
   force(window)
-  function(...) {
-    key <- cache_key(list(name, list(...), window()))
+  function(key, make) {
+    key <- cache_key(list(name, key, window()))
     found <- cache$get(key)
     if (!cachem::is.key_missing(found)) {
       return(found)
     }
-    value <- fetch(...)
+    value <- make()
     cache$set(key, value)
     value
   }

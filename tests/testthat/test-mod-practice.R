@@ -125,10 +125,12 @@ test_that("the profile, the totals and the top drugs come for the practice and m
   shiny::testServer(mod_practice_server, args = practice_args(fake), {
     pick_practice(session)
     body <- output$body$html
+    profile <- output$profile$html
     for (text in c("N81655", "1 HIGH STREET, CHESTER, CH1 1AA", "NHS CHESHIRE AND MERSEYSIDE",
                    "NORTH WEST", "Oct 2025 \u2013 Sep 2026")) {
-      expect_match(body, text, fixed = TRUE, label = text)
+      expect_match(profile, text, fixed = TRUE, label = text)
     }
+    expect_match(body, "id=\"[a-z0-9]+-profile\"")
     expect_match(body, "id=\"[a-z0-9]+-chart\"")
     expect_identical(output$title, "THE SURGERY, Oct 2025 \u2013 Sep 2026")
     expect_identical(
@@ -231,7 +233,8 @@ test_that("no rows say so, and an error offers to try again", {
     body <- output$body$html
     expect_match(body, "THE SURGERY did not prescribe in Oct 2025 \u2013 Sep 2026.", fixed = TRUE)
     # The profile still shows
-    expect_match(body, "N81655", fixed = TRUE)
+    expect_match(body, "id=\"[a-z0-9]+-profile\"")
+    expect_match(output$profile$html, "N81655", fixed = TRUE)
     expect_null(session$returned())
 
     fake$calls$state <- "fail"
@@ -319,7 +322,7 @@ test_that("the view pages through a practice's drugs on the fixture database", {
       session$setInputs(`search-query` = "N81655")
       session$elapse(400)
       session$setInputs(`search-pick` = paste0("practice:", practice))
-      expect_match(output$body$html, "N81655", fixed = TRUE)
+      expect_match(output$profile$html, "N81655", fixed = TRUE)
       expect_match(output$body$html, "id=\"[a-z0-9]+-chart\"")
       expect_identical(top_rows(output$top_table)$code, all$bnf_code[1:4])
       session$setInputs(next_page = 1)
@@ -488,4 +491,56 @@ test_that("Add to report pins the practice view with its parameters", {
       expect_identical(pinned()$items[[1]]$params, session$returned()$params)
     }
   )
+})
+
+test_that("months, measure and another practice change the frame's outputs in place", {
+  fake <- fake_practice_fetches()
+  other <- transform(
+    practice_matches, practice_id = 13L, practice_code = "B86034", practice_name = "OTHER SURGERY"
+  )
+  fake$fetches$search_practices <- function(q) rbind(practice_matches, other)
+  fake$fetches$practice_profile <- function(practice_id) {
+    if (identical(practice_id, 13L)) {
+      transform(practice_profile_row, practice_id = 13L, practice_code = "B86034")
+    } else {
+      practice_profile_row
+    }
+  }
+  frames <- 0L
+  body <- practice_body
+  local_mocked_bindings(practice_body = function(ns, state) {
+    if (identical(state$kind, "results")) frames <<- frames + 1L
+    body(ns, state)
+  })
+  shiny::testServer(mod_practice_server, args = practice_args(fake), {
+    pick_practice(session)
+    output$body
+    expect_identical(frames, 1L)
+    expect_match(output$profile$html, "N81655", fixed = TRUE)
+    session$setInputs(from = "202601")
+    session$setInputs(measure = "nic")
+    expect_s3_class(output$chart, "json")
+    expect_identical(output$top_title, "Top drugs by net ingredient cost")
+    session$setInputs(`search-pick` = "practice:13")
+    expect_match(output$profile$html, "B86034", fixed = TRUE)
+    expect_no_match(output$profile$html, "N81655", fixed = TRUE)
+    expect_identical(frames, 1L)
+  })
+})
+
+test_that("after Try again, the paging buttons are set for the page shown", {
+  fake <- fake_practice_fetches()
+  buttons <- local_paging()
+  shiny::testServer(mod_practice_server, args = practice_args(fake), {
+    fake$calls$state <- "fail"
+    suppressMessages(pick_practice(session))
+    expect_match(output$body$html, "The data could not be fetched.", fixed = TRUE)
+    # The body drawn anew draws its buttons off: they must be set again
+    buttons$more <- NA
+    fake$calls$state <- "rows"
+    session$setInputs(retry = clicked(1))
+    expect_match(output$body$html, "id=\"[a-z0-9]+-chart\"")
+    expect_true(buttons$more)
+    expect_false(buttons$previous)
+  })
 })

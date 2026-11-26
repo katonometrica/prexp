@@ -66,6 +66,45 @@ test_that("an error is not kept: the next request fetches again", {
   expect_identical(calls, 2L)
 })
 
+test_that("a value is kept once made; one that fails to be made is not", {
+  made <- 0L
+  fail <- TRUE
+  make <- function() {
+    made <<- made + 1L
+    if (fail) stop("the device failed")
+    paste("chart", made)
+  }
+  cache <- app_cache()
+  kept <- cache_value(cache, "chart", function() cache_window)
+  expect_error(kept(list("drug", 57L), make), "the device failed")
+  expect_length(cache$keys(), 0L)
+  fail <- FALSE
+  expect_identical(kept(list("drug", 57L), make), "chart 2")
+  expect_identical(kept(list("drug", 57L), make), "chart 2")
+  expect_identical(made, 2L)
+  # Another key is another value
+  expect_identical(kept(list("drug", 58L), make), "chart 3")
+  # A fetch and a value with the same arguments are kept apart
+  fetched <- cache_fetch(cache, "chart_like", function(...) "fetched", function() cache_window)
+  expect_identical(fetched("drug", 57L), "fetched")
+  expect_length(cache$keys(), 3L)
+})
+
+test_that("a view's chart is kept with the app's cache, and drawn every time without one", {
+  draws <- 0L
+  draw <- function() {
+    draws <<- draws + 1L
+    draws
+  }
+  plain <- list(drug_series = function(...) NULL)
+  expect_identical(keep_chart(plain, list("drug", 57L), draw), 1L)
+  expect_identical(keep_chart(plain, list("drug", 57L), draw), 2L)
+  cached <- list(chart = cache_value(app_cache(), "chart", function() cache_window))
+  expect_identical(keep_chart(cached, list("drug", 57L), draw), 3L)
+  expect_identical(keep_chart(cached, list("drug", 57L), draw), 3L)
+  expect_identical(keep_chart(cached, list("drug", 57L, 870), draw), 4L)
+})
+
 test_that("the app's fetches go through the cache, all but the window's", {
   con <- fixture_app()
   window <- fetch_window(con)
@@ -109,4 +148,38 @@ test_that("two sessions asking the same regions fetch them once", {
   expect_identical(sum(fetched == "fetch_search_drugs"), 1L)
   # Each session fetches its window
   expect_identical(sum(fetched == "fetch_window"), 2L)
+})
+
+test_that("two sessions asking the same drug draw its chart once", {
+  con <- fixture_app()
+  chemical <- id_of(con, "chemical", "0212000B0")
+  cache <- app_cache()
+  draws <- 0L
+  draw <- render_girafe
+  local_mocked_bindings(render_girafe = function(...) {
+    draws <<- draws + 1L
+    draw(...)
+  })
+  session_drug <- function() {
+    shiny::testServer(app_server(con, cache), {
+      session$setInputs(`drug-search-query` = "atorva")
+      session$elapse(400)
+      session$setInputs(`drug-search-pick` = paste0("chemical:", chemical))
+      expect_s3_class(output[["drug-chart"]], "json")
+    })
+  }
+  session_drug()
+  session_drug()
+  expect_identical(draws, 1L)
+  # Without the cache, each session draws it
+  draws <- 0L
+  for (i in 1:2) {
+    shiny::testServer(app_server(con), {
+      session$setInputs(`drug-search-query` = "atorva")
+      session$elapse(400)
+      session$setInputs(`drug-search-pick` = paste0("chemical:", chemical))
+      expect_s3_class(output[["drug-chart"]], "json")
+    })
+  }
+  expect_identical(draws, 2L)
 })

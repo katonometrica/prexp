@@ -117,14 +117,23 @@ chart_bars <- function(data, label = "region_name", id = "region_code", chars = 
     ggplot2::labs(
       x = measure_title(measure), y = NULL, alt = bars_alt(labels, data$value, measure)
     ) +
-    theme_prexp() +
-    ggplot2::theme(
-      panel.grid.major.y = ggplot2::element_blank(),
-      # Room on the right for half the last tick label, centred on a break
-      # that can fall at the panel's edge: the canvas would cut the rest. The
-      # labels are short ("16M", "GBP 250K"), half the widest under 18 pt.
-      plot.margin = ggplot2::margin(5.5, 18, 5.5, 5.5)
-    )
+    theme_bars()
+}
+
+# The bars' theme: theme_prexp() with no grid lines along the bars, built once
+# and kept as theme_prexp() is
+theme_bars <- function() {
+  if (is.null(chart_state$theme_bars)) {
+    chart_state$theme_bars <- theme_prexp() +
+      ggplot2::theme(
+        panel.grid.major.y = ggplot2::element_blank(),
+        # Room on the right for half the last tick label, centred on a break
+        # that can fall at the panel's edge: the canvas would cut the rest. The
+        # labels are short ("16M", "GBP 250K"), half the widest under 18 pt.
+        plot.margin = ggplot2::margin(5.5, 18, 5.5, 5.5)
+      )
+  }
+  chart_state$theme_bars
 }
 
 #' A practice's top drugs, as bars
@@ -170,6 +179,7 @@ render_girafe <- function(p, width = 768, height = 384, title = NULL) {
     ggobj = p,
     width_svg = width / 96,
     height_svg = height / 96,
+    font_set = chart_font_set(),
     title = title,
     desc = if (nzchar(alt)) alt,
     options = list(

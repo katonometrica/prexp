@@ -243,11 +243,238 @@ test_that("tables write numbers the British way, whatever the browser's language
   expect_identical(pounds_column("Cost")$format$cell$prefix, "\u00a3")
 })
 
-test_that("a chart is drawn at its output's width, 768 px until the browser says", {
+test_that("an output's width is the one the browser reports, none until it does", {
   session <- list(ns = shiny::NS("drug"), clientData = list(`output_drug-chart_width` = 500))
   expect_identical(output_width(session, "chart"), 500)
+  # Not reported yet, or not shown (a tab not shown reports 0)
   session$clientData <- list()
-  expect_identical(output_width(session, "chart"), 768)
+  expect_null(output_width(session, "chart"))
+  session$clientData <- list(`output_drug-chart_width` = 0)
+  expect_null(output_width(session, "chart"))
+})
+
+test_that("charts are drawn at the body's width, to 10 px, and again only for 30 px or more", {
+  sizes <- shiny::reactiveValues()
+  fake_session <- list(ns = shiny::NS("view"), clientData = sizes)
+  seen <- new.env()
+  seen$widths <- numeric()
+  shiny::testServer(
+    function(id) {
+      shiny::moduleServer(id, function(input, output, session) {
+        width <- chart_width(fake_session)
+        shiny::observe(seen$widths <- c(seen$widths, width()))
+      })
+    },
+    {
+      # Nothing until the body's width is known
+      session$flushReact()
+      expect_null(width())
+      sizes[["output_view-body_width"]] <- 1222
+      session$flushReact()
+      expect_identical(width(), 1220)
+      # A scroll bar appears: 15 px less is not drawn again
+      sizes[["output_view-body_width"]] <- 1207
+      session$flushReact()
+      expect_identical(width(), 1220)
+      # The tab is not shown: the width stays
+      sizes[["output_view-body_width"]] <- 0
+      session$flushReact()
+      expect_identical(width(), 1220)
+      # A narrower window is
+      sizes[["output_view-body_width"]] <- 863
+      session$flushReact()
+      expect_identical(width(), 860)
+      expect_identical(seen$widths, c(1220, 860))
+    }
+  )
+})
+
+test_that("compute_always() asks Shiny to compute each output, shown or not", {
+  asked <- list()
+  impl <- list(outputOptions = function(name, ...) asked[[name]] <<- list(...))
+  output <- structure(list(impl = impl, ns = shiny::NS("drug")), class = "shinyoutput")
+  compute_always(output, c("chart", "body"))
+  computed <- list(suspendWhenHidden = FALSE)
+  expect_identical(asked, list(`drug-chart` = computed, `drug-body` = computed))
+})
+
+test_that("each view's frame outputs come in the flush that draws the frame", {
+  computed <- list()
+  local_mocked_bindings(compute_always = function(output, names) {
+    computed[[length(computed) + 1L]] <<- names
+  })
+  views <- list(
+    drug = list(mod_drug_server, fake_drug_fetches()$fetches),
+    region = list(mod_region_server, list(search_drugs = function(q) drug_matches)),
+    practice = list(mod_practice_server, list(search_practices = function(q) drug_matches[0, ]))
+  )
+  for (view in views) {
+    shiny::testServer(
+      view[[1]], args = list(fetches = view[[2]], window = shiny::reactive(drug_window)), {}
+    )
+  }
+  expect_length(computed, 3L)
+  expect_setequal(computed[[1]], c("csv", "chart", "presentations"))
+  expect_setequal(computed[[2]], c("csv", "chart", "table"))
+  expect_setequal(
+    computed[[3]],
+    c("csv", "profile", "chart", "top_title", "top_message", "top_table", "top_range")
+  )
+})
+
+test_that("a change of months or measure draws the chart and table again, not the body", {
+  fake <- fake_drug_fetches()
+  frames <- 0L
+  body <- drug_body
+  local_mocked_bindings(drug_body = function(ns, state) {
+    if (identical(state$kind, "results")) frames <<- frames + 1L
+    body(ns, state)
+  })
+  shiny::testServer(
+    mod_drug_server,
+    args = list(fetches = fake$fetches, window = shiny::reactive(drug_window)),
+    {
+      pick_drug(session, "chemical:57")
+      output$body
+      expect_identical(frames, 1L)
+      session$setInputs(from = "202601")
+      session$setInputs(measure = "nic")
+      expect_s3_class(output$chart, "json")
+      expect_s3_class(output$presentations, "json")
+      expect_identical(frames, 1L)
+      # A presentation's results have no presentations: another frame
+      pick_drug(session, "presentation:300")
+      output$body
+      expect_identical(frames, 2L)
+    }
+  )
+})
+
+test_that("the presentations are not built behind a message", {
+  fake <- fake_drug_fetches()
+  built <- 0L
+  table <- presentations_table
+  local_mocked_bindings(presentations_table = function(rows) {
+    built <<- built + 1L
+    table(rows)
+  })
+  shiny::testServer(
+    mod_drug_server,
+    args = list(fetches = fake$fetches, window = shiny::reactive(drug_window)),
+    {
+      fake$calls$state <- "na"
+      pick_drug(session, "chemical:57")
+      expect_match(output$body$html, "was not prescribed", fixed = TRUE)
+      expect_error(output$presentations)
+      expect_identical(built, 0L)
+      fake$calls$state <- "rows"
+      session$setInputs(from = "202601")
+      expect_s3_class(output$presentations, "json")
+      expect_identical(built, 1L)
+    }
+  )
+})
+
+test_that("a measure the new level does not allow is never fetched", {
+  fake <- fake_drug_fetches()
+  shiny::testServer(
+    mod_drug_server,
+    args = list(fetches = fake$fetches, window = shiny::reactive(drug_window)),
+    {
+      pick_drug(session, "presentation:300")
+      session$setInputs(measure = "total_quantity")
+      expect_identical(last_call(fake$calls$series)$measure, "total_quantity")
+      before <- length(fake$calls$series)
+      expect_no_message(pick_drug(session, "chemical:57"))
+      after <- fake$calls$series[-seq_len(before)]
+      expect_gt(length(after), 0L)
+      for (call in after) {
+        expect_identical(call$level, "chemical")
+        expect_identical(call$measure, "items")
+      }
+    }
+  )
+})
+
+test_that("a control's first value, the same as the view shows, fetches nothing again", {
+  fake <- fake_drug_fetches()
+  shiny::testServer(
+    mod_drug_server,
+    args = list(fetches = fake$fetches, window = shiny::reactive(drug_window)),
+    {
+      pick_drug(session, "chemical:57")
+      output$chart
+      fetched <- length(fake$calls$series)
+      session$setInputs(from = "202510", to = "202609", measure = "items")
+      output$chart
+      expect_length(fake$calls$series, fetched)
+    }
+  )
+})
+
+test_that("each chart is kept by what it is drawn from: data, months, measure, width", {
+  fake <- fake_drug_fetches()
+  fake$fetches$chart <- cache_value(app_cache(), "chart", function() drug_window)
+  draws <- 0L
+  draw <- render_girafe
+  local_mocked_bindings(render_girafe = function(...) {
+    draws <<- draws + 1L
+    draw(...)
+  })
+  desc <- function(chart) {
+    html <- jsonlite::fromJSON(chart)$x$html
+    regmatches(html, regexpr("<desc[^>]*>[^<]*</desc>", html))
+  }
+  shiny::testServer(
+    mod_drug_server,
+    args = list(fetches = fake$fetches, window = shiny::reactive(drug_window)),
+    {
+      pick_drug(session, "chemical:57")
+      items <- desc(output$chart)
+      expect_identical(draws, 1L)
+      session$setInputs(measure = "nic")
+      # The fake's rows are the same whatever the measure, so only the key
+      # tells the two charts apart: each is drawn
+      nic <- desc(output$chart)
+      expect_identical(draws, 2L)
+      session$setInputs(from = "202601")
+      expect_identical(draws, 3L)
+      # Back to a chart drawn before: kept, not drawn again
+      session$setInputs(from = "202510", measure = "items")
+      expect_identical(desc(output$chart), items)
+      expect_identical(draws, 3L)
+    }
+  )
+})
+
+test_that("a Try again that fails again says so, and the message stays as it is", {
+  fake <- fake_drug_fetches()
+  said <- character()
+  local_mocked_bindings(announce = function(session, text) said <<- c(said, text))
+  frames <- 0L
+  body <- drug_body
+  local_mocked_bindings(drug_body = function(ns, state) {
+    frames <<- frames + 1L
+    body(ns, state)
+  })
+  shiny::testServer(
+    mod_drug_server,
+    args = list(fetches = fake$fetches, window = shiny::reactive(drug_window)),
+    {
+      fake$calls$state <- "fail"
+      suppressMessages(pick_drug(session, "chemical:57"))
+      expect_match(output$body$html, "The data could not be fetched.", fixed = TRUE)
+      drawn <- frames
+      suppressMessages(session$setInputs(retry = 1))
+      expect_identical(said, "The data could still not be fetched.")
+      expect_identical(frames, drawn)
+      # One that works draws the results, and says nothing
+      fake$calls$state <- "rows"
+      session$setInputs(retry = 2)
+      expect_match(output$body$html, "id=\"[a-z0-9]+-chart\"")
+      expect_length(said, 1L)
+    }
+  )
 })
 
 test_that("the view shows a drug's series and presentations on the fixture database", {

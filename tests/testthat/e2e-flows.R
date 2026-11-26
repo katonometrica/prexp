@@ -282,6 +282,24 @@ test_that("flow 3: a drug compared across the regions", {
     paste0(drug$name, " by region, ", format_month_range(span[1], span[2]))
   )
   expect_true(app$get_js("document.querySelector('#region-chart svg') !== null"))
+  # Drawn at about the width it is shown at, on a tab not shown at load, and
+  # again for a narrower window (the SVG's viewBox is in points, 3/4 px)
+  drawn_and_shown <- function() {
+    unlist(app$get_js(paste(
+      "(function () { var c = document.getElementById('region-chart');",
+      "var box = c.querySelector('svg').viewBox.baseVal;",
+      "return [box.width * 4 / 3, c.getBoundingClientRect().width]; })()"
+    )))
+  }
+  widths <- drawn_and_shown()
+  expect_lt(abs(widths[[1]] - widths[[2]]), 35)
+  app$set_window_size(width = 760, height = 900)
+  app$wait_for_idle(duration = 1000)
+  narrow <- drawn_and_shown()
+  expect_lt(narrow[[2]], widths[[2]] - 100)
+  expect_lt(abs(narrow[[1]] - narrow[[2]]), 35)
+  app$set_window_size(width = 1400, height = 900)
+  app$wait_for_idle(duration = 1000)
   for (measure in c("items", "nic")) {
     if (measure != "items") {
       app$set_inputs(`region-measure` = measure)
