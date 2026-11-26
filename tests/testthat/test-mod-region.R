@@ -147,6 +147,9 @@ test_that("the regions come for the drug, months and measure chosen, as bars and
 
 test_that("the table's footer is England's total, in the measure's form", {
   table <- region_table(transform(region_rows, measure = "nic"), "nic")
+  # The tables' one theme, without stripes
+  expect_identical(table$x$tag$attribs$theme, table_theme())
+  expect_null(table$x$tag$attribs$striped)
   columns <- table$x$tag$attribs$columns
   footers <- vapply(columns, function(column) as.character(column$footer), "")
   expect_identical(unname(footers), c("England", "\u00a31,000.00", "100.0%"))

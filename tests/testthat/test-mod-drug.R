@@ -573,9 +573,22 @@ test_that("without a window, the view says why, and has nothing to download", {
   )
 })
 
+test_that("a view's error message is marked, its other messages are not", {
+  expect_match(
+    as.character(view_message("x", retry = "r")),
+    "class=\"prexp-view-message prexp-view-error\"", fixed = TRUE
+  )
+  expect_match(as.character(view_message("x")), "class=\"prexp-view-message\"", fixed = TRUE)
+  expect_match(as.character(no_window_message(FALSE)), "prexp-view-error", fixed = TRUE)
+  expect_no_match(as.character(no_window_message(TRUE)), "prexp-view-error", fixed = TRUE)
+})
+
 test_that("quantity and ADQ usage keep their fractions in the table, and no cell wraps", {
   rows <- transform(drug_presentation_rows, adq_usage = 0.496, total_quantity = 2.5)
   table <- presentations_table(rows)
+  # The tables' one theme, without stripes
+  expect_identical(table$x$tag$attribs$theme, table_theme())
+  expect_null(table$x$tag$attribs$striped)
   columns <- table$x$tag$attribs$columns
   names(columns) <- vapply(columns, function(column) column$id, "")
   data <- jsonlite::fromJSON(as.character(table$x$tag$attribs$data))
