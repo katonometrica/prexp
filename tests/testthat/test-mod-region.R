@@ -84,13 +84,9 @@ pick_region_drug <- function(session, value) {
   session$setInputs(`search-pick` = value)
 }
 
-# The rows of the regions table, read from the view's HTML
-region_table_rows <- function(html) {
-  json <- regmatches(html, regexpr(
-    "(?s)<script type=\"application/json\"[^>]*>.*?</script>", html, perl = TRUE
-  ))
-  json <- sub("(?s)^<script[^>]*>(.*)</script>$", "\\1", json, perl = TRUE)
-  jsonlite::fromJSON(json)$x$tag$attribs
+# The regions table's attributes, its data among them, read from its output
+region_table_rows <- function(table) {
+  jsonlite::fromJSON(table)$x$tag$attribs
 }
 
 region_args <- function(fake) {
@@ -118,7 +114,8 @@ test_that("the regions come for the drug, months and measure chosen, as bars and
     expect_identical(output$title, "Atorvastatin by region, Oct 2025 \u2013 Sep 2026")
     body <- output$body$html
     expect_match(body, "id=\"[a-z0-9]+-chart\"")
-    table <- region_table_rows(body)
+    expect_match(body, "id=\"[a-z0-9]+-table\"")
+    table <- region_table_rows(output$table)
     # The regions largest first, those that did not prescribe it at 0, then the
     # prescribers without a region
     expect_identical(
@@ -228,7 +225,7 @@ test_that("the view shows a drug's regions on the fixture database", {
       session$setInputs(`search-pick` = paste0("chemical:", chemical))
       body <- output$body$html
       expect_match(body, "id=\"[a-z0-9]+-chart\"")
-      table <- region_table_rows(body)
+      table <- region_table_rows(output$table)
       expect_equal(sum(table$data$value), sum(expected$value))
       expect_length(table$data$region, nrow(expected))
       expect_identical(session$returned()$data, expected)
@@ -366,4 +363,24 @@ test_that("Add to report pins the region view with its parameters", {
       expect_identical(pinned()$items[[1]]$params, session$returned()$params)
     }
   )
+})
+
+test_that("a change of months or measure changes the chart and table in place, not the body", {
+  fake <- fake_region_fetches()
+  frames <- 0L
+  body <- region_body
+  local_mocked_bindings(region_body = function(ns, state) {
+    if (identical(state$kind, "results")) frames <<- frames + 1L
+    body(ns, state)
+  })
+  shiny::testServer(mod_region_server, args = region_args(fake), {
+    pick_region_drug(session, "chemical:57")
+    output$body
+    expect_identical(frames, 1L)
+    session$setInputs(from = "202601")
+    session$setInputs(measure = "nic")
+    expect_s3_class(output$chart, "json")
+    expect_true("Net ingredient cost" %in% region_table_rows(output$table)$columns$name)
+    expect_identical(frames, 1L)
+  })
 })

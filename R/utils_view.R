@@ -6,7 +6,8 @@
 #'
 #' The views call these, never the fetch functions themselves, so that the
 #' tests can pass fakes, and so that with a cache every fetch but the window's
-#' is kept in it.
+#' is kept in it. With a cache, `chart` keeps the charts the views draw too
+#' ([keep_chart()]).
 #'
 #' @param con A pool from [db_pool()], or a connection.
 #' @param cache The app's cache, from [app_cache()], or `NULL` for none.
@@ -23,7 +24,24 @@ app_fetches <- function(con, cache = NULL, window = NULL) {
   fetches[kept] <- lapply(kept, function(name) {
     cache_fetch(cache, name, fetches[[name]], window)
   })
+  fetches$chart <- cache_value(cache, "chart", window)
   fetches
+}
+
+#' A view's chart, drawn once for every session asking the same
+#'
+#' A chart takes most of a lookup's time on the server, so with the app's
+#' cache ([app_fetches()]) a chart drawn is kept, keyed on what it is drawn
+#' from; without one, as in the tests' fakes, it is drawn every time.
+#'
+#' @param fetches The app's fetch functions.
+#' @param key A list of everything the chart is drawn from: its view, data,
+#'   measure, months, width and name.
+#' @param draw A function drawing the chart.
+#' @return The chart.
+#' @noRd
+keep_chart <- function(fetches, key, draw) {
+  if (is.null(fetches$chart)) draw() else fetches$chart(key, draw)
 }
 
 # The fetch functions on a pool or connection, as the views call them
@@ -128,14 +146,26 @@ chosen_measure <- function(measure, measures) {
 chart_height <- 320L
 
 # The width of a view's output in the browser, in CSS pixels, as Shiny reports
-# it, so that a chart is drawn at the size it is shown at; 768 until the
-# browser has said (and in tests)
+# it; NULL until the browser has said, and while the output is not shown
+# (a tab not shown reports 0)
 output_width <- function(session, id) {
   width <- session$clientData[[paste0("output_", session$ns(id), "_width")]]
   if (!is.numeric(width) || length(width) != 1L || is.na(width) || width <= 0) {
-    return(768)
+    return(NULL)
   }
   width
+}
+
+#' A view's results card body: the body output, which reports its width
+#' whenever it changes, so that the charts in it are drawn at that width
+#' ([chart_width()]). prexp.css gives it a box of its own: Shiny would make a
+#' uiOutput with content a box of none, whose width it never reports.
+#'
+#' @param ns The view's namespace function.
+#' @return Shiny UI.
+#' @noRd
+view_body <- function(ns) {
+  bslib::card_body(shiny::uiOutput(ns("body"), class = "shiny-report-size"))
 }
 
 #' A view's results card header: its title, the CSV button once there is data
@@ -306,11 +336,46 @@ measure_column <- function(name, measure, ..., label = NULL) {
 # A reactive's value that tells its readers only of a new one: a control drawn
 # again sends the value it had, which read directly would fetch again. The
 # observer runs before the outputs (priority 100), so they never read a stale
-# value.
-changes_only <- function(r) {
+# value. One read by another runs first, with a higher priority: within a
+# priority, Shiny's order is not the order they were made in.
+changes_only <- function(r, priority = 100) {
   value <- shiny::reactiveVal()
-  shiny::observe(value(r()), priority = 100)
+  shiny::observe(value(r()), priority = priority)
   function() value()
+}
+
+# The width a view's charts are drawn at: its body's width (view_body()),
+# which the browser reports before any pick, to the nearest `step` px; NULL
+# until it has, so a chart on a tab not yet shown waits to be drawn at its
+# width. A chart's own element is new each time its frame is drawn, so its
+# width would come a round trip later. The chart is drawn again only when the
+# width moves by `tolerance` px or more: the SVG scales to fit, and a long
+# table giving the page a scroll bar takes about 15 px. While the body is
+# not shown (another tab), the width stays as it was.
+chart_width <- function(session, id = "body", step = 10, tolerance = 30) {
+  value <- shiny::reactiveVal()
+  shiny::observe({
+    width <- output_width(session, id)
+    if (!is.null(width)) {
+      width <- step * round(width / step)
+      drawn <- shiny::isolate(value())
+      if (is.null(drawn) || abs(width - drawn) >= tolerance) {
+        value(width)
+      }
+    }
+  }, priority = 100)
+  function() value()
+}
+
+# Outputs computed whether or not the browser reports them shown. Shiny
+# suspends an output until the browser reports it shown, which for one drawn
+# in a renderUI comes only after it is drawn: a view's chart and table would
+# come a round trip after their frame. Computed always, they come with it.
+compute_always <- function(output, names) {
+  for (name in names) {
+    shiny::outputOptions(output, name, suspendWhenHidden = FALSE)
+  }
+  invisible(NULL)
 }
 
 # Clicks on a view's Try again button, counted. Read directly, the button's
@@ -322,13 +387,26 @@ retry_clicks <- function(input, id = "retry") {
   clicks
 }
 
+# Says when a Try again fails again. The message on the page stays as it is,
+# so the button keeps the focus, and the page's status region tells screen
+# readers (announce()) what nothing on the page would. `failed` says whether
+# the view still shows the error; it is read after the view has fetched
+# again (a priority below the outputs').
+retry_feedback <- function(session, retries, failed) {
+  shiny::observeEvent(retries(), {
+    if (isTRUE(failed())) {
+      announce(session, "The data could still not be fetched.")
+    }
+  }, ignoreInit = TRUE, priority = -10)
+}
+
 # Why a view has no months to show: the window could not be fetched (the app
-# tries again), or no month is loaded yet
-no_window_message <- function(window) {
-  if (is.null(window)) {
-    view_message("The data could not be fetched. The app is trying again.")
-  } else {
+# tries again), or it was and no month is loaded yet
+no_window_message <- function(fetched) {
+  if (fetched) {
     view_message("No data is loaded yet.")
+  } else {
+    view_message("The data could not be fetched. The app is trying again.")
   }
 }
 

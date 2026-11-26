@@ -20,7 +20,7 @@ mod_practice_ui <- function(id) {
     ),
     bslib::card(
       view_header(ns),
-      bslib::card_body(shiny::uiOutput(ns("body")))
+      view_body(ns)
     )
   )
 }
@@ -66,8 +66,17 @@ mod_practice_server <- function(id, fetches, window, page_size = 25L, report = N
     output$measure_ui <- shiny::renderUI({
       measure_control(ns, measures, restorer$measure(shiny::isolate(input$measure), measures))
     })
-    months <- shiny::reactive(restorer$view_months(input$from, input$to, window()))
-    measure <- shiny::reactive(restorer$view_measure(input$measure, measures))
+    # Told only when they change, before their readers (priority 100): a
+    # control's first value, the same as the view already shows, then draws
+    # nothing again
+    months <- changes_only(
+      shiny::reactive(restorer$view_months(input$from, input$to, window())),
+      priority = 110
+    )
+    measure <- changes_only(
+      shiny::reactive(restorer$view_measure(input$measure, measures)),
+      priority = 110
+    )
     # Two Try again buttons: the practice's (profile and totals), and its top
     # drugs', each fetching only what failed
     retries <- retry_clicks(input, "retry")
@@ -139,55 +148,63 @@ mod_practice_server <- function(id, fetches, window, page_size = 25L, report = N
       paste0(pick$label, ", ", format_month_range(months()[1], months()[2]))
     })
 
-    output$body <- shiny::renderUI({
+    # What the body shows, told only when that changes: a message, or the
+    # practice's frame, whose profile, chart and top drugs then change in place
+    frame <- changes_only(shiny::reactive({
       pick <- picked()
       if (is.null(pick)) {
-        return(view_message("Search for a practice by its name, code or postcode."))
+        return(list(kind = "prompt"))
       }
       if (is.null(months())) {
-        return(no_window_message(window()))
+        return(list(kind = "no_window", fetched = !is.null(window())))
       }
       found <- profile()
       rows <- series()
       if (inherits(found, "error") || inherits(rows, "error")) {
-        return(view_message("The data could not be fetched.", retry = ns("retry")))
+        return(list(kind = "error"))
       }
       if (nrow(found) == 0L) {
-        return(view_message(paste0(pick$label, " is not in the data.")))
+        return(list(kind = "missing", text = paste0(pick$label, " is not in the data.")))
       }
-      shiny::tagList(
-        practice_profile(found),
-        if (nrow(rows) == 0L) {
-          view_message(paste0(
-            pick$label, " did not prescribe in ", format_month_range(months()[1], months()[2]),
-            "."
-          ))
-        } else {
-          shiny::tagList(
-            ggiraph::girafeOutput(ns("chart"), height = paste0(chart_height, "px")),
-            shiny::h3(class = "h6 mt-3", shiny::textOutput(ns("top_title"), inline = TRUE)),
-            # The table and the paging stay on the page and change in place
-            # from page to page, so the page does not jump and Next keeps the
-            # focus; the messages are drawn beside them
-            shiny::uiOutput(ns("top_message")),
-            reactable::reactableOutput(ns("top_table")),
-            paging_controls(ns)
-          )
-        }
-      )
+      if (nrow(rows) == 0L) {
+        return(list(kind = "no_rows", text = paste0(
+          pick$label, " did not prescribe in ", format_month_range(months()[1], months()[2]),
+          "."
+        )))
+      }
+      list(kind = "results")
+    }))
+    output$body <- shiny::renderUI(practice_body(ns, frame()))
+    retry_feedback(session, retries, function() identical(frame()$kind, "error"))
+    retry_feedback(session, retries_top, function() inherits(top(), "error"))
+
+    output$profile <- shiny::renderUI({
+      found <- profile()
+      shiny::req(!inherits(found, "error"), nrow(found) > 0L)
+      practice_profile(found)
     })
 
+    # The chart and the top drugs only when the frame shows them: not behind
+    # a message
+    width <- chart_width(session)
     output$chart <- ggiraph::renderGirafe({
+      shiny::req(identical(frame()$kind, "results"))
       rows <- series()
-      shiny::req(!inherits(rows, "error"), nrow(rows) > 0L)
-      width <- output_width(session, "chart")
-      render_girafe(
-        chart_series(measure_series(rows, measure()), months(), width = width),
-        width = width, height = chart_height, title = picked()$label
-      )
+      drawn_at <- width()
+      shiny::req(drawn_at)
+      label <- picked()$label
+      by <- measure()
+      shown <- months()
+      keep_chart(fetches, list("practice", rows, by, shown, drawn_at, label), function() {
+        render_girafe(
+          chart_series(measure_series(rows, by), shown, width = drawn_at),
+          width = drawn_at, height = chart_height, title = label
+        )
+      })
     })
 
     output$top_title <- shiny::renderText({
+      shiny::req(identical(frame()$kind, "results"))
       paste("Top drugs by", tolower(names(measures)[measures == measure()]))
     })
 
@@ -204,6 +221,7 @@ mod_practice_server <- function(id, fetches, window, page_size = 25L, report = N
     })
 
     output$top_message <- shiny::renderUI({
+      shiny::req(identical(frame()$kind, "results"))
       rows <- top()
       if (inherits(rows, "error")) {
         return(view_message("The top drugs could not be fetched.", retry = ns("retry_top")))
@@ -215,15 +233,20 @@ mod_practice_server <- function(id, fetches, window, page_size = 25L, report = N
     })
 
     output$top_table <- reactable::renderReactable({
+      shiny::req(identical(frame()$kind, "results"))
       shown <- page()
       top_drugs_table(shown$rows, shown$first)
     })
 
     output$top_range <- shiny::renderText({
+      shiny::req(identical(frame()$kind, "results"))
       shown <- page()
       paste0("Drugs ", shown$first, " to ", shown$first + nrow(shown$rows) - 1L)
     })
+    # The paging buttons, set again whenever the frame is drawn anew (as after
+    # Try again), since it draws them off
     shiny::observe({
+      frame()
       rows <- top()
       shown <- if (inherits(rows, "error") || nrow(rows) == 0L) NULL else page()
       set_paging(
@@ -258,9 +281,35 @@ mod_practice_server <- function(id, fetches, window, page_size = 25L, report = N
       )
     })
     csv_download(output, ns, current, "Download the monthly totals of every measure, as CSV")
+    compute_always(output, c(
+      "csv", "profile", "chart", "top_title", "top_message", "top_table", "top_range"
+    ))
     report_pin(input, session, current, report)
     current
   })
+}
+
+# The body for what the view shows (frame() above): a message, or the
+# practice's frame, its profile, chart, and top drugs with their paging
+practice_body <- function(ns, state) {
+  switch(state$kind,
+    prompt = view_message("Search for a practice by its name, code or postcode."),
+    no_window = no_window_message(state$fetched),
+    error = view_message("The data could not be fetched.", retry = ns("retry")),
+    missing = view_message(state$text),
+    no_rows = shiny::tagList(shiny::uiOutput(ns("profile")), view_message(state$text)),
+    results = shiny::tagList(
+      shiny::uiOutput(ns("profile")),
+      ggiraph::girafeOutput(ns("chart"), height = paste0(chart_height, "px")),
+      shiny::h3(class = "h6 mt-3", shiny::textOutput(ns("top_title"), inline = TRUE)),
+      # The table and the paging stay on the page and change in place from
+      # page to page, so the page does not jump and Next keeps the focus; the
+      # messages are drawn beside them
+      shiny::uiOutput(ns("top_message")),
+      reactable::reactableOutput(ns("top_table")),
+      paging_controls(ns)
+    )
+  )
 }
 
 # The measures a practice's totals and top drugs can show, named by their

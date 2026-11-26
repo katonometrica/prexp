@@ -293,6 +293,36 @@ test_that("render_girafe() makes the widget: hover, one selection, no toolbar, f
   expect_match(widget$x$html, "<desc[^>]*>Items by month, Jul", perl = TRUE)
 })
 
+test_that("the charts' theme and fonts are made once and kept", {
+  kept <- c("theme_12", "theme_bars", "font_set")
+  saved <- mget(kept, envir = chart_state, ifnotfound = list(NULL))
+  withr::defer(for (name in kept) assign(name, saved[[name]], envir = chart_state))
+  for (name in kept) {
+    assign(name, structure(list(), class = paste0("kept_", name)), envir = chart_state)
+  }
+  expect_s3_class(theme_prexp(), "kept_theme_12")
+  expect_s3_class(theme_bars(), "kept_theme_bars")
+  expect_s3_class(chart_font_set(), "kept_font_set")
+})
+
+test_that("the charts' kept theme and fonts draw as made afresh", {
+  p <- chart_series(series())
+  kept <- render_girafe(p, title = "Atorvastatin")
+  # As before they were kept: a theme built for this chart, girafe's own fonts
+  fresh <- ggiraph::girafe(
+    ggobj = p + ggplot2::theme_minimal(base_size = 12, base_family = "Arial") +
+      ggplot2::theme(
+        panel.grid.minor = ggplot2::element_blank(),
+        axis.title = ggplot2::element_text(colour = "#5A6470"),
+        axis.text = ggplot2::element_text(colour = "#333333"),
+        plot.title.position = "plot", legend.position = "none"
+      ),
+    width_svg = 8, height_svg = 4, title = "Atorvastatin", desc = ggplot2::get_alt_text(p)
+  )
+  svg <- function(widget) gsub("svg_[0-9a-f_]+", "svg_ID", widget$x$html)
+  expect_identical(svg(kept), svg(fresh))
+})
+
 test_that("render_girafe() draws the chart at the size it is shown at", {
   view_box <- function(widget) {
     regmatches(widget$x$html, regexpr("viewBox='[^']*'", widget$x$html))

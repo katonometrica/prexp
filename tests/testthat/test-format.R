@@ -73,3 +73,18 @@ test_that("quantity and ADQ usage keep three significant figures; items are whol
   expect_identical(format_measure(2.5, "items"), "2")
   expect_identical(format_significant(c(-0, Inf)), c("0", "\u2013"))
 })
+
+test_that("significant figures get their thousands separators as formatC() gives them", {
+  x <- c(
+    0, 7, -12, 123, 1234, -1234, 999999, 1e6, -1234567.891, 0.000123456, 0.496, 12345.6,
+    98765432109, 1e12, NA, NaN, Inf
+  )
+  expected <- trimws(formatC(x, format = "fg", digits = 3L, big.mark = ","))
+  expected[!is.finite(x)] <- "\u2013"
+  expected[x == 0 & !is.na(x)] <- "0"
+  expect_identical(format_significant(x), expected)
+  expect_identical(
+    group_thousands(c("1234567.5", "-1234", "12", "0.0001234", "NA")),
+    c("1,234,567.5", "-1,234", "12", "0.0001234", "NA")
+  )
+})

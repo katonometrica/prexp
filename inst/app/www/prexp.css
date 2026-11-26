@@ -1,5 +1,15 @@
 /* Prescription Explorer: what the bslib theme leaves to the page */
 
+/* A view's body (view_body()) reports its width for its charts
+   (chart_width()). Shiny makes a uiOutput with content display: contents, a
+   box of none, whose width it never reports; as a column with the card
+   body's gap it has a box and lays out as before. */
+.shiny-html-output.shiny-report-size {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+
 .prexp-footer {
   margin-top: 1.5rem;
   padding: 0.75rem 1rem;

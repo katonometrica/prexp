@@ -20,7 +20,7 @@ mod_drug_ui <- function(id) {
     ),
     bslib::card(
       view_header(ns),
-      bslib::card_body(shiny::uiOutput(ns("body")))
+      view_body(ns)
     )
   )
 }
@@ -57,8 +57,18 @@ mod_drug_server <- function(id, fetches, window, report = NULL, restore = NULL) 
     output$measure_ui <- shiny::renderUI({
       measure_control(ns, measures(), restorer$measure(shiny::isolate(input$measure), measures()))
     })
-    months <- shiny::reactive(restorer$view_months(input$from, input$to, window()))
-    measure <- changes_only(shiny::reactive(restorer$view_measure(input$measure, measures())))
+    # The months and the measure, told only when they change, before anything
+    # that reads them (priority 100): a control's first value, the same as
+    # the view already shows, then draws nothing again, and a measure the new
+    # level does not allow is never fetched
+    months <- changes_only(
+      shiny::reactive(restorer$view_months(input$from, input$to, window())),
+      priority = 110
+    )
+    measure <- changes_only(
+      shiny::reactive(restorer$view_measure(input$measure, measures())),
+      priority = 110
+    )
     retries <- retry_clicks(input)
 
     series <- shiny::reactive({
@@ -85,51 +95,57 @@ mod_drug_server <- function(id, fetches, window, report = NULL, restore = NULL) 
       paste0(pick$label, ", ", format_month_range(months()[1], months()[2]))
     })
 
-    output$body <- shiny::renderUI({
+    # What the body shows, told only when that changes: a message, or the
+    # results' frame, whose chart and table then change in place
+    frame <- changes_only(shiny::reactive({
       pick <- picked()
       if (is.null(pick)) {
-        return(view_message("Search for a chemical substance or a presentation."))
+        return(list(kind = "prompt"))
       }
       if (is.null(months())) {
-        return(no_window_message(window()))
+        return(list(kind = "no_window", fetched = !is.null(window())))
       }
       rows <- series()
       if (inherits(rows, "error")) {
-        return(view_message("The data could not be fetched.", retry = ns("retry")))
+        return(list(kind = "error"))
       }
       if (nrow(rows) == 0L || all(is.na(rows$value))) {
-        return(view_message(no_rows_text(pick, measure(), months())))
+        return(list(kind = "empty", text = no_rows_text(pick, measure(), months())))
       }
-      shiny::tagList(
-        ggiraph::girafeOutput(ns("chart"), height = paste0(chart_height, "px")),
-        if (identical(pick$level, "chemical")) {
-          listed <- presentations()
-          shiny::tagList(
-            shiny::h3(class = "h6 mt-3", "Presentations"),
-            if (inherits(listed, "error")) {
-              view_message("The presentations could not be fetched.", retry = ns("retry"))
-            } else {
-              reactable::reactableOutput(ns("presentations"))
-            }
-          )
-        }
+      chemical <- identical(pick$level, "chemical")
+      list(
+        kind = "results", chemical = chemical,
+        listed = !chemical || !inherits(presentations(), "error")
       )
+    }))
+    output$body <- shiny::renderUI(drug_body(ns, frame()))
+    retry_feedback(session, retries, function() {
+      state <- frame()
+      identical(state$kind, "error") || isFALSE(state$listed)
     })
 
+    width <- chart_width(session)
     output$chart <- ggiraph::renderGirafe({
       rows <- series()
       shiny::req(!inherits(rows, "error"), nrow(rows) > 0L, !all(is.na(rows$value)))
-      width <- output_width(session, "chart")
-      render_girafe(
-        chart_series(rows, months(), width = width),
-        width = width, height = chart_height, title = picked()$label
-      )
+      drawn_at <- width()
+      shiny::req(drawn_at)
+      label <- picked()$label
+      shown <- months()
+      key <- list("drug", rows, measure(), shown, drawn_at, label)
+      keep_chart(fetches, key, function() {
+        render_girafe(
+          chart_series(rows, shown, width = drawn_at),
+          width = drawn_at, height = chart_height, title = label
+        )
+      })
     })
 
+    # Only when the frame shows them: not behind a message
     output$presentations <- reactable::renderReactable({
-      rows <- presentations()
-      shiny::req(!inherits(rows, "error"))
-      presentations_table(rows)
+      state <- frame()
+      shiny::req(identical(state$kind, "results"), isTRUE(state$chemical), isTRUE(state$listed))
+      presentations_table(presentations())
     })
 
     current <- shiny::reactive({
@@ -152,9 +168,34 @@ mod_drug_server <- function(id, fetches, window, report = NULL, restore = NULL) 
       )
     })
     csv_download(output, ns, current, "Download the monthly totals, as CSV")
+    compute_always(output, c("csv", "chart", "presentations"))
     report_pin(input, session, current, report)
     current
   })
+}
+
+# The body for what the view shows (frame() above): a message, or the
+# results' frame, the chart and, for a chemical substance, its presentations
+drug_body <- function(ns, state) {
+  switch(state$kind,
+    prompt = view_message("Search for a chemical substance or a presentation."),
+    no_window = no_window_message(state$fetched),
+    error = view_message("The data could not be fetched.", retry = ns("retry")),
+    empty = view_message(state$text),
+    results = shiny::tagList(
+      ggiraph::girafeOutput(ns("chart"), height = paste0(chart_height, "px")),
+      if (state$chemical) {
+        shiny::tagList(
+          shiny::h3(class = "h6 mt-3", "Presentations"),
+          if (state$listed) {
+            reactable::reactableOutput(ns("presentations"))
+          } else {
+            view_message("The presentations could not be fetched.", retry = ns("retry"))
+          }
+        )
+      }
+    )
+  )
 }
 
 # Why a drug has no series to show

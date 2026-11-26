@@ -63,9 +63,20 @@ format_measure <- function(x, measure, na = "\u2013") {
 format_significant <- function(x, digits = 3L, na = "\u2013") {
   x <- suppressWarnings(as.numeric(x))
   x[!is.na(x) & x == 0] <- 0
-  out <- trimws(formatC(x, format = "fg", digits = digits, big.mark = ","))
+  out <- group_thousands(trimws(formatC(x, format = "fg", digits = digits)))
   out[!is.finite(x)] <- na
   out
+}
+
+# Commas between the thousands of numbers written out in full ("-1234567.5"
+# to "-1,234,567.5"), as formatC()'s big.mark puts them, for a whole vector at
+# once: big.mark goes through the numbers one at a time, about 10 ms for the
+# two thousand rows of the largest chemical's presentations
+group_thousands <- function(x) {
+  whole <- sub("^(-?[0-9]+).*$", "\\1", x)
+  rest <- substring(x, nchar(whole) + 1L)
+  whole <- gsub("([0-9])(?=([0-9]{3})+$)", "\\1,", whole, perl = TRUE)
+  paste0(whole, rest)
 }
 
 #' A month as its label
