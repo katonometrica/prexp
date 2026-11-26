@@ -19,10 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-## Not covered by this licence
-
-The IBM Plex fonts bundled in `inst/app/www/fonts` are copyright IBM Corp. and
-licensed under the SIL Open Font License 1.1: see `inst/app/www/fonts/OFL.txt`.
-The KATONOMETRICA name and mark (`inst/app/www/favicon.svg`) are not covered by
-the MIT licence.
