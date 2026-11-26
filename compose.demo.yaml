@@ -1,0 +1,92 @@
+# Prescription Explorer in one command, with nothing to set up: PostgreSQL 18, the test
+# fixtures loaded by the real loader (every row of eight real prescribers and a sample
+# of unidentified prescribing from September 2026, plus twelve earlier months made from
+# them with scaled figures: test data, not statistics; tests/testthat/fixtures), and
+# the app from its published image. From the repository root:
+#
+#   docker compose -f compose.demo.yaml up        then open http://localhost:3838
+#   docker compose -f compose.demo.yaml down -v   remove it, data included
+#
+# For the demo only, the database trusts every connection and publishes no port, so
+# there are no passwords to set; the app listens on 127.0.0.1. Docker Desktop keeps the
+# database out of the machine's reach, but with Docker Engine on Linux the machine is
+# on the demo's network, so any user of it can log in to the database as a superuser
+# while the demo runs: use a machine you do not share. The image is linux/amd64.
+# The development stack (RStudio, the tests, the full twelve months) is compose.yaml:
+# see docs/development.md.
+name: prexp-demo
+
+x-database: &database
+  PREXP_DB_HOST: db
+  PREXP_DB_PORT: "5432"
+  PREXP_DB_NAME: prexp
+
+services:
+  db:
+    # The image compose.yaml and CI pin
+    image: postgres:18.7-trixie@sha256:eb63372c1e05c755f55fa30cbd07aecc443676fc6c0fa90b9002d01537841e1a
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.dev.conf"]
+    environment:
+      POSTGRES_USER: prexp_owner
+      POSTGRES_DB: prexp
+      POSTGRES_HOST_AUTH_METHOD: trust
+      # docker/db/init/01-roles.sh gives the roles these; trust never asks for them
+      PREXP_LOADER_PASSWORD: demo-not-secret
+      PREXP_APP_PASSWORD: demo-not-secret
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./docker/db/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/db/postgresql.dev.conf:/etc/postgresql/postgresql.dev.conf:ro
+    shm_size: 256mb
+    healthcheck:
+      # TCP on 127.0.0.1: healthy only once the init scripts have finished
+      test: ["CMD-SHELL", "pg_isready -q -h 127.0.0.1 -p 5432 -U prexp_owner -d prexp"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 1m
+      start_interval: 2s
+
+  # The migrations, then the fixture months newer than the newest one loaded, oldest
+  # first, as the monthly load would (the thirteenth moves the twelve-month window). A
+  # run that was stopped part way resumes; a complete one loads nothing.
+  seed:
+    image: ${PREXP_IMAGE:-ghcr.io/katonometrica/prexp-app:main}
+    platform: linux/amd64
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *database
+      PREXP_OWNER_PASSWORD: demo-not-secret
+      PREXP_LOADER_PASSWORD: demo-not-secret
+    volumes:
+      - ./tests/testthat/fixtures:/fixtures:ro
+    command:
+      - Rscript
+      - -e
+      - |
+        prexp::migrate()
+        con <- prexp::db_connect("loader")
+        last <- DBI::dbGetQuery(con, "SELECT coalesce(max(year_month), 0) FROM core.load_log WHERE status = 'loaded'")[[1]]
+        DBI::dbDisconnect(con)
+        for (file in sort(Sys.glob("/fixtures/EPD_SNOMED_*.zip"))) {
+          ym <- as.integer(sub("^.*_([0-9]{6})[.]zip$", "\\1", file))
+          if (ym > last) prexp::load_month(ym, file = file)
+        }
+    restart: "no"
+
+  app:
+    image: ${PREXP_IMAGE:-ghcr.io/katonometrica/prexp-app:main}
+    platform: linux/amd64
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    environment:
+      <<: *database
+      PREXP_APP_PASSWORD: demo-not-secret
+    ports:
+      - "127.0.0.1:${HOST_PORT_APP:-3838}:3838"
+
+volumes:
+  pgdata:
