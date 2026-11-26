@@ -38,7 +38,7 @@ flowchart LR
 
 **Aggregate on load.** The app never needs a row's product and quantity per item, so the loader sums each month to one row per practice and presentation: 9.5 million rows instead of 18.4 million, with the measures in exact `numeric`, so the load reconciles to the penny. *Cost:* the source's finest grain is not kept; a question that needs it means loading the months again.
 
-**Rollups for the views.** The Drug and Region views read three small tables (presentation, chemical and practice by region and month), built by the loader one month at a time, never the fact table. Only a practice's top drugs reads the fact table. *Cost:* the loader does more work, about a third of each month's build, and every measure must be one that can be added at the rollup's grain.
+**Rollups for the views.** The Drug and Region views read two small tables, the presentation and chemical rollups by region and month, and the Practice view's monthly totals read a third, by practice and month. The loader builds them one month at a time, so only a practice's top drugs reads the fact table. *Cost:* the loader does more work, about a third of each month's build, and every measure must be one that can be added at the rollup's grain.
 
 **A partition a month, with covering indexes.** Each month is a partition of the fact table, with two covering indexes, so a lookup is an index-only scan over the partitions it needs, and the oldest month leaves the window by dropping a partition, not by deleting 9.5 million rows. *Cost:* an index-only scan needs the visibility map set, so the loader vacuums each new partition, and both indexes are built for every month.
 
@@ -58,7 +58,7 @@ flowchart LR
 
 ## Quality
 
-**Tests on real data.** The tests run against a database the real loader builds from the fixtures: every row of eight real practices, across all seven regions, from one month, repeated as thirteen months with scaled measures, so the window's monthly drop is tested too. They compare what the app shows with totals computed independently from the fixture files. Browser flows drive the app in Chrome with shinytest2. CI fails below 85% line coverage, and also on any function no test reaches. *Cost:* the tests need PostgreSQL, so CI runs one as a service, and building the fixture database adds about 8 seconds to a run.
+**Tests on real data.** The tests run against a database the real loader builds from the fixtures: every row of eight prescribers across all seven regions, and a sample of the national unidentified prescriber, from one real month, repeated as thirteen months with scaled measures, so the window's monthly drop is tested too. They compare what the app shows with totals computed independently from the fixture files. Browser flows drive the app in Chrome with shinytest2. CI fails below 85% line coverage, and also on any function no test reaches. *Cost:* the tests need PostgreSQL, so CI runs one as a service, and building the fixture database adds about 8 seconds to a run.
 
 **One image, pinned.** CI builds its image from `docker/Dockerfile` and `renv.lock`, tagged by their hash, so the tests, the development stack and production run the same R packages; third-party actions are pinned to commit SHAs. *Cost:* a package update is a rebuild of the image.
 
