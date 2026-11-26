@@ -1,11 +1,13 @@
 # The PowerPoint export (P5-05; spec section 5.5), on report.pptx, 13.333 by
-# 7.5 inches (data-raw/make_templates.R): a title slide; one slide per item
-# with its title, its view and subject, its native chart and its note; its
-# table beside the chart when it is short and narrow, or else on slides of its
-# own after it; a note too long for the room under the chart on slides of its
-# own too; then the methods, a slide per section, or more for a long one. A
-# slide does not grow to fit its text, so the text is measured (text_lines(),
-# table_layout()) and the slide laid out to hold it.
+# 7.5 inches (data-raw/make_templates.R): a title slide with the maker's
+# wordmark; one slide per item with its title, its view and subject, its
+# native chart and its note; its table beside the chart when it is short and
+# narrow, or else on slides of its own after it; a note too long for the room
+# under the chart on slides of its own too; then the methods, a slide per
+# section, or more for a long one. A slide does not grow to fit its text, so
+# the text is measured (text_lines(), table_layout()) in both the fonts Office
+# may draw it in, and the slide laid out to hold it. The text takes the
+# theme's font, IBM Plex Sans, and the exports' colours (export_palette()).
 
 #' Writes a report as a PowerPoint file
 #'
@@ -62,7 +64,7 @@ template_file <- function(name) {
 pptx_left <- 0.667
 pptx_width <- 12
 pptx_bottom <- 7.4
-pptx_line <- 12 * 1.2 / 72
+pptx_line <- 12 * export_line / 72
 pptx_inset <- 0.1
 beside <- list(left = 8.3, width = 4.35, size = 10)
 alone <- list(top = 2, height = 5.4, size = 9)
@@ -111,7 +113,7 @@ text_height <- function(lines, size) {
   if (length(lines) == 0L) {
     return(0)
   }
-  sum(text_lines(lines, size, pptx_width - 2 * pptx_inset)) * size * 1.2 / 72 + pptx_inset
+  sum(text_lines(lines, size, pptx_width - 2 * pptx_inset)) * size * export_line / 72 + pptx_inset
 }
 
 # The note's paragraphs on each slide of its own, when it has them
@@ -144,11 +146,57 @@ pptx_title <- function(deck, window, exported, n) {
   deck <- officer::ph_with(
     deck, "Prescription Explorer report", location = officer::ph_location_type("ctrTitle")
   )
-  officer::ph_with(deck, c(
-    window_period(window),
-    paste("Exported on", export_time(exported)),
+  # The data period, the export's time and the items, in the secondary text's
+  # colour, at a size whose three lines the box holds in either font
+  prop <- officer::fp_text_lite(font.size = 20, color = export_palette()[["secondary"]])
+  lines <- c(
+    window_period(window), paste("Exported on", export_time(exported)),
     paste(n, if (n == 1L) "item" else "items")
-  ), location = officer::ph_location_type("subTitle"))
+  )
+  deck <- officer::ph_with(
+    deck, do.call(officer::block_list, lapply(lines, function(line) {
+      officer::fpar(officer::ftext(line, prop))
+    })),
+    location = officer::ph_location_type("subTitle")
+  )
+  # Last, so that screen readers read the title first
+  pptx_wordmark(deck)
+}
+
+# The maker's wordmark at the top of the cover, as on its site: its name in
+# IBM Plex Mono, its letters spaced, in the secondary text's colour, the text
+# box a link to its site. PowerPoint draws a link on text in the theme's link
+# colour, underlined; on a box, the text keeps its own.
+pptx_wordmark <- function(deck) {
+  mono <- export_fonts()$mono
+  size <- 12
+  prop <- officer::fp_text(
+    font.size = size, color = export_palette()[["secondary"]], font.family = mono$typeface
+  )
+  deck <- officer::ph_with(
+    deck, officer::fpar(officer::ftext(export_wordmark$text, prop)),
+    location = officer::ph_location(
+      left = pptx_left, top = 0.5, width = 4, height = 0.4, newlabel = export_wordmark$text
+    )
+  )
+  deck <- officer::ph_hyperlink(deck, ph_label = export_wordmark$text, href = export_wordmark$url)
+  # Its font declared as the theme declares IBM Plex Sans, so that PowerPoint
+  # draws a font of fixed pitch where it is not installed, and its letters
+  # spaced, in hundredths of a point
+  slide <- slide_xml(deck)
+  ns <- xml2::xml_ns(slide)
+  shape <- xml2::xml_find_first(
+    slide, sprintf("//p:sp[p:nvSpPr/p:cNvPr/@name = '%s']", export_wordmark$text), ns
+  )
+  run <- xml2::xml_find_first(shape, ".//a:r/a:rPr", ns)
+  xml2::xml_set_attr(run, "spc", round(100 * export_wordmark$spacing * size))
+  for (font in xml2::xml_find_all(run, "a:latin | a:ea | a:cs | a:sym", ns)) {
+    xml2::xml_set_attrs(font, c(
+      typeface = mono$typeface, panose = mono$panose, pitchFamily = mono$pitch_family,
+      charset = "0"
+    ))
+  }
+  deck
 }
 
 # The months loaded, for the title page
@@ -160,10 +208,11 @@ window_period <- function(window) {
 }
 
 pptx_item <- function(deck, item, frame) {
+  secondary <- export_palette()[["secondary"]]
   deck <- officer::add_slide(deck, layout = "Title Only", master = "Office Theme")
   deck <- pptx_slide_title(deck, item$title)
   deck <- pptx_text(deck, c(item$summary, item$profile), top = frame$summary$top,
-                    height = frame$summary$height, size = 12, colour = "#5A6470")
+                    height = frame$summary$height, size = 12, colour = secondary)
   chart <- frame$chart
   by_chart <- !is.null(item$table) && pptx_beside(item$table, frame)
   if (!is.null(item$chart)) {
@@ -183,7 +232,7 @@ pptx_item <- function(deck, item, frame) {
     # the Region view: its table takes the chart's place
     left <- if (is.null(item$chart)) pptx_left else beside$left
     deck <- pptx_text(deck, item$table$caption, top = chart$top, height = 0.35, size = 11,
-                      colour = "#5A6470", left = left, width = beside$width)
+                      colour = secondary, left = left, width = beside$width)
     layout <- table_layout(item$table, beside$size, beside$width)
     deck <- officer::ph_with(
       deck, export_flextable(item$table, beside$size, layout),
@@ -195,7 +244,7 @@ pptx_item <- function(deck, item, frame) {
   }
   if (frame$footnote$height > 0) {
     deck <- pptx_text(deck, item$footnote, top = frame$footnote$top,
-                      height = frame$footnote$height, size = 10, colour = "#5A6470")
+                      height = frame$footnote$height, size = 10, colour = secondary)
   }
   note <- if (isTRUE(frame$apart)) pptx_note_moved else item_note_lines(item)
   if (length(note) > 0L) {
@@ -218,7 +267,7 @@ pptx_table <- function(deck, item, rows, page) {
     deck, paste0("Table: ", item$title, if (page > 1L) " (continued)")
   )
   deck <- pptx_text(deck, item$table$caption, top = 1.55, height = 0.4, size = 12,
-                    colour = "#5A6470")
+                    colour = export_palette()[["secondary"]])
   layout <- table_layout(item$table, alone$size, pptx_width)
   deck <- officer::ph_with(
     deck, export_flextable(item$table, alone$size, layout, rows),
@@ -232,10 +281,12 @@ pptx_table <- function(deck, item, rows, page) {
 pptx_methods <- function(deck, page) {
   deck <- officer::add_slide(deck, layout = "Title Only", master = "Office Theme")
   deck <- pptx_slide_title(deck, page$title)
-  text <- function(...) officer::fp_text(font.size = 12, font.family = export_font, ...)
-  body <- text(color = "#333333")
-  bold <- text(color = "#333333", bold = TRUE)
-  link <- text(color = export_palette()[["blue"]], underlined = TRUE)
+  colours <- export_palette()
+  # In the theme's font, which the text box takes
+  text <- function(...) officer::fp_text_lite(font.size = 12, ...)
+  body <- text(color = colours[["text"]])
+  bold <- text(color = colours[["text"]], bold = TRUE)
+  link <- text(color = colours[["link"]], underlined = TRUE)
   spaced <- officer::fp_par(padding.bottom = 6)
   paragraphs <- lapply(page$blocks, function(block) {
     switch(block$kind,
@@ -258,17 +309,18 @@ pptx_methods <- function(deck, page) {
   )
 }
 
+# A slide's title, in the theme's font for titles, IBM Plex Sans too
 pptx_slide_title <- function(deck, title) {
-  prop <- officer::fp_text(font.size = 24, color = "#222222", font.family = export_font)
+  prop <- officer::fp_text_lite(font.size = 24, color = export_palette()[["text"]])
   officer::ph_with(
     deck, officer::fpar(officer::ftext(title, prop)), location = officer::ph_location_type("title")
   )
 }
 
-# Lines of text in a box of their own, a paragraph each
-pptx_text <- function(deck, lines, top, height, size, colour = "#333333", left = pptx_left,
-                      width = pptx_width) {
-  prop <- officer::fp_text(font.size = size, color = colour, font.family = export_font)
+# Lines of text in a box of their own, a paragraph each, in the theme's font
+pptx_text <- function(deck, lines, top, height, size, colour = export_palette()[["text"]],
+                      left = pptx_left, width = pptx_width) {
+  prop <- officer::fp_text_lite(font.size = size, color = colour)
   paragraphs <- lapply(lines, function(line) officer::fpar(officer::ftext(line, prop)))
   officer::ph_with(
     deck, do.call(officer::block_list, paragraphs),

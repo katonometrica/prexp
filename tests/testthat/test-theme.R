@@ -287,9 +287,85 @@ test_that("the fonts are IBM Plex, served with the app, with their licence", {
   expect_no_match(head, "googleapis", fixed = TRUE)
 })
 
-test_that("the exports keep their own font and colours", {
-  expect_identical(export_font, "Arial")
-  expect_identical(export_palette()[["blue"]], "#0072B2")
+test_that("the exports' colours are the light theme's, and read on white", {
+  colours <- export_palette()
+  light <- brand_tokens()$light
+  # The light theme's text, secondary text and gold, the app's charts' mark
+  # and gridlines, and its strong border on its page between rows
+  expect_identical(colours, c(
+    text = "#0B1222", secondary = "#5A5650", mark = "#355695", link = "#7D6523",
+    rule = "#0B1222", row_rule = "#BEBDBC", grid = "#DFDEDD"
+  ))
+  expect_identical(colours[["text"]], toupper(light$text))
+  expect_identical(colours[["secondary"]], toupper(light$text_secondary))
+  expect_identical(colours[["link"]], toupper(light$accent))
+  expect_identical(colours[["mark"]], chart_colours()$mark)
+  expect_identical(colours[["grid"]], chart_colours()$grid)
+  # On the white of a slide or a page: text at 4.5:1, the chart's mark and
+  # the header's rule at 3:1. The rules between rows and the gridlines only
+  # separate what the text says.
+  for (colour in c("text", "secondary", "link")) {
+    expect_gte(contrast_ratio(colours[[colour]], "#FFFFFF"), 4.5, label = colour)
+  }
+  for (colour in c("mark", "rule")) {
+    expect_gte(contrast_ratio(colours[[colour]], "#FFFFFF"), 3, label = colour)
+  }
+})
+
+test_that("the exports' Office theme is the brand's colours and IBM Plex", {
+  expect_identical(export_scheme(), c(
+    dk1 = "0B1222", lt1 = "FFFFFF", dk2 = "0F1730", lt2 = "F7F5F2", accent1 = "355695",
+    accent2 = "7D6523", accent3 = "5A5650", accent4 = "678CCF", accent5 = "BEBDBC",
+    accent6 = "C9A84C", hlink = "7D6523", folHlink = "5A5650"
+  ))
+  # Text a reader adds in dark 1, links and followed links, on light 1
+  scheme <- stats::setNames(paste0("#", export_scheme()), names(export_scheme()))
+  for (slot in c("dk1", "accent3", "hlink", "folHlink")) {
+    expect_gte(contrast_ratio(scheme[[slot]], scheme[["lt1"]]), 4.5, label = slot)
+  }
+  # IBM's classifications of the Regulars, by which Office substitutes
+  fonts <- export_fonts()
+  expect_identical(
+    vapply(fonts, `[[`, "", "typeface"), c(sans = "IBM Plex Sans", mono = "IBM Plex Mono")
+  )
+  expect_identical(
+    vapply(fonts, `[[`, "", "panose"),
+    c(sans = "020B0503050203000203", mono = "020B0509050203000203")
+  )
+  expect_identical(vapply(fonts, `[[`, "", "pitch_family"), c(sans = "34", mono = "49"))
+  # The charts: the theme's font, by reference; tick labels in the secondary
+  # text's colour, axis titles in the text's, as the app draws them
   theme <- prexp_mschart_theme()
-  expect_identical(theme$axis_text_x$font.family, "Arial")
+  expect_identical(theme$axis_text_x$font.family, "+mn-lt")
+  expect_identical(theme$axis_text_x$color, export_palette()[["secondary"]])
+  expect_identical(theme$axis_title_y$color, export_palette()[["text"]])
+  expect_identical(theme$grid_major_line_y$color, export_palette()[["grid"]])
+})
+
+test_that("brand_office_theme() puts the brand in an Office theme", {
+  theme <- xml2::read_xml(unz(
+    system.file("template", "template.pptx", package = "officer"), "ppt/theme/theme1.xml"
+  ))
+  brand_office_theme(theme)
+  a <- c(a = "http://schemas.openxmlformats.org/drawingml/2006/main")
+  # Its name kept, unless another is given
+  expect_identical(xml2::xml_attr(xml2::xml_root(theme), "name"), "Office Theme")
+  colours <- vapply(names(export_scheme()), function(slot) {
+    colour <- xml2::xml_find_first(theme, sprintf("//a:clrScheme/a:%s/a:srgbClr", slot), a)
+    xml2::xml_attr(colour, "val")
+  }, "")
+  expect_identical(colours, export_scheme())
+  latin <- xml2::xml_find_all(theme, "//a:majorFont/a:latin | //a:minorFont/a:latin", a)
+  expect_identical(xml2::xml_attr(latin, "typeface"), rep("IBM Plex Sans", 2L))
+  expect_identical(xml2::xml_attr(latin, "panose"), rep("020B0503050203000203", 2L))
+  expect_identical(xml2::xml_attr(latin, "pitchFamily"), rep("34", 2L))
+  # Flat: no gradient, shadow or bevel, as many styles as before
+  expect_length(xml2::xml_find_all(theme, "//a:gradFill | //a:outerShdw | //a:sp3d", a), 0L)
+  expect_length(xml2::xml_find_all(theme, "//a:fillStyleLst/a:solidFill", a), 3L)
+  expect_length(xml2::xml_find_all(theme, "//a:effectStyle/a:effectLst", a), 3L)
+  schemes <- xml2::xml_find_all(theme, "//a:clrScheme | //a:fontScheme | //a:fmtScheme", a)
+  expect_identical(unique(xml2::xml_attr(schemes, "name")), brand_name)
+  renamed <- xml2::read_xml(as.character(theme))
+  brand_office_theme(renamed, name = brand_name)
+  expect_identical(xml2::xml_attr(xml2::xml_root(renamed), "name"), brand_name)
 })

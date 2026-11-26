@@ -73,6 +73,40 @@ xlsx_cell_formats <- function(dir, sheet) {
   )
 }
 
+# The fonts the parts of an unpacked Office file name, the parts whose names
+# match `pattern`: each typeface of a drawing's runs (slides, charts), each
+# font of a Word run, each font of a workbook's styles
+named_fonts <- function(dir, pattern) {
+  files <- list.files(dir, pattern, recursive = TRUE, full.names = TRUE)
+  unlist(lapply(files, function(file) {
+    xml <- paste(readLines(file, warn = FALSE, encoding = "UTF-8"), collapse = " ")
+    tags <- unlist(regmatches(
+      xml, gregexpr("<a:(latin|ea|cs|sym) [^>]*>|<w:rFonts[^>]*>|<name [^>]*>", xml)
+    ))
+    values <- regmatches(
+      tags, gregexpr("(typeface|w:ascii|w:hAnsi|w:eastAsia|w:cs|val)=\"[^\"]*\"", tags)
+    )
+    sub("^[^\"]*\"([^\"]*)\"$", "\\1", unlist(values))
+  }))
+}
+
+# The theme's fonts, by reference: IBM Plex Sans in the exports' themes
+theme_fonts <- c("+mn-lt", "+mn-ea", "+mn-cs", "+mj-lt", "+mj-ea", "+mj-cs")
+
+# The colours the parts of an unpacked Office file draw in, six hex digits
+drawn_colours <- function(dir, pattern) {
+  files <- list.files(dir, pattern, recursive = TRUE, full.names = TRUE)
+  xml <- vapply(files, function(file) paste(readLines(file, warn = FALSE), collapse = " "), "")
+  found <- unlist(regmatches(
+    xml, gregexpr("(srgbClr val|w:color w:val|w:fill|rgb)=\"[0-9A-Fa-f]{6,8}\"", xml)
+  ))
+  hex <- toupper(sub("^.*=\"([0-9A-Fa-f]+)\"$", "\\1", found))
+  substr(hex, nchar(hex) - 5L, nchar(hex))
+}
+
+# The exports' colours as six hex digits, and white, the page's
+export_colours <- function() c(sub("#", "", export_palette(), fixed = TRUE), "FFFFFF")
+
 export_time_fixed <- as.POSIXct("2026-11-25 14:05", tz = "UTC")
 
 # A report with an item of each kind, two with notes
@@ -213,6 +247,74 @@ test_that("the methods are cut into pages, a section each, a long one over more"
   expect_true("Methods: Limitations (continued)" %in% vapply(small, `[[`, "", "title"))
 })
 
+test_that("the exports' text is measured in the wider of IBM Plex Sans and Arial", {
+  # Each string takes the wider font's width, in either weight: capitals are
+  # wider in Arial, a drug's name in IBM Plex Sans
+  strings <- c("NORTH EAST AND YORKSHIRE", "Levothyroxine sodium 100microgram tablets")
+  for (weight in c("normal", "bold")) {
+    each <- font_widths(strings, 10, weight)
+    expect_named(each, c("IBM Plex Sans", "Arial"))
+    expect_identical(
+      export_text_width(strings, 10, weight), pmax(each[["IBM Plex Sans"]], each[["Arial"]])
+    )
+  }
+  each <- font_widths(strings, 10)
+  expect_gt(each[["Arial"]][[1]], each[["IBM Plex Sans"]][[1]])
+  expect_gt(each[["IBM Plex Sans"]][[2]], each[["Arial"]][[2]])
+  # Each font's own design widths: digits of 0.556 em in Arial (Liberation
+  # Sans has its metrics) and of 0.6 em in IBM Plex Sans
+  digits <- font_widths("0123456789", 10)
+  expect_equal(digits[["Arial"]] * 72, 55.6, tolerance = 1e-3)
+  expect_equal(digits[["IBM Plex Sans"]] * 72, 60, tolerance = 1e-3)
+  # Bold IBM Plex Sans is the variable font at its bold weight; measuring it
+  # leaves the font at its regular weight, which the charts measure with
+  saved <- chart_state$advances
+  withr::defer(chart_state$advances <- saved)
+  chart_state$advances <- NULL
+  plex <- function(weight) font_widths("Prescribers", 10, weight)[["IBM Plex Sans"]]
+  expect_gt(plex("bold"), plex("normal") * 1.03)
+  charts <- systemfonts::string_width(
+    "Prescribers", family = "IBM Plex Sans", size = 10, res = 7200
+  )
+  expect_equal(charts / 7200, plex("normal"), tolerance = 1e-3)
+  # A line is IBM Plex Sans's, 1.3 em, the taller of the two fonts' lines
+  heights <- vapply(export_measure_fonts, function(family) {
+    systemfonts::font_info(family, size = 10)$lineheight / 10
+  }, 1)
+  expect_equal(export_line, max(heights), tolerance = 1e-3)
+  expect_gt(heights[["IBM Plex Sans"]], heights[["Arial"]])
+  # A paragraph takes as many lines as it wraps to in the font it needs
+  # more in
+  para <- "levothyroxine sodium tablets for the thyroid"
+  each <- font_widths(para, 12)
+  between <- mean(c(each[["Arial"]], each[["IBM Plex Sans"]])) + export_room
+  expect_identical(text_lines(para, 12, between), 2L)
+  expect_identical(text_lines(para, 12, max(unlist(each)) + export_room), 1L)
+  # A table's column: its widest value in the wider font, the cell's margins
+  # and a point of room; its rows a line of 1.3 em each
+  table <- export_table(
+    "By region", data.frame(region = c("NORTH EAST AND YORKSHIRE", "LONDON")), "Region", "text"
+  )
+  layout <- table_layout(table, 10, 12)
+  expect_equal(
+    layout$widths, max(export_text_width(table$data$region, 10)) + 8 / 72 + export_room
+  )
+  expect_equal(layout$heights, rep(10 * export_line / 72 + 4 / 72, 2L))
+  expect_equal(text_height(c("One line", "Another"), 12), 2 * 12 * 1.3 / 72 + pptx_inset)
+})
+
+test_that("a table's pages are filled evenly, as few as hold its rows", {
+  layout <- list(header = 0.3, heights = rep(0.21, 25L))
+  pages <- table_pages(layout, 5.4)
+  # 24 rows fit a page: two pages, of 13 and 12 rows rather than 24 and 1
+  expect_identical(lengths(pages), c(13L, 12L))
+  expect_identical(unlist(pages), seq_len(25L))
+  expect_identical(table_pages(layout, 10), list(seq_len(25L)))
+  # A row too high for any page still goes on one
+  tall <- list(header = 0.3, heights = c(0.2, 6, 0.2))
+  expect_identical(table_pages(tall, 5.4), list(1L, 2L, 3L))
+})
+
 test_that("the PowerPoint file reads back: a title, each item, its tables and the methods", {
   con <- fixture_app()
   spec <- export_spec(con)
@@ -283,6 +385,18 @@ test_that("the PowerPoint file reads back: a title, each item, its tables and th
   expect_gt(length(props), 0L)
   expect_identical(length(props), sum(lengths(regmatches(slides, gregexpr("<a:tbl>", slides)))))
   expect_true(all(grepl("firstRow=\"1\"", props, fixed = TRUE)))
+  # Every run in IBM Plex Sans, the theme's font, which the text takes and
+  # the tables and charts name by reference; IBM Plex Mono only in the maker's
+  # wordmark, for its four scripts
+  drawn <- "^(slide[0-9]+|chart[^/]*)[.]xml$"
+  fonts <- named_fonts(dir, drawn)
+  expect_true(all(fonts %in% c(theme_fonts, "IBM Plex Mono")), label = toString(unique(fonts)))
+  expect_identical(sum(fonts == "IBM Plex Mono"), 4L)
+  # The exports' colours only, the charts' series in the mark's
+  used <- drawn_colours(dir, drawn)
+  expect_true(all(used %in% export_colours()), label = toString(setdiff(used, export_colours())))
+  marks <- drawn_colours(file.path(dir, "ppt", "charts"), "[.]xml$")
+  expect_true(sub("#", "", export_palette()[["mark"]]) %in% marks)
   properties <- officer::doc_properties(deck)
   expect_identical(properties$value[properties$tag == "title"], "Prescription Explorer report")
   expect_identical(properties$value[properties$tag == "creator"], "Prescription Explorer")
@@ -388,6 +502,19 @@ test_that("the Word file reads back: a title, a heading per item, its chart, not
     sum(parts$style_name == "List Bullet", na.rm = TRUE),
     sum(lengths(lapply(sections, `[[`, "points")))
   )
+  # Every run in IBM Plex Sans, the template's font, which the text takes
+  # from its styles and the charts name by reference; IBM Plex Mono only in
+  # the maker's wordmark, for its four scripts
+  drawn <- "^(document|chart[^/]*)[.]xml$"
+  fonts <- named_fonts(dir, drawn)
+  expect_true(all(fonts %in% c(theme_fonts, "IBM Plex Mono")), label = toString(unique(fonts)))
+  expect_identical(sum(fonts == "IBM Plex Mono"), 4L)
+  # The exports' colours only: the secondary text's, links' and the mark's
+  # among them; the rest of the text the template's
+  used <- drawn_colours(dir, drawn)
+  expect_true(all(used %in% export_colours()), label = toString(setdiff(used, export_colours())))
+  colours <- sub("#", "", export_palette()[c("secondary", "link", "mark")], fixed = TRUE)
+  expect_true(all(colours %in% used))
   properties <- officer::doc_properties(doc)
   expect_identical(properties$value[properties$tag == "title"], "Prescription Explorer report")
 })
@@ -409,6 +536,111 @@ test_that("an item with nothing to show says so, in PowerPoint and Word", {
     }
     expect_true(all(messages %in% texts), label = format)
   }
+})
+
+test_that("the templates' themes are the brand's colours and IBM Plex Sans", {
+  a <- c(a = "http://schemas.openxmlformats.org/drawingml/2006/main")
+  part <- function(file, name) xml2::read_xml(unz(template_file(file), name))
+  for (case in list(
+    list(file = "report.pptx", theme = "ppt/theme/theme1.xml", name = "Office Theme"),
+    list(file = "report.docx", theme = "word/theme/theme1.xml", name = brand_name)
+  )) {
+    theme <- part(case$file, case$theme)
+    # The PowerPoint's keeps its name, which officer names the master after
+    expect_identical(xml2::xml_attr(xml2::xml_root(theme), "name"), case$name)
+    colours <- vapply(names(export_scheme()), function(slot) {
+      node <- xml2::xml_find_first(theme, sprintf("//a:clrScheme/a:%s/a:srgbClr", slot), a)
+      xml2::xml_attr(node, "val")
+    }, "")
+    expect_identical(colours, export_scheme(), label = case$file)
+    # IBM Plex Sans, major and minor, with what Office substitutes by
+    latin <- xml2::xml_find_all(theme, "//a:majorFont/a:latin | //a:minorFont/a:latin", a)
+    expect_identical(xml2::xml_attr(latin, "typeface"), rep("IBM Plex Sans", 2L))
+    expect_identical(xml2::xml_attr(latin, "panose"), rep("020B0503050203000203", 2L))
+    expect_identical(xml2::xml_attr(latin, "pitchFamily"), rep("34", 2L))
+    expect_length(xml2::xml_find_all(theme, "//a:gradFill | //a:outerShdw | //a:sp3d", a), 0L)
+  }
+  # The layouts the exports choose, on the master named after the theme
+  layouts <- officer::layout_summary(officer::read_pptx(template_file("report.pptx")))
+  expect_true(all(
+    c("Title Slide", "Title Only") %in% layouts$layout[layouts$master == "Office Theme"]
+  ))
+  # Word's font table declares both fonts, for Word to substitute by
+  fonts <- part("report.docx", "word/fontTable.xml")
+  w <- xml2::xml_ns(fonts)
+  for (font in export_fonts()) {
+    entry <- xml2::xml_find_first(fonts, sprintf("//w:font[@w:name = '%s']", font$typeface), w)
+    value <- function(name) xml2::xml_attr(xml2::xml_child(entry, name, w), "w:val", w)
+    expect_identical(value("w:panose1"), font$panose)
+    expect_identical(value("w:family"), font$family)
+    expect_identical(value("w:pitch"), font$pitch)
+  }
+  # Word's text in the text's colour; its tables' rules in the exports', with
+  # no bands
+  styles <- part("report.docx", "word/styles.xml")
+  w <- xml2::xml_ns(styles)
+  text <- xml2::xml_find_first(styles, "/w:styles/w:docDefaults/w:rPrDefault/w:rPr/w:color", w)
+  expect_identical(xml2::xml_attr(text, "w:val", w), "0B1222")
+  table <- xml2::xml_find_first(styles, "//w:style[@w:styleId = 'ReportTable']", w)
+  rules <- xml2::xml_find_all(table, ".//w:tblBorders/* | .//w:tcBorders/*", w)
+  expect_setequal(xml2::xml_attr(rules, "w:color", w), c("BEBDBC", "0B1222"))
+  expect_length(xml2::xml_find_all(table, ".//w:shd", w), 0L)
+})
+
+test_that("the cover and the title page carry the maker's wordmark, linked to its site", {
+  dir <- withr::local_tempdir()
+  # PowerPoint: a text box on the cover, which is the link, so that its text
+  # keeps its own colour
+  deck <- officer::read_pptx(template_file("report.pptx"))
+  deck <- pptx_title(deck, NULL, export_time_fixed, 1L)
+  path <- file.path(dir, "cover.pptx")
+  print(deck, target = path)
+  utils::unzip(path, exdir = file.path(dir, "pptx"))
+  slides <- file.path(dir, "pptx", "ppt", "slides")
+  slide <- xml2::read_xml(file.path(slides, "slide1.xml"))
+  ns <- xml2::xml_ns(slide)
+  shape <- xml2::xml_find_first(slide, "//p:sp[p:nvSpPr/p:cNvPr/@name = 'KATONOMETRICA']", ns)
+  expect_identical(xml2::xml_text(shape), "KATONOMETRICA")
+  link <- xml2::xml_find_first(shape, "p:nvSpPr/p:cNvPr/a:hlinkClick", ns)
+  rels <- xml2::xml_ns_strip(xml2::read_xml(file.path(slides, "_rels", "slide1.xml.rels")))
+  target <- xml2::xml_find_first(
+    rels, sprintf("//Relationship[@Id = '%s']", xml2::xml_attr(link, "r:id", ns))
+  )
+  expect_identical(xml2::xml_attr(target, "Target"), "https://katonometrica.com")
+  # In IBM Plex Mono, declared so that PowerPoint substitutes a font of fixed
+  # pitch; in the secondary text's colour, its letters spaced 0.18 em
+  run <- xml2::xml_find_first(shape, ".//a:r/a:rPr", ns)
+  expect_identical(xml2::xml_attr(run, "spc"), "216")
+  colour <- xml2::xml_find_first(run, "a:solidFill/a:srgbClr", ns)
+  expect_identical(xml2::xml_attr(colour, "val"), sub("#", "", export_palette()[["secondary"]]))
+  latin <- xml2::xml_attrs(xml2::xml_find_first(run, "a:latin", ns))
+  expect_identical(
+    latin[c("typeface", "panose", "pitchFamily")],
+    c(typeface = "IBM Plex Mono", panose = "020B0509050203000203", pitchFamily = "49")
+  )
+  texts <- officer::pptx_summary(officer::read_pptx(path))$text
+  expect_true(all(c("KATONOMETRICA", "Prescription Explorer report", "1 item") %in% texts))
+  # Word: a paragraph that is a link, in IBM Plex Mono, which the template's
+  # font table declares
+  doc <- docx_wordmark(officer::read_docx(template_file("report.docx")))
+  path <- file.path(dir, "title.docx")
+  print(doc, target = path)
+  utils::unzip(path, exdir = file.path(dir, "docx"))
+  body <- xml2::read_xml(file.path(dir, "docx", "word", "document.xml"))
+  w <- xml2::xml_ns(body)
+  link <- xml2::xml_find_first(body, "//w:hyperlink[w:r/w:t = 'KATONOMETRICA']", w)
+  rels <- xml2::xml_ns_strip(
+    xml2::read_xml(file.path(dir, "docx", "word", "_rels", "document.xml.rels"))
+  )
+  target <- xml2::xml_find_first(
+    rels, sprintf("//Relationship[@Id = '%s']", xml2::xml_attr(link, "r:id", w))
+  )
+  expect_identical(xml2::xml_attr(target, "Target"), "https://katonometrica.com")
+  run <- xml2::xml_find_first(link, "w:r/w:rPr", w)
+  property <- function(name, attr) xml2::xml_attr(xml2::xml_child(run, name, w), attr, w)
+  expect_identical(property("w:rFonts", "w:ascii"), "IBM Plex Mono")
+  expect_identical(property("w:color", "w:val"), sub("#", "", export_palette()[["secondary"]]))
+  expect_identical(property("w:spacing", "w:val"), "36")
 })
 
 test_that("a Word export that fails leaves nothing in tempdir()", {
@@ -544,6 +776,28 @@ test_that("the Excel workbook reads back: a sheet per item with its tables and c
   for (url in c(data_attribution()$source_url, data_attribution()$licence_url)) {
     expect_true(grepl(url, methods_rels, fixed = TRUE), label = url)
   }
+  # IBM Plex Sans throughout: every font of the styles, the base font of the
+  # Swiss family, by which Excel substitutes; the theme's, declared as the
+  # templates'; the charts' by reference
+  styles <- xlsx_part(dir, "styles.xml")
+  fonts <- xml2::xml_attr(xml2::xml_find_all(styles, "//fonts/font/name"), "val")
+  expect_identical(unique(fonts), export_font)
+  base <- xml2::xml_find_first(styles, "//fonts/font/family")
+  expect_identical(xml2::xml_attr(base, "val"), "2")
+  theme <- xml2::read_xml(file.path(dir, "xl", "theme", "theme1.xml"))
+  a <- c(a = "http://schemas.openxmlformats.org/drawingml/2006/main")
+  latin <- xml2::xml_find_all(theme, "//a:majorFont/a:latin | //a:minorFont/a:latin", a)
+  expect_identical(xml2::xml_attr(latin, "typeface"), rep(export_font, 2L))
+  expect_identical(xml2::xml_attr(latin, "panose"), rep(export_fonts()$sans$panose, 2L))
+  colours <- vapply(names(export_scheme()), function(slot) {
+    xml2::xml_attr(xml2::xml_find_first(theme, sprintf("//a:%s/a:srgbClr", slot), a), "val")
+  }, "")
+  expect_identical(colours, export_scheme())
+  expect_true(all(named_fonts(dir, "^chart[0-9]+[.]xml$") %in% theme_fonts))
+  # The exports' colours only, the links' among them
+  used <- drawn_colours(dir, "^(styles|chart[0-9]+)[.]xml$")
+  expect_true(all(used %in% export_colours()), label = toString(setdiff(used, export_colours())))
+  expect_true(sub("#", "", export_palette()[["link"]]) %in% used)
 })
 
 test_that("Excel shows quantity and ADQ usage as the app writes them", {

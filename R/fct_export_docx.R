@@ -1,12 +1,14 @@
 # The Word export (P5-06; spec section 5.5), on report.docx, A4 with 2.5 cm
-# margins (data-raw/make_templates.R): a title page with the data period and
-# the export time; then a page per item with its heading, its view and
-# subject, a native chart, its note and its table; and the methods as an
-# appendix. Each Heading 1 starts a page (the template's style). Word lays
-# the text out and breaks a long table across pages itself, repeating its
-# header row; a table of more than three columns, whose BNF codes and
-# national totals do not wrap, is wider than a portrait page's text, so it
-# goes on landscape pages of its own after its item's.
+# margins (data-raw/make_templates.R): a title page with the maker's wordmark,
+# the data period and the export time; then a page per item with its heading,
+# its view and subject, a native chart, its note and its table; and the
+# methods as an appendix. Each Heading 1 starts a page (the template's
+# style). Word lays the text out and breaks a long table across pages itself,
+# repeating its header row; a table of more than three columns, whose BNF
+# codes and national totals do not wrap, is wider than a portrait page's
+# text, so it goes on landscape pages of its own after its item's. The text
+# takes the template's font, IBM Plex Sans, and colour, the exports' text
+# colour; secondary text and links take theirs (export_palette()).
 
 #' Writes a report as a Word file
 #'
@@ -25,13 +27,14 @@ export_docx <- function(spec, con, path, exported = Sys.time()) {
     doc, title = "Prescription Explorer report", creator = "Prescription Explorer",
     created = exported
   )
+  doc <- docx_wordmark(doc)
   doc <- officer::body_add_par(doc, "Prescription Explorer report", style = "Title")
   n <- length(items)
   for (line in c(
     window_period(window), paste("Exported on", export_time(exported)),
     paste(n, if (n == 1L) "item" else "items")
   )) {
-    doc <- officer::body_add_par(doc, line, style = "Normal")
+    doc <- docx_secondary(doc, line)
   }
   for (item in items) {
     doc <- docx_item(doc, item)
@@ -80,7 +83,7 @@ docx_end_section <- function(doc, orient) {
 docx_item <- function(doc, item) {
   doc <- officer::body_add_par(doc, item$title, style = "heading 1")
   for (line in c(item$summary, item$profile)) {
-    doc <- officer::body_add_par(doc, line, style = "Normal")
+    doc <- docx_secondary(doc, line)
   }
   if (!is.null(item$chart)) {
     doc <- mschart::body_add_chart(
@@ -92,7 +95,7 @@ docx_item <- function(doc, item) {
     doc <- officer::body_add_par(doc, item$message, style = "Normal")
   }
   if (!is.null(item$footnote)) {
-    doc <- officer::body_add_par(doc, item$footnote, style = "Normal")
+    doc <- docx_secondary(doc, item$footnote)
   }
   for (line in item_note_lines(item)) {
     doc <- officer::body_add_par(doc, line, style = "Normal")
@@ -133,7 +136,8 @@ docx_section <- function(doc, section) {
   for (text in section$text) {
     doc <- officer::body_add_par(doc, text, style = "Normal")
   }
-  text <- function(...) officer::fp_text_lite(font.family = export_font, ...)
+  # The style's font and colour, but for a point's term, in bold, and links
+  text <- officer::fp_text_lite
   # A list Word and screen readers know as one, its bullets from the style
   for (point in section$points) {
     runs <- c(
@@ -142,13 +146,43 @@ docx_section <- function(doc, section) {
     )
     doc <- officer::body_add_fpar(doc, do.call(officer::fpar, runs), style = "List Bullet")
   }
-  link <- text(color = export_palette()[["blue"]], underlined = TRUE)
+  link <- text(color = export_palette()[["link"]], underlined = TRUE)
   for (target in section$links) {
     doc <- officer::body_add_fpar(
       doc, officer::fpar(officer::hyperlink_ftext(target$text, prop = link, href = target$url)),
       style = "Normal"
     )
   }
+  doc
+}
+
+# A paragraph of secondary text: in the Normal style, in the secondary text's
+# colour
+docx_secondary <- function(doc, text) {
+  prop <- officer::fp_text_lite(color = export_palette()[["secondary"]])
+  officer::body_add_fpar(doc, officer::fpar(officer::ftext(text, prop)), style = "Normal")
+}
+
+# The maker's wordmark at the top of the title page, as on the PowerPoint's
+# cover: its name in IBM Plex Mono, which the template's font table declares,
+# its letters spaced, in the secondary text's colour, linked to its site. Word
+# draws a link's text in the link's own colour.
+docx_wordmark <- function(doc) {
+  mono <- export_fonts()$mono$typeface
+  size <- 10
+  prop <- officer::fp_text_lite(
+    font.size = size, color = export_palette()[["secondary"]], font.family = mono,
+    hansi.family = mono, cs.family = mono, eastasia.family = mono
+  )
+  doc <- officer::body_add_fpar(doc, officer::fpar(
+    officer::hyperlink_ftext(export_wordmark$text, prop = prop, href = export_wordmark$url)
+  ), style = "Normal")
+  # Its letters spaced, in twentieths of a point
+  body <- doc$doc_obj$get()
+  run <- xml2::xml_find_first(body, sprintf(
+    "//w:hyperlink/w:r[w:t = '%s']/w:rPr", export_wordmark$text
+  ), xml2::xml_ns(body))
+  xml2::xml_add_child(run, "w:spacing", "w:val" = round(20 * export_wordmark$spacing * size))
   doc
 }
 
