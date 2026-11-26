@@ -6,7 +6,7 @@
 ![PostgreSQL 18](https://img.shields.io/badge/PostgreSQL-18-336791)
 [![licence MIT](https://img.shields.io/badge/licence-MIT-green)](LICENSE.md)
 
-A Shiny app, built as an R package, over a rolling twelve months of the English Prescribing Dataset (EPD): the prescriptions issued in England and dispensed in the community, about 18 million rows a month, published by the NHS Business Services Authority. Look up a drug, a practice or a region, pin what you find to a report with notes, and export it to PowerPoint, Word or Excel.
+A Shiny app, built as an R package, over a rolling twelve months of the English Prescribing Dataset (EPD): the prescriptions issued in England and dispensed in the community, about 18 million rows a month, published by the NHS Business Services Authority. Look up a drug or a practice, compare a drug across England's regions, pin what you find to a report with notes, and export it to PowerPoint, Word or Excel.
 
 It runs in production on a small shared server, 4 CPUs and 15 GB of memory, and loads each new month by itself. Its code is meant to be read: [What this demonstrates](#what-this-demonstrates) maps each technique to the files that show it.
 
@@ -20,7 +20,12 @@ With Docker, from a clone of this repository:
 docker compose -f compose.demo.yaml up
 ```
 
-Then open <http://localhost:3838>. This starts PostgreSQL 18, loads a sample with the real loader (the test fixtures: every row of eight real practices, from one month, repeated as thirteen months), and runs the app from its published image. There is nothing to install or configure. `docker compose -f compose.demo.yaml down -v` removes it all.
+Then open <http://localhost:3838>. This starts PostgreSQL 18, loads a sample with the real loader, and runs the app from its published image. There is nothing to install or configure.
+
+- **The sample is test data, not statistics:** every row of eight real prescribers and a sample of unidentified prescribing from September 2026, plus twelve earlier months made from them with every figure scaled (the test fixtures).
+- **Its database asks for no password,** and publishes no port. With Docker Engine on Linux, though, any user of the machine can reach it while the demo runs: use a machine you do not share.
+- **The image is built for x86-64 only.** Docker Desktop on an Apple Silicon Mac runs it under emulation; on an Arm Linux machine, Docker needs amd64 emulation installed first.
+- **`docker compose -f compose.demo.yaml down -v`** removes the containers and the data. The downloaded images stay; `--rmi all` removes them too, the PostgreSQL image included, which the development stack also uses.
 
 ## What this demonstrates
 
@@ -31,7 +36,7 @@ Then open <http://localhost:3838>. This starts PostgreSQL 18, loads a sample wit
 | A query registry: the app and the plan checks run the same SQL files, with parameters, never with values pasted in | [R/fct_query_registry.R](R/fct_query_registry.R), [R/fct_queries.R](R/fct_queries.R) |
 | ETL from NHSBSA's CKAN API: download, stage, aggregate beside the live data, check, and swap a month in one transaction | [R/fct_source.R](R/fct_source.R), [R/fct_loader.R](R/fct_loader.R), [inst/sql/load/](inst/sql/load/) |
 | Monthly partitions, covering indexes and rollup tables, so a lookup reads index entries and pre-aggregated rows, never a month's 18 million source rows | [inst/sql/migrations/](inst/sql/migrations/) |
-| Each query's plan checked: index-only reads, partitions pruned, and its time, in the tests and nightly in production | [R/fct_plan_check.R](R/fct_plan_check.R) |
+| Each query's plan checked: index-only reads, partitions pruned, and its time, on the full twelve months and nightly in production; the tests check the checker on saved plans, and each query's pruning on the fixtures | [R/fct_plan_check.R](R/fct_plan_check.R) |
 | A cache shared by every session, a connection pool, and background workers for the exports | [R/fct_cache.R](R/fct_cache.R), [R/db.R](R/db.R), [R/fct_workers.R](R/fct_workers.R) |
 | Tests on a database the real loader builds from real rows, checked against totals computed independently; browser flows with shinytest2 | [tests/testthat/](tests/testthat/) |
 | CI: a build image keyed to `renv.lock`, lint, migrations, tests, an 85% coverage gate and the browser flows; actions pinned to commit SHAs | [.github/workflows/ci.yaml](.github/workflows/ci.yaml) |

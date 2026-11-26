@@ -55,8 +55,8 @@ services:
         condition: service_healthy
     environment:
       # No sign-in: RStudio opens straight into the IDE as user rstudio. Only this machine
-      # can reach it (the port is bound to 127.0.0.1 below); see the README for what that
-      # means and how to bring the sign-in back.
+      # can reach it (the port is bound to 127.0.0.1 below); see docs/development.md for
+      # what that means and how to bring the sign-in back.
       DISABLE_AUTH: "true"
       # The rstudio user's UID and GID. Docker Desktop needs the defaults; on Linux set
       # HOST_UID and HOST_GID in .env so the bind-mounted repository is writable.

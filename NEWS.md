@@ -15,7 +15,7 @@ The first release: Prescription Explorer in production, over a rolling twelve mo
 
 ## Quality
 
-- **Tests** against a database the real loader builds from real EPD rows (eight practices, repeated as thirteen months), checked against totals computed independently, browser flows with shinytest2, and an 85% coverage gate in CI.
+- **Tests** against a database the real loader builds from real EPD rows (eight prescribers from one real month, repeated as thirteen months with scaled measures), checked against totals computed independently, browser flows with shinytest2, and an 85% coverage gate in CI.
 - **`check_plans()`** checks each of the app's queries for index-only reads, pruned partitions and its time, nightly in production; `docs/benchmarks.md` has the measurements.
 
 ## Running it

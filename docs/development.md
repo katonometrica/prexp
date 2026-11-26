@@ -58,6 +58,14 @@ R's site library, and renv is never switched on inside a container.
 - devtools, usethis and roxygen2 come with the development image and are not in
   `renv.lock`.
 
+## Tests
+
+From the project in RStudio, `devtools::test()` runs the suite. The tests connect to the
+stack's `prexp_test` database, make the databases they need, and drop them at the end;
+with no database reachable, the tests that need one are skipped, each saying why. CI runs
+the suite under coverage (`covr::package_coverage(type = "tests")`) and fails below 85%,
+or if any function has no coverage.
+
 ## End-to-end flows
 
 `tests/testthat/e2e-flows.R` drives the app in Google Chrome, which the development

@@ -1,15 +1,19 @@
 # Prescription Explorer in one command, with nothing to set up: PostgreSQL 18, the test
-# fixtures loaded by the real loader (every row of eight real practices from one month,
-# repeated as thirteen months: tests/testthat/fixtures), and the app from its published
-# image. From the repository root:
+# fixtures loaded by the real loader (every row of eight real prescribers and a sample
+# of unidentified prescribing from September 2026, plus twelve earlier months made from
+# them with scaled figures: test data, not statistics; tests/testthat/fixtures), and
+# the app from its published image. From the repository root:
 #
 #   docker compose -f compose.demo.yaml up        then open http://localhost:3838
 #   docker compose -f compose.demo.yaml down -v   remove it, data included
 #
-# For the demo only, the database trusts every connection on the demo's own network
-# and publishes no port, so there are no passwords to set; the app listens on
-# 127.0.0.1. The development stack (RStudio, the tests, the full twelve months) is
-# compose.yaml: see docs/development.md.
+# For the demo only, the database trusts every connection and publishes no port, so
+# there are no passwords to set; the app listens on 127.0.0.1. Docker Desktop keeps the
+# database out of the machine's reach, but with Docker Engine on Linux the machine is
+# on the demo's network, so any user of it can log in to the database as a superuser
+# while the demo runs: use a machine you do not share. The image is linux/amd64.
+# The development stack (RStudio, the tests, the full twelve months) is compose.yaml:
+# see docs/development.md.
 name: prexp-demo
 
 x-database: &database
@@ -43,10 +47,12 @@ services:
       start_period: 1m
       start_interval: 2s
 
-  # Runs once: the migrations, then the fixture months, oldest first, as the monthly
-  # load would (the thirteenth moves the twelve-month window). Skipped when they are in.
+  # The migrations, then the fixture months newer than the newest one loaded, oldest
+  # first, as the monthly load would (the thirteenth moves the twelve-month window). A
+  # run that was stopped part way resumes; a complete one loads nothing.
   seed:
     image: ${PREXP_IMAGE:-ghcr.io/katonometrica/prexp-app:main}
+    platform: linux/amd64
     depends_on:
       db:
         condition: service_healthy
@@ -62,19 +68,17 @@ services:
       - |
         prexp::migrate()
         con <- prexp::db_connect("loader")
-        loaded <- DBI::dbGetQuery(con, "SELECT count(*) FROM core.load_log WHERE status = 'loaded'")[[1]]
+        last <- DBI::dbGetQuery(con, "SELECT coalesce(max(year_month), 0) FROM core.load_log WHERE status = 'loaded'")[[1]]
         DBI::dbDisconnect(con)
-        if (loaded > 0) {
-          message("The demo database already holds ", loaded, " months.")
-        } else {
-          for (file in sort(Sys.glob("/fixtures/EPD_SNOMED_*.zip"))) {
-            prexp::load_month(as.integer(sub("^.*_([0-9]{6})[.]zip$", "\\1", file)), file = file)
-          }
+        for (file in sort(Sys.glob("/fixtures/EPD_SNOMED_*.zip"))) {
+          ym <- as.integer(sub("^.*_([0-9]{6})[.]zip$", "\\1", file))
+          if (ym > last) prexp::load_month(ym, file = file)
         }
     restart: "no"
 
   app:
     image: ${PREXP_IMAGE:-ghcr.io/katonometrica/prexp-app:main}
+    platform: linux/amd64
     depends_on:
       seed:
         condition: service_completed_successfully
