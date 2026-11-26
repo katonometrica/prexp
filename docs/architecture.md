@@ -43,3 +43,27 @@ The English Prescribing Dataset (EPD) publishes each month as one CSV of about 1
 **One small server, rebuilt rather than backed up.** Production is the database, a `jobs` container and the app, under Coolify on a shared server with 4 CPUs and 15 GB. Everything in the database comes from the portal, so it is rebuilt, in 64 minutes, instead of backed up. A scheduled task loads each new month, a nightly one runs the migrations and the plan check, and a failure emails. *Cost:* if the database is lost, the app is down for about an hour.
 
 **Performance, measured.** With five users replaying a recorded session against the server, measured from outside with the network included, lookups take 141 ms at the median and 540 ms at the 95th percentile, and 699 ms for the chemical with the most presentations. Before one message for each lookup, they took 569 and 957 ms at the 95th percentile. What sets the 95th percentile now is opening a session, about half a second on the server, whose cores are about half as fast as the development machine's for this work. Opening took about 0.4 s before one message for each lookup, which computes every view's charts and tables as a session opens, shown or not. The database's part is small: the time is the app's own work in R.
+
+## Techniques and where they are
+
+Every technique the project uses, with the files that show it. The [README](../README.md#what-sets-the-engineering-apart) picks out five.
+
+| Technique | Where |
+| --- | --- |
+| A Shiny app as an R package: modules (`mod_*`) for the views, plain functions (`fct_*`, `utils_*`) for the logic | [R/](../R/) |
+| SQL kept in files: numbered, checksummed migrations, and one file per query | [inst/sql/](../inst/sql/), [R/db.R](../R/db.R) |
+| A query registry: the app and the plan checks run the same SQL files, with parameters, never with values pasted in | [R/fct_query_registry.R](../R/fct_query_registry.R), [R/fct_queries.R](../R/fct_queries.R) |
+| ETL from NHSBSA's CKAN API: download, stage, aggregate beside the live data, check against staging, and swap a month in one transaction | [R/fct_source.R](../R/fct_source.R), [R/fct_loader.R](../R/fct_loader.R), [inst/sql/load/](../inst/sql/load/) |
+| Aggregated on load: a month's 18.4 million source rows become 9.5 million, one per practice and presentation, with the measures in exact `numeric` | [inst/sql/load/build_month.sql](../inst/sql/load/build_month.sql) |
+| A partition a month with covering indexes, and rollup tables, so a lookup reads index entries and pre-aggregated rows | [inst/sql/migrations/](../inst/sql/migrations/), [inst/sql/load/swap_month.sql](../inst/sql/load/swap_month.sql) |
+| Every query's plan checked: it fails on a fact-table read that is not index-only, on partitions not pruned, on heap fetches, or on time, over the full twelve months and nightly in production | [R/fct_plan_check.R](../R/fct_plan_check.R), [tests/testthat/test-plan-check.R](../tests/testthat/test-plan-check.R) |
+| A read-only login: every pooled connection is checked, and the app stops if its login can write, is a superuser, or can use the loader's schemas | [R/db.R](../R/db.R) (`check_read_only()`) |
+| One message for each lookup: a view's results are drawn again only when their layout changes, and each chart once, at the width the browser reports | [R/utils_view.R](../R/utils_view.R), [R/mod_drug.R](../R/mod_drug.R) |
+| A cache shared by every session, for fetches and drawn charts, keyed on the data's window. It wraps the fetch functions instead of using `bindCache()`, so one session's passing error is never served to the others | [R/fct_cache.R](../R/fct_cache.R) |
+| Exports on two `mirai` workers as `ExtendedTask`s, each with its own database connection, so a 15-item PowerPoint export (about 3 s) holds up no other session | [R/fct_workers.R](../R/fct_workers.R) |
+| Charts with text alternatives, in the app and in the native charts of the PowerPoint, Word and Excel exports | [R/fct_charts.R](../R/fct_charts.R), [R/fct_export_pptx.R](../R/fct_export_pptx.R) |
+| Tests on a database the real loader builds from real rows, checked against totals computed independently from the fixture files; browser flows with shinytest2 | [tests/testthat/helper-oracle.R](../tests/testthat/helper-oracle.R), [tests/testthat/e2e-flows.R](../tests/testthat/e2e-flows.R) |
+| CI: an image tagged by the hash of the Dockerfile, `renv.lock` and the month; lint, migrations, tests, two coverage gates (85% of lines, and no function without a test) and the browser flows; then the app image published and production deployed. Actions pinned to commit SHAs | [.github/workflows/ci.yaml](../.github/workflows/ci.yaml) |
+| Measured performance: load times, query plans, and the 95th percentile of lookups with five users replaying recorded sessions, on the development machine and on the server | [docs/benchmarks.md](benchmarks.md) |
+| Production on one shared server under Coolify: a scheduled monthly load, a nightly migration and plan check, failure emails, and a deploy from CI on every merge | [docs/server.md](server.md), [docs/runbook.md](runbook.md) |
+| The data's attribution on every page and in every PowerPoint, Word and Excel report | [R/fct_methods.R](../R/fct_methods.R) |

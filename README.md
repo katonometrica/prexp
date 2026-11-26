@@ -6,9 +6,48 @@
 ![PostgreSQL 18](https://img.shields.io/badge/PostgreSQL-18-7d6523?style=flat-square&labelColor=0b1222)
 [![licence MIT](https://img.shields.io/badge/licence-MIT-7d6523?style=flat-square&labelColor=0b1222)](LICENSE.md)
 
-Every month the NHS Business Services Authority (NHSBSA) publishes the prescriptions that NHS primary care prescribers in England issued and that were dispensed in the community: one CSV of about 18 million rows, 7.7 GB, far too big for a spreadsheet. Prescription Explorer keeps the latest twelve months in PostgreSQL. Look up a drug or a practice, compare a drug across England's regions, pin what you find to a report with notes, and export it to PowerPoint, Word or Excel.
+A reference case of spec-driven development with a coding agent. The developer wrote the specification and the plan, and the work stopped at the end of each phase for the developer's review. [Claude Code](https://claude.com/claude-code), Anthropic's coding agent, wrote the code, one issue at a time. Every change went through a pull request and CI, except the first six, made before CI existed.
 
-It is a Shiny app built as an R package, and it runs in production at **[prexp.katonometrica.com](https://prexp.katonometrica.com/)**, on a small shared server, 4 CPUs and 15 GB of memory, where a scheduled task loads each new month. It was built spec-first with Claude Code, from a written specification and a plan of GitHub issues: see [How it was built](#how-it-was-built). Its code is meant to be read: [What this demonstrates](#what-this-demonstrates) maps each technique to the files that show it. Built by [Katonométrica](https://katonometrica.com).
+That split is the point. The developer owns what is built and when it is done: the specification, the plan and the reviews. The agent writes the code, quickly, and the method checks its work at every step.
+
+The test bed is real: NHSBSA's monthly prescribing data, about 18 million rows a month, kept for twelve months, in an app that is live at **[prexp.katonometrica.com](https://prexp.katonometrica.com/)**. Built by [Katonométrica](https://katonometrica.com).
+
+## The method
+
+1. **The specification first.** [docs/spec.md](docs/spec.md) sets what the app must answer, its architecture, data model, queries, tests and deployment, and five measurable targets. It came with the repository, in [#56](https://github.com/katonometrica/prexp/pull/56).
+2. **Then the plan, as issues with "done when" checks.** 55 issues in [nine milestones](https://github.com/katonometrica/prexp/milestones?state=all), all created before the first pull request. Each gives its estimate, dependencies, tasks and checks, and all but three documentation issues ([#22](https://github.com/katonometrica/prexp/issues/22), [#47](https://github.com/katonometrica/prexp/issues/47), [#48](https://github.com/katonometrica/prexp/issues/48)) the specification sections they implement, as [P3-01](https://github.com/katonometrica/prexp/issues/23) does.
+3. **One branch and one pull request per issue.** Each names its issue on its first line, as [every merged one](https://github.com/katonometrica/prexp/pulls?q=is%3Apr+is%3Amerged) does. From the loader in Phase 1 on, review agents checked most of them before the merge: finders, then a verifier that tries to refute each finding ([#88](https://github.com/katonometrica/prexp/pull/88)).
+4. **CI gates every merge:** lint, migrations, tests on PostgreSQL 18 with two coverage gates, and browser flows ([ci.yaml](.github/workflows/ci.yaml)). `main` takes only a squash-merged pull request whose `test` check passed, with no exceptions ([the ruleset](.github/rulesets/protect-main.json)). Only the first commit, pushed before `main` was protected, and the five pull requests before CI arrived in [#61](https://github.com/katonometrica/prexp/pull/61) came in without it.
+5. **A review at each phase's end,** where the developer decides what comes next. Phase 0's included a review of the whole phase ([#66](https://github.com/katonometrica/prexp/pull/66), [#67](https://github.com/katonometrica/prexp/pull/67)) and changed the plan: the server would come late ([#69](https://github.com/katonometrica/prexp/pull/69)).
+
+## How it went
+
+From the record, up to pull request #134 on 26 November 2026:
+
+- **The specification was edited, not frozen.** [39 of the 73](https://github.com/katonometrica/prexp/commits/main/docs/spec.md) pull requests after it changed it, 36 of them along with code, tests or infrastructure. It [grew from 5,872 to 10,308 words](docs/case-study.md#the-specification-during-the-build), but all 28 headings and four of its five targets stand as first written.
+- **What the reviews caught.** Review agents confirmed [at least 275 findings](docs/case-study.md#what-the-reviews-caught) before merge, such as a refused month that still changed the live data ([#78](https://github.com/katonometrica/prexp/pull/78)) and a 300-character link that could crash every session at once ([#104](https://github.com/katonometrica/prexp/pull/104)). The two bugs that got past them were found by the planned load test and by using the app.
+- **Estimates against time.** The plan priced v1 at [179 hours](docs/spec.md#9-work-breakdown), paced for a person at 22 working days. Phases 0 to 5, 152 of those hours, took [44 calendar hours](docs/case-study.md#estimates-against-time) from first commit to last merge; [46 of v1's 48 issues](https://github.com/katonometrica/prexp/milestones?state=all) closed within 81 hours.
+- **Where the agent failed.** [#101](https://github.com/katonometrica/prexp/issues/101): the Drug view took 864 ms at the 95th percentile for the largest chemical, against 300 ms; the spec asked for worst cases in the query checks, not in building a view. [#115](https://github.com/katonometrica/prexp/issues/115): typing over a picked drug did nothing, though a review had flagged it the day before. Neither fix changed the spec at the time.
+
+The detail, with the source of every figure: [docs/case-study.md](docs/case-study.md).
+
+## One requirement, end to end
+
+The app must never run with a login that can write. The links to files are pinned to a commit.
+
+1. **Specification:** [§5.4](https://github.com/katonometrica/prexp/blob/25cd2f41fc3b8140677da31ff8ee74009ef8d10a/docs/spec.md?plain=1#L333): the app's connections are read-only by the server's settings, not by the client's request, or the app refuses to start.
+2. **Issue:** [#23, P3-01](https://github.com/katonometrica/prexp/issues/23): a startup safety check, and a test that "a writable role is refused".
+3. **Pull request:** [#88](https://github.com/katonometrica/prexp/pull/88), squashed as [601a372](https://github.com/katonometrica/prexp/commit/601a372f2aeb472b659f85213ee4faf7f74f0146). Its first version [passed CI](https://github.com/katonometrica/prexp/actions/runs/45392800770), yet its review got round the check with `PGOPTIONS`; the fix and the spec's new wording came in the same commit.
+4. **Code:** [`check_read_only()`](https://github.com/katonometrica/prexp/blob/25cd2f41fc3b8140677da31ff8ee74009ef8d10a/R/db.R#L162-L196), run on every connection the app and its workers open.
+5. **Test:** ["the app refuses a login that can write, even one the client made read-only"](https://github.com/katonometrica/prexp/blob/25cd2f41fc3b8140677da31ff8ee74009ef8d10a/tests/testthat/test-db.R#L77-L119).
+6. **CI gate:** the `checks` job runs it on PostgreSQL 18 with the real role scripts, and fails rather than skips without a database ([ci.yaml](https://github.com/katonometrica/prexp/blob/25cd2f41fc3b8140677da31ff8ee74009ef8d10a/.github/workflows/ci.yaml#L163-L211)). The required check, [`test`](https://github.com/katonometrica/prexp/blob/25cd2f41fc3b8140677da31ff8ee74009ef8d10a/.github/workflows/ci.yaml#L284-L302), passes only if `checks` did.
+7. **Production:** [`run_app()`](https://github.com/katonometrica/prexp/blob/25cd2f41fc3b8140677da31ff8ee74009ef8d10a/R/run_app.R#L32-L35) opens the pool as the app starts, so the app does not start with such a login.
+
+What fails if a link is broken: [docs/case-study.md](docs/case-study.md#one-requirement-end-to-end).
+
+## The test bed
+
+Every month the NHS Business Services Authority (NHSBSA) publishes the prescriptions that NHS primary care prescribers in England issued and that were dispensed in the community: one CSV of about 18 million rows, 7.7 GB. Prescription Explorer keeps the latest twelve months in PostgreSQL: look up a drug or a practice, compare a drug across England's regions, pin what you find to a report with notes, and export it to PowerPoint, Word or Excel. It is a Shiny app built as an R package, in production on a small shared server, 4 CPUs and 15 GB of memory, where a scheduled task loads each new month.
 
 ![The Region view: metformin across England's seven regions over twelve months, with each region's share of England](docs/images/region.png)
 
@@ -16,34 +55,15 @@ It is a Shiny app built as an R package, and it runs in production at **[prexp.k
 | --- | --- | --- |
 | ![The Drug view](docs/images/drug.png) | ![The Practice view](docs/images/practice.png) | ![The Report tab](docs/images/report.png) |
 
-## What this demonstrates
+## What sets the engineering apart
 
-| Technique | Where |
-| --- | --- |
-| A Shiny app as an R package: modules (`mod_*`) for the views, plain functions (`fct_*`, `utils_*`) for the logic | [R/](R/) |
-| SQL kept in files: numbered, checksummed migrations, and one file per query | [inst/sql/](inst/sql/), [R/db.R](R/db.R) |
-| A query registry: the app and the plan checks run the same SQL files, with parameters, never with values pasted in | [R/fct_query_registry.R](R/fct_query_registry.R), [R/fct_queries.R](R/fct_queries.R) |
-| ETL from NHSBSA's CKAN API: download, stage, aggregate beside the live data, check against staging, and swap a month in one transaction | [R/fct_source.R](R/fct_source.R), [R/fct_loader.R](R/fct_loader.R), [inst/sql/load/](inst/sql/load/) |
-| Aggregated on load: a month's 18.4 million source rows become 9.5 million, one per practice and presentation, with the measures in exact `numeric` | [inst/sql/load/build_month.sql](inst/sql/load/build_month.sql) |
-| A partition a month with covering indexes, and rollup tables, so a lookup reads index entries and pre-aggregated rows | [inst/sql/migrations/](inst/sql/migrations/), [inst/sql/load/swap_month.sql](inst/sql/load/swap_month.sql) |
-| Every query's plan checked: it fails on a fact-table read that is not index-only, on partitions not pruned, on heap fetches, or on time, over the full twelve months and nightly in production | [R/fct_plan_check.R](R/fct_plan_check.R), [tests/testthat/test-plan-check.R](tests/testthat/test-plan-check.R) |
-| A read-only login: every pooled connection is checked, and the app stops if its login can write, is a superuser, or can use the loader's schemas | [R/db.R](R/db.R) (`check_read_only()`) |
-| One message for each lookup: a view's results are drawn again only when their layout changes, and each chart once, at the width the browser reports | [R/utils_view.R](R/utils_view.R), [R/mod_drug.R](R/mod_drug.R) |
-| A cache shared by every session, for fetches and drawn charts, keyed on the data's window. It wraps the fetch functions instead of using `bindCache()`, so one session's passing error is never served to the others | [R/fct_cache.R](R/fct_cache.R) |
-| Exports on two `mirai` workers as `ExtendedTask`s, each with its own database connection, so a 15-item PowerPoint export (about 3 s) holds up no other session | [R/fct_workers.R](R/fct_workers.R) |
-| Charts with text alternatives, in the app and in the native charts of the PowerPoint, Word and Excel exports | [R/fct_charts.R](R/fct_charts.R), [R/fct_export_pptx.R](R/fct_export_pptx.R) |
-| Tests on a database the real loader builds from real rows, checked against totals computed independently from the fixture files; browser flows with shinytest2 | [tests/testthat/helper-oracle.R](tests/testthat/helper-oracle.R), [tests/testthat/e2e-flows.R](tests/testthat/e2e-flows.R) |
-| CI: an image tagged by the hash of the Dockerfile, `renv.lock` and the month; lint, migrations, tests, two coverage gates (85% of lines, and no function without a test) and the browser flows; then the app image published and production deployed. Actions pinned to commit SHAs | [.github/workflows/ci.yaml](.github/workflows/ci.yaml) |
-| Measured performance: load times, query plans, and the 95th percentile of lookups with five users replaying recorded sessions, on the development machine and on the server | [docs/benchmarks.md](docs/benchmarks.md) |
-| Production on one shared server under Coolify: a scheduled monthly load, a nightly migration and plan check, failure emails, and a deploy from CI on every merge | [docs/server.md](docs/server.md), [docs/runbook.md](docs/runbook.md) |
-| The data's attribution on every page and in every PowerPoint, Word and Excel report | [R/fct_methods.R](R/fct_methods.R) |
+- **Query plans checked, not assumed.** Every query's plan is checked on the full twelve months, and nightly in production: a fact-table read that is not index-only, a partition not pruned, a heap fetch or a slow query fails it. [R/fct_plan_check.R](R/fct_plan_check.R), [tests/testthat/test-plan-check.R](tests/testthat/test-plan-check.R)
+- **A read-only login, checked on the server's side.** The app stops if its login can write, is a superuser, or can use the loader's schemas. [R/db.R](R/db.R) (`check_read_only()`), [tests/testthat/test-db.R](tests/testthat/test-db.R)
+- **Tests on a database the real loader builds** from real rows, checked against totals computed independently from the fixture files, and browser flows with shinytest2. [tests/testthat/helper-oracle.R](tests/testthat/helper-oracle.R), [tests/testthat/e2e-flows.R](tests/testthat/e2e-flows.R)
+- **A cache shared by every session that never shares an error.** It wraps the fetch functions instead of using `bindCache()`, so one session's passing database error is never served to the others. [R/fct_cache.R](R/fct_cache.R)
+- **Exports off the app's process, and speed measured as users meet it.** Exports run on two `mirai` workers as `ExtendedTask`s. Lookups are timed at the 95th percentile with five users replaying recorded sessions, on the development machine and on the server. [R/fct_workers.R](R/fct_workers.R), [bench/](bench/), [docs/benchmarks.md](docs/benchmarks.md)
 
-## How it was built
-
-1. **The specification came first.** The design was written before any code: what the app must answer, the architecture, the data model, the queries, how it is tested and how it runs, with measurable targets. It is [docs/spec.md](docs/spec.md).
-2. **Then the plan, as GitHub issues.** The specification was broken down into 55 issues in [nine milestones](https://github.com/katonometrica/prexp/milestones?state=all): eight phases and a second version. Each issue gives its estimate, the issues it depends on, its tasks and its "done when" checks, and all but three documentation issues also name the section of the specification they implement. All 55, numbered #1 to #55, existed before the first pull request, #56; two bugs found along the way, [#101](https://github.com/katonometrica/prexp/issues/101) and [#115](https://github.com/katonometrica/prexp/issues/115), became issues of their own.
-3. **Then every change through a pull request.** Each issue is built on its own branch and squash-merged through a pull request that names it; from P0-06, which set up CI, only once CI has passed. `main` accepts nothing else: no direct pushes, no force pushes, and no exceptions for administrators. The one commit pushed directly is the first, made before `main` was protected: the line-ending and editor settings, part of P0-01. So every commit on `main` traces back to an issue.
-4. **The code, written with Claude Code.** The developer wrote the specification and the architecture. The code was written with [Claude Code](https://claude.com/claude-code), Anthropic's coding agent, one issue at a time, with each issue's tasks and checks as its brief. Its changes went through the same branches, pull requests and CI, and the work stopped at the end of each phase for the developer's review. That is why the commits name Claude as a co-author.
+Every technique, with the files that show it: [docs/architecture.md](docs/architecture.md#techniques-and-where-they-are).
 
 ## How it fits together
 
@@ -68,7 +88,8 @@ The first run downloads about 0.75 GB of images. The real loader then loads a sa
 
 ## Documents
 
-- [docs/architecture.md](docs/architecture.md): each design decision and what it costs.
+- [docs/case-study.md](docs/case-study.md): how the method went, from the record: the specification's changes, what the reviews caught, estimates against time, where the agent failed, and one requirement traced end to end.
+- [docs/architecture.md](docs/architecture.md): each design decision and what it costs, and every technique with its files.
 - [docs/spec.md](docs/spec.md): the specification the issues were written from: the data model, the queries, the tests, deployment, the work breakdown and the plans for v2.
 - [docs/benchmarks.md](docs/benchmarks.md): the measurements, with how each was made.
 - [docs/dataset.md](docs/dataset.md): what the loader relies on about NHSBSA's files.
