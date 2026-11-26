@@ -134,7 +134,7 @@ xlsx_cover <- function(wb, items, sheets, window, exported) {
     contents <- data.frame(Sheet = sheets, Item = vapply(items, `[[`, "", "title"))
     wb$add_data_table(
       sheet, contents, dims = xlsx_cells(6L, 1L), table_name = "Contents",
-      table_style = "TableStyleLight1", with_filter = FALSE
+      table_style = xlsx_table_style, with_filter = FALSE, banded_rows = FALSE
     )
   }
   wb$set_col_widths(sheet, cols = 1:2, widths = c(36, 90))
@@ -200,6 +200,11 @@ xlsx_item <- function(wb, item, sheet, i) {
   invisible(wb)
 }
 
+# The tables' style: Excel's Light 1, whose rules take the theme's dark 1, the
+# text's colour, under the header and around the table; with no bands, as the
+# other formats' tables, and the sheet's gridlines between rows
+xlsx_table_style <- "TableStyleLight1"
+
 # A table of values under its caption, as an Excel table: numbers as numbers
 # in their formats, blank where there is none, a total in bold; its columns
 # as wide as their values, within reason
@@ -210,7 +215,8 @@ xlsx_table <- function(wb, sheet, table, caption, header, col, name) {
   names(data) <- table$labels
   wb$add_data_table(
     sheet, data, dims = xlsx_cells(header, col), table_name = name,
-    table_style = "TableStyleLight1", with_filter = FALSE, na = "_openxlsx_NULL"
+    table_style = xlsx_table_style, with_filter = FALSE, banded_rows = FALSE,
+    na = "_openxlsx_NULL"
   )
   n <- nrow(data)
   cols <- col + seq_along(table$kinds) - 1L

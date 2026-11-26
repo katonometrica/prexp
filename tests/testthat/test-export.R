@@ -794,6 +794,14 @@ test_that("the Excel workbook reads back: a sheet per item with its tables and c
   }, "")
   expect_identical(colours, export_scheme())
   expect_true(all(named_fonts(dir, "^chart[0-9]+[.]xml$") %in% theme_fonts))
+  # Its tables in Excel's Light 1, whose rules take the theme's text colour,
+  # with no bands, as the other formats' tables
+  tables <- list.files(file.path(dir, "xl", "tables"), "[.]xml$", full.names = TRUE)
+  styles_used <- vapply(tables, function(file) {
+    info <- xml2::xml_find_first(xml2::xml_ns_strip(xml2::read_xml(file)), "//tableStyleInfo")
+    paste(xml2::xml_attr(info, "name"), xml2::xml_attr(info, "showRowStripes"))
+  }, "")
+  expect_identical(unique(unname(styles_used)), "TableStyleLight1 0")
   # The exports' colours only, the links' among them
   used <- drawn_colours(dir, "^(styles|chart[0-9]+)[.]xml$")
   expect_true(all(used %in% export_colours()), label = toString(setdiff(used, export_colours())))
