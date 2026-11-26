@@ -284,12 +284,13 @@ a:focus-visible,
 
 /* Scrollbars of the lists and tables in the theme's colours. The tables
    scroll sideways only: a switch of theme made Chrome keep a vertical
-   scrollbar on a wide one, with nothing to scroll. */
+   scrollbar on a wide one, with nothing to scroll. reactable's stylesheet
+   comes with the first table, after this one, so the rule weighs more. */
 .selectize-dropdown-content,
 .Reactable .rt-table {
   scrollbar-color: var(--prexp-control-border) transparent;
 }
-.Reactable .rt-table {
+.Reactable.ReactTable .rt-table {
   overflow-y: hidden;
 }
 
