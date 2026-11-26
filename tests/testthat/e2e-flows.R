@@ -163,6 +163,25 @@ tab_js <- function(tab, js) {
   tab$Runtime$evaluate(js, returnByValue = TRUE)$result$value
 }
 
+# Opens the app's page again, as a reload does, and waits for the new page.
+# The old one is marked first: both answer alike until the new one comes,
+# and a page being replaced may not answer at all, so it is asked again.
+reload_page <- function(app, timeout = 30) {
+  app$run_js("window.e2eOldPage = true; window.location.reload();")
+  ready <- paste(
+    "window.e2eOldPage === undefined && document.readyState === 'complete' &&",
+    "document.getElementById('prexp-theme-toggle') !== null"
+  )
+  deadline <- Sys.time() + timeout
+  while (!isTRUE(tryCatch(app$get_js(ready), error = function(e) FALSE))) {
+    if (Sys.time() > deadline) {
+      stop("Timed out waiting for the page to open again.", call. = FALSE)
+    }
+    Sys.sleep(0.2)
+  }
+  invisible(app)
+}
+
 # Waits until a JavaScript condition holds in a tab
 wait_tab <- function(tab, js, timeout = 30) {
   deadline <- Sys.time() + timeout
@@ -574,11 +593,7 @@ test_that("flow 7: dark at first, the theme button switches it, and the choice i
   # where the navbar collapses behind its toggle
   app$set_window_size(width = 760, height = 900)
   app$wait_for_idle(duration = 1000)
-  app$run_js("window.location.reload();")
-  app$wait_for_js(paste(
-    "document.readyState === 'complete' &&",
-    "document.getElementById('prexp-theme-toggle') !== null"
-  ))
+  reload_page(app)
   expect_identical(app$get_js(theme), "light")
   expect_identical(app$get_js(label), "Switch to dark theme")
   # The toggle is the keyboard's first stop, and shows its focus
