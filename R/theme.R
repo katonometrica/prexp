@@ -385,11 +385,13 @@ table_theme <- function() {
 
 # The Office exports' look (P5-05 to P5-07): the brand's light theme, which
 # it keeps for print and daytime presentations, in IBM Plex Sans. An Office
-# file cannot carry the font. The templates and the workbook name it as their
+# file cannot carry the font: the templates and the workbook name it as their
 # theme's font, with IBM's classification of it, and the text takes the
-# theme's font, so Office draws it in a sans of its own where Plex is not
-# installed, most often Arial. The text is measured in both fonts, so that it
-# fits in either (export_text_width()).
+# theme's font. Microsoft 365 downloads IBM Plex Sans and IBM Plex Mono as
+# cloud fonts the first time a file names them, so most Office readers see
+# Plex itself. Office without cloud fonts, and LibreOffice, draw a sans of
+# their own, chosen by the declared PANOSE and family. The text is measured
+# in both Plex and Arial, so that it fits in either (export_text_width()).
 
 #' The exports' colours
 #'
@@ -528,8 +530,9 @@ brand_office_theme <- function(doc, name = NULL) {
   invisible(doc)
 }
 
-# The fonts the exports' text is measured in: IBM Plex Sans, which they name,
-# and Arial, which Office most often draws in its place
+# The fonts the exports' text is measured in: IBM Plex Sans, which they name
+# and Microsoft 365 draws, and Arial, for an office suite without Plex that
+# draws a sans of its own in its place
 export_measure_fonts <- c(export_font, "Arial")
 
 # Registers both for measuring: IBM Plex Sans as the charts do, from the app's

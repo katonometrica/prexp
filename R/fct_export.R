@@ -542,9 +542,10 @@ export_flextable <- function(table, size, layout, rows = seq_len(nrow(table$data
 
 #' The widths of strings in the exports' text
 #'
-#' Each string's width in IBM Plex Sans, the font the exports name, and in
-#' Arial, which Office most often draws in its place, and the wider of the
-#' two, so that the text fits in either.
+#' Each string's width in IBM Plex Sans, the font the exports name, which
+#' Microsoft 365 draws from its cloud fonts, and in Arial, for an office
+#' suite without Plex that draws a sans of its own in its place, and the
+#' wider of the two, so that the text fits in either.
 #'
 #' @param strings The strings.
 #' @param size The font size, in points.
