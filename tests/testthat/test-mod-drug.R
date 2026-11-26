@@ -593,9 +593,13 @@ test_that("quantity and ADQ usage keep their fractions in the table, and no cell
   expect_false(columns$adq_text$show)
   expect_false(columns$quantity_text$show)
   expect_identical(c(data$adq_usage, data$total_quantity), c(0.496, 2.5))
-  for (id in c("code", "items", "nic", "adq_usage")) {
+  for (id in c("items", "nic", "adq_usage")) {
     expect_identical(columns[[id]]$style, list(whiteSpace = "nowrap"), label = id)
   }
+  # The BNF code on one line too, in the brand's mono font
+  expect_identical(columns$code$style, code_style)
+  expect_identical(code_style$whiteSpace, "nowrap")
+  expect_identical(code_style$fontFamily, "var(--bs-font-monospace)")
   # A table that gives no label writes its cells in R, as the short tables do
   expect_identical(measure_column("ADQ usage", "adq_usage")$cell(0.496), "0.496")
 })

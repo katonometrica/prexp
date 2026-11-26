@@ -276,13 +276,16 @@ use_chart_font <- function() {
 }
 
 # The fonts ggiraph gives its SVG device: IBM Plex Sans for the text, made
-# once and kept. Without the font files a font set would add to the page: the
-# page's @font-face rules are their only source.
+# once and kept. girafe() reads a font set's fonts and its dependencies only.
+# Given a font's name, gdtools::font_set() would copy its files to the user's
+# cache and add them to the page with every chart; the page's own @font-face
+# rules are their source, so the set starts empty and is given the name.
 chart_font_set <- function() {
   if (is.null(chart_state$font_set)) {
     use_chart_font()
-    set <- gdtools::font_set(sans = chart_font)
-    set$dependencies <- list()
+    set <- gdtools::font_set()
+    set$sans <- chart_font
+    set$dsvg_fonts <- list(sans = chart_font)
     chart_state$font_set <- set
   }
   chart_state$font_set
