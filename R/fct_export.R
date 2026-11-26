@@ -379,8 +379,9 @@ export_axis <- function(values, measure) {
 #' How an item's table is laid out
 #'
 #' Each column is as wide as its widest value or name, measured as the
-#' exports' text is (export_text_width()), with a point of room. When that
-#' is wider than `width`, the widest column of text, such as the
+#' exports' text is (export_text_width()), with a point of room; the names
+#' and a total are measured in bold, as export_flextable() draws them. When
+#' that is wider than `width`, the widest column of text, such as the
 #' presentations' names, is narrowed to fit, down to an inch and a half, and
 #' its values wrap at their spaces (text_lines()); each row is then as high
 #' as its most lines.
@@ -396,8 +397,18 @@ table_layout <- function(table, size, width) {
   n <- nrow(text)
   # A cell's margins: 4 points each side
   pad <- 8 / 72
+  # A total is drawn in bold (export_flextable()), whose commas and full
+  # stops are wider than the regular weight's in IBM Plex Sans: measured in
+  # the regular weight, a total of a billion could wrap
+  bold <- isTRUE(table$total) && n > 0L
   measured <- export_text_width(unlist(text, use.names = FALSE), size)
   cells <- lapply(seq_along(text), function(j) measured[(j - 1L) * n + seq_len(n)])
+  if (bold) {
+    last <- export_text_width(unlist(text[n, ], use.names = FALSE), size, "bold")
+    for (j in seq_along(cells)) {
+      cells[[j]][[n]] <- last[[j]]
+    }
+  }
   names <- export_text_width(table$labels, size, "bold")
   widths <- vapply(seq_along(text), function(j) {
     max(c(cells[[j]], names[[j]])) + pad + export_room
@@ -419,7 +430,9 @@ table_layout <- function(table, size, width) {
   rows <- if (n == 0L) {
     numeric()
   } else {
-    counts <- vapply(seq_along(text), function(j) lines(j, text[[j]]), numeric(n))
+    counts <- vapply(seq_along(text), function(j) {
+      c(lines(j, text[[j]][seq_len(n - bold)]), if (bold) lines(j, text[[j]][[n]], "bold"))
+    }, numeric(n))
     apply(matrix(counts, nrow = n), 1L, max)
   }
   header <- max(vapply(seq_along(text), function(j) lines(j, table$labels[[j]], "bold"), 1))
@@ -553,20 +566,29 @@ font_widths <- function(strings, size, weight = "normal") {
   strings[is.na(strings)] <- ""
   chars <- strsplit(strings, "", fixed = TRUE)
   glyphs <- unique(unlist(chars))
-  lapply(stats::setNames(nm = export_measure_fonts), function(family) {
-    if (length(glyphs) == 0L) {
-      return(numeric(length(strings)))
-    }
-    advances <- glyph_advances(glyphs, family, size, weight)
-    vapply(chars, function(x) sum(advances[match(x, glyphs)]), 1, USE.NAMES = FALSE) / 72
+  fonts <- stats::setNames(nm = export_measure_fonts)
+  if (length(glyphs) == 0L) {
+    return(lapply(fonts, function(family) numeric(length(strings))))
+  }
+  advances <- lapply(fonts, function(family) glyph_advances(glyphs, family, size, weight))
+  # A glyph one font lacks (the app's IBM Plex Sans is a Latin subset) takes
+  # the other's width; one neither has (Chinese, emoji) takes an em, as
+  # Office draws it from a font of its own that has it
+  widest <- do.call(pmax, c(unname(advances), na.rm = TRUE))
+  widest[is.na(widest)] <- size
+  lapply(advances, function(advance) {
+    advance[is.na(advance)] <- widest[is.na(advance)]
+    vapply(chars, function(x) sum(advance[match(x, glyphs)]), 1, USE.NAMES = FALSE) / 72
   })
 }
 
 # Glyphs' advances in a font, in points, at a resolution at which hinting
 # does not round them, kept for the process: a report measures the same
-# glyphs many times. glyph_info() sets the weight on the face it keeps of a
-# variable font, which the charts measure with too: a face set to another
-# weight is set back to its regular one.
+# glyphs many times. NA for a glyph the font does not have, for which
+# glyph_info() gives its .notdef's advance, and which font_widths() measures
+# otherwise. glyph_info() sets the weight on the face it keeps of a variable
+# font, which the charts measure with too: a face set to another weight is
+# set back to its regular one.
 glyph_advances <- function(glyphs, family, size, weight) {
   if (is.null(chart_state$advances)) {
     chart_state$advances <- list()
@@ -581,7 +603,9 @@ glyph_advances <- function(glyphs, family, size, weight) {
     info <- systemfonts::glyph_info(
       missing, family = family, weight = weight, size = size, res = 7200
     )
-    known <- c(known, stats::setNames(info$x_advance / 100, missing))
+    # Index 0 is the font's .notdef: the glyph is not in the font
+    advance <- ifelse(info$index == 0L, NA_real_, info$x_advance / 100)
+    known <- c(known, stats::setNames(advance, missing))
     chart_state$advances[[key]] <- known
   }
   unname(known[glyphs])
@@ -591,11 +615,12 @@ glyph_advances <- function(glyphs, family, size, weight) {
 # its box exactly could wrap in Office, were its own rounding a hair wider
 export_room <- 1 / 72
 
-# The height of a line of the exports' text, in ems: IBM Plex Sans's, its
-# ascent and descent with no line gap (1.3 em), which is taller than Arial's
-# with its gap (1.15 em), so that text measured with it fits in either. Here
-# rather than in theme.R, as fct_export_pptx.R's constants need it first.
-export_line <- 1.3
+# The height of a line of the exports' text, in ems: PowerPoint lays out a
+# single-spaced line at 1.2 times the font's size whatever the font, Arial,
+# Calibri, Segoe UI and IBM Plex Sans alike, though Plex's own ascent and
+# descent make 1.3 em. Here rather than in theme.R, as fct_export_pptx.R's
+# constants need it first.
+export_line <- 1.2
 
 #' How many lines paragraphs take, wrapped at spaces as Office wraps them
 #'

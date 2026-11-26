@@ -325,9 +325,12 @@ xlsx_methods <- function(wb, sections) {
       )
       # Excel does not grow a row to fit wrapped text it did not write: each
       # row as high as its lines at 11 points, measured as the exports' text
-      # is, with Excel's margin of a point and a half above and below them
+      # is, with Excel's margin of a point and a half above and below them.
+      # Excel draws a line of 11-point IBM Plex Sans 15 points high (a row it
+      # fits to its text is 15, 30, 45 points), more than a line of Arial
+      # (13.5) and than PowerPoint's 1.2 em.
       wrapped <- text_lines(lines, 11, xlsx_methods_width$text)
-      wb$set_row_heights(sheet, rows = rows, heights = wrapped * 11 * export_line + 3)
+      wb$set_row_heights(sheet, rows = rows, heights = wrapped * 15 + 3)
     }
     # The links last, each a hyperlink to its page, in the links' colour
     for (k in seq_along(section$links)) {

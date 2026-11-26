@@ -267,22 +267,23 @@ test_that("the exports' text is measured in the wider of IBM Plex Sans and Arial
   expect_equal(digits[["Arial"]] * 72, 55.6, tolerance = 1e-3)
   expect_equal(digits[["IBM Plex Sans"]] * 72, 60, tolerance = 1e-3)
   # Bold IBM Plex Sans is the variable font at its bold weight; measuring it
-  # leaves the font at its regular weight, which the charts measure with
+  # leaves the font at its regular weight, which the charts measure with.
+  # The regular widths first, so that they are kept, and only the reset
+  # after the bold ones can set the face back
   saved <- chart_state$advances
   withr::defer(chart_state$advances <- saved)
   chart_state$advances <- NULL
   plex <- function(weight) font_widths("Prescribers", 10, weight)[["IBM Plex Sans"]]
-  expect_gt(plex("bold"), plex("normal") * 1.03)
+  regular <- plex("normal")
+  bold <- plex("bold")
   charts <- systemfonts::string_width(
     "Prescribers", family = "IBM Plex Sans", size = 10, res = 7200
   )
-  expect_equal(charts / 7200, plex("normal"), tolerance = 1e-3)
-  # A line is IBM Plex Sans's, 1.3 em, the taller of the two fonts' lines
-  heights <- vapply(export_measure_fonts, function(family) {
-    systemfonts::font_info(family, size = 10)$lineheight / 10
-  }, 1)
-  expect_equal(export_line, max(heights), tolerance = 1e-3)
-  expect_gt(heights[["IBM Plex Sans"]], heights[["Arial"]])
+  expect_gt(bold, regular * 1.03)
+  expect_equal(charts / 7200, regular, tolerance = 1e-3)
+  # A line is 1.2 em, as PowerPoint lays out a single-spaced line in any
+  # font, IBM Plex Sans included, whose own ascent and descent make 1.3 em
+  expect_identical(export_line, 1.2)
   # A paragraph takes as many lines as it wraps to in the font it needs
   # more in
   para <- "levothyroxine sodium tablets for the thyroid"
@@ -291,7 +292,7 @@ test_that("the exports' text is measured in the wider of IBM Plex Sans and Arial
   expect_identical(text_lines(para, 12, between), 2L)
   expect_identical(text_lines(para, 12, max(unlist(each)) + export_room), 1L)
   # A table's column: its widest value in the wider font, the cell's margins
-  # and a point of room; its rows a line of 1.3 em each
+  # and a point of room; its rows a line of 1.2 em each
   table <- export_table(
     "By region", data.frame(region = c("NORTH EAST AND YORKSHIRE", "LONDON")), "Region", "text"
   )
@@ -300,7 +301,55 @@ test_that("the exports' text is measured in the wider of IBM Plex Sans and Arial
     layout$widths, max(export_text_width(table$data$region, 10)) + 8 / 72 + export_room
   )
   expect_equal(layout$heights, rep(10 * export_line / 72 + 4 / 72, 2L))
-  expect_equal(text_height(c("One line", "Another"), 12), 2 * 12 * 1.3 / 72 + pptx_inset)
+  expect_equal(text_height(c("One line", "Another"), 12), 2 * 12 * export_line / 72 + pptx_inset)
+})
+
+test_that("a glyph neither font has is an em wide, and one only Arial has is Arial's width", {
+  use_export_font()
+  # Chinese, which notes may be written in (report_limits()): Office draws it
+  # from a font of its own, an em a character, so that 70 characters at 12
+  # points fill a line of a slide's text box, and 71 take two
+  han <- intToUtf8(0x4e2d)
+  expect_identical(text_lines(strrep(han, 70), 12, pptx_width - 2 * pptx_inset), 1L)
+  expect_identical(text_lines(strrep(han, 71), 12, pptx_width - 2 * pptx_inset), 2L)
+  # A letter that the app's IBM Plex Sans, a Latin subset, lacks: Arial's
+  # width in both, not an em
+  barred <- font_widths(intToUtf8(0x142), 10)
+  expect_equal(barred[["IBM Plex Sans"]], barred[["Arial"]])
+  expect_lt(barred[["Arial"]] * 72, 3)
+})
+
+test_that("a table's total is measured in bold, as it is drawn", {
+  use_export_font()
+  # England's total, the widest value, with three commas, which are wider in
+  # bold IBM Plex Sans than in its regular weight
+  regions <- c(
+    "EAST OF ENGLAND", "LONDON", "MIDLANDS", "NORTH EAST AND YORKSHIRE", "NORTH WEST",
+    "SOUTH EAST", "SOUTH WEST"
+  )
+  values <- c(301234578, 4e8, 3.5e8, 4.5e8, 3e8, 3.5e8, 2.5e8)
+  table <- export_table(
+    "By region",
+    data.frame(
+      region = c(regions, "England"), value = c(values, sum(values)),
+      share = c(values / sum(values), 1)
+    ),
+    c("Region", "Quantity", "Share of England"), c("text", "total_quantity", "share")
+  )
+  table$total <- TRUE
+  expect_identical(utils::tail(table_text(table)$value, 1L), "2,401,234,578")
+  layout <- table_layout(table, 10, beside$width)
+  expect_lte(sum(layout$widths), beside$width + 1e-9)
+  expect_gte(
+    layout$widths[[2]] - 8 / 72,
+    export_text_width("2,401,234,578", 10, "bold") + export_room - 1e-9
+  )
+  # Its row on one line
+  expect_equal(utils::tail(layout$heights, 1L), 10 * export_line / 72 + 4 / 72)
+  # A total alone is measured in bold too
+  england <- table
+  england$data <- england$data[8L, ]
+  expect_equal(table_layout(england, 10, beside$width)$heights, 10 * export_line / 72 + 4 / 72)
 })
 
 test_that("a table's pages are filled evenly, as few as hold its rows", {
@@ -313,6 +362,31 @@ test_that("a table's pages are filled evenly, as few as hold its rows", {
   # A row too high for any page still goes on one
   tall <- list(header = 0.3, heights = c(0.2, 6, 0.2))
   expect_identical(table_pages(tall, 5.4), list(1L, 2L, 3L))
+})
+
+test_that("a table of 25 rows of a line each fits a slide of its own", {
+  use_export_font()
+  n <- export_rows
+  table <- export_table(
+    "Top 25 drugs by items",
+    data.frame(
+      rank = seq_len(n), presentation = "Atorvastatin 20mg tablets", code = "0212000B0AAABAB",
+      kind = "Generic", items = seq(1000, by = 37, length.out = n),
+      adq_usage = seq(10.5, by = 1.25, length.out = n),
+      nic = seq(1234.5, by = 11.1, length.out = n),
+      actual_cost = seq(1100.25, by = 9.9, length.out = n)
+    ),
+    c(
+      "#", "Presentation", "BNF code", "Brand or generic", "Items", "ADQ usage",
+      "Net ingredient cost", "Actual cost"
+    ),
+    c("count", "text", "text", "text", "items", "adq_usage", "nic", "actual_cost")
+  )
+  # The header and 25 rows of 9-point text, each a line of 1.2 em and its
+  # margins: 5.34 inches, within the 5.4 of a slide's table
+  layout <- table_layout(table, alone$size, pptx_width)
+  expect_equal(layout$heights, rep(9 * export_line / 72 + 4 / 72, n))
+  expect_identical(pptx_table_pages(table), list(seq_len(n)))
 })
 
 test_that("the PowerPoint file reads back: a title, each item, its tables and the methods", {
