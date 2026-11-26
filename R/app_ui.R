@@ -95,7 +95,8 @@ about_ui <- function() {
   bslib::card(class = "prexp-about", bslib::card_body(sections))
 }
 
-#' The footer on every tab: the data window and the attribution
+#' The footer on every tab: the data window, the attribution, and the link to
+#' the source
 #'
 #' @return Shiny UI; the window is the server's output `window`.
 #' @noRd
@@ -114,6 +115,17 @@ footer_ui <- function() {
         href = attribution$licence_url, "Open Government Licence v3.0", .noWS = "after"
       ),
       "."
-    )
+    ),
+    " \u00b7 ",
+    shiny::tags$a(href = source_url(), "Source on GitHub")
   )
+}
+
+#' The app's source: the repository, from DESCRIPTION's URL field
+#'
+#' @return The address, as a string.
+#' @noRd
+source_url <- function() {
+  url <- utils::packageDescription("prexp", fields = "URL")
+  trimws(strsplit(url, ",", fixed = TRUE)[[1L]][[1L]])
 }
