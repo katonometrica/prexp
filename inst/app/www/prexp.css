@@ -192,7 +192,8 @@ a:focus-visible,
   opacity: 1;
 }
 /* A month's select: the site's chevron, in the secondary text colour */
-.selectize-control.single .selectize-input:not(.no-arrow)::after {
+.selectize-control.single .selectize-input:not(.no-arrow)::after,
+.selectize-control.single .selectize-input:not(.no-arrow).dropdown-active::after {
   border: 0;
   width: 12px;
   height: 8px;
@@ -200,7 +201,7 @@ a:focus-visible,
   right: 14px;
   background: var(--prexp-chevron) no-repeat center;
 }
-.selectize-control.single .selectize-input.dropdown-active::after {
+.selectize-control.single .selectize-input:not(.no-arrow).dropdown-active::after {
   transform: rotate(180deg);
 }
 .selectize-control.plugin-clear_button .clear {
@@ -244,7 +245,7 @@ a:focus-visible,
 .selectize-dropdown .option.active:not(.selected) {
   color: var(--prexp-text);
 }
-.selectize-dropdown .highlight {
+.selectize-dropdown [data-selectable] .highlight {
   background: none;
   color: inherit;
   font-weight: 600;

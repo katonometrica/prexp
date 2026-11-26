@@ -192,7 +192,7 @@ render_girafe <- function(p, width = 768, height = 384, title = NULL) {
       ggiraph::opts_selection(type = "single", only_shiny = TRUE, css = selection_css()),
       ggiraph::opts_toolbar(saveaspng = FALSE, hidden = c("selection", "zoom", "misc")),
       ggiraph::opts_sizing(rescale = TRUE, width = 1),
-      ggiraph::opts_tooltip(use_fill = FALSE, css = tooltip_css())
+      ggiraph::opts_tooltip(use_fill = FALSE, opacity = 1, css = tooltip_css())
     )
   )
 }
