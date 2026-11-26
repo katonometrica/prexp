@@ -513,3 +513,40 @@ test_that("flow 6: typing, pasting or a phone's keyboard over a picked drug, and
   app$wait_for_idle()
   expect_identical(app$get_js(paste0(box, ".getValue()")), "")
 })
+
+test_that("flow 7: dark at first, the theme button switches it, and the choice is kept", {
+  con <- fixture_app()
+  drug <- fetch_subject(con, "chemical", "0212000B0")
+  app <- local_app("theme")
+  theme <- "document.documentElement.getAttribute('data-bs-theme')"
+  label <- "document.getElementById('prexp-theme-toggle').getAttribute('aria-label')"
+  page <- "getComputedStyle(document.body).backgroundColor"
+  # The page in its colours and fonts: the dark page, IBM Plex Sans loaded
+  # from the app
+  expect_identical(app$get_js(theme), "dark")
+  expect_identical(app$get_js(label), "Switch to light theme")
+  expect_identical(app$get_js(page), "rgb(11, 18, 34)")
+  app$wait_for_js(paste(
+    "Array.from(document.fonts).some(function (f) {",
+    "return f.family.replace(/\"/g, '') === 'IBM Plex Sans' && f.status === 'loaded'; })"
+  ))
+  # A chart is drawn once, in the light theme's colours, and the page shows
+  # its marks in the theme's own
+  search_pick(app, "drug", "atorva", paste0("chemical:", drug$id))
+  mark <- "getComputedStyle(document.querySelector('#drug-chart svg [data-id]')).fill"
+  expect_identical(app$get_js(mark), "rgb(103, 140, 207)")
+  app$run_js("document.getElementById('prexp-theme-toggle').click();")
+  expect_identical(app$get_js(theme), "light")
+  expect_identical(app$get_js(label), "Switch to dark theme")
+  expect_identical(app$get_js("window.localStorage.getItem('theme')"), "light")
+  expect_identical(app$get_js(page), "rgb(253, 252, 251)")
+  expect_identical(app$get_js(mark), "rgb(53, 86, 149)")
+  # Opened again, the page is light from the start
+  app$run_js("window.location.reload();")
+  app$wait_for_js(paste(
+    "document.readyState === 'complete' &&",
+    "document.getElementById('prexp-theme-toggle') !== null"
+  ))
+  expect_identical(app$get_js(theme), "light")
+  expect_identical(app$get_js(label), "Switch to dark theme")
+})
