@@ -1,6 +1,7 @@
-# The app shell (spec section 5.3; P4-01): five tabs, the footer with the data
-# window and the attribution, the robots meta, the About tab, the theme, and
-# run_app() opening and closing the pool.
+# The app shell (spec section 5.3; P4-01): the header, katonometrica.com's bar
+# over the five tabs; the footer with the data window and the attribution, the
+# robots meta, the About tab, the theme, and run_app() opening and closing the
+# pool.
 
 test_that("the page has the five tabs, the robots meta in its head, and the footer", {
   ui <- app_ui(NULL)
@@ -39,15 +40,104 @@ test_that("the page has the five tabs, the robots meta in its head, and the foot
   )
 })
 
+test_that("the header is katonometrica.com's bar over the app's name and tabs", {
+  rendered <- htmltools::renderTags(app_ui(NULL))
+  doc <- xml2::read_html(rendered$html)
+  find <- function(node, xpath) xml2::xml_find_all(node, xpath)
+  class_is <- function(name) sprintf("contains(concat(' ', @class, ' '), ' %s ')", name)
+  # One header, before everything else on the page: the drawer's backdrop,
+  # hidden from screen readers, then two navigation landmarks named apart
+  header <- find(doc, "//header")
+  expect_length(header, 1L)
+  expect_identical(xml2::xml_attr(header, "id"), "kat-navbar")
+  expect_identical(xml2::xml_name(find(doc, "//body/*[1]")), "header")
+  expect_identical(xml2::xml_name(find(header, "./*")), c("div", "nav", "nav"))
+  backdrop <- find(header, "./div")
+  expect_identical(xml2::xml_attr(backdrop, "id"), "kat-nav-menu-backdrop")
+  expect_identical(xml2::xml_attr(backdrop, "aria-hidden"), "true")
+  navs <- find(header, "./nav")
+  expect_identical(
+    xml2::xml_attr(navs, "aria-label"), c("katonometrica.com", "Prescription Explorer")
+  )
+  site <- navs[[1L]]
+  # The site's bar: the wordmark, the site's four sections and Book a call,
+  # each leading to katonometrica.com in the same tab, as the site's do
+  links <- find(site, ".//a")
+  expect_identical(
+    xml2::xml_text(links),
+    c("KATONOMETRICA", "What we do", "Work", "How it works", "Contact", "Book a call")
+  )
+  expect_identical(xml2::xml_attr(links, "href"), c(
+    "https://katonometrica.com/", "https://katonometrica.com/#services",
+    "https://katonometrica.com/#work", "https://katonometrica.com/#how",
+    "https://katonometrica.com/#contact", "https://katonometrica.com/#contact"
+  ))
+  expect_true(all(is.na(xml2::xml_attr(links, "target"))))
+  expect_identical(
+    xml2::xml_attr(links, "class"),
+    c("kat-nav-logo", rep("kat-nav-link", 4L), "kat-btn kat-btn-primary kat-btn-nav")
+  )
+  items <- sprintf(".//ul[@id='kat-nav-menu']/li[%s]/a", class_is("kat-nav-item"))
+  expect_length(find(site, items), 4L)
+  # Its actions: the theme button, then Book a call; no language menu, as the
+  # app is in English
+  actions <- find(site, ".//div[@id='kat-nav-actions']/*")
+  expect_identical(xml2::xml_attr(actions, "id")[[1L]], "prexp-theme-toggle")
+  expect_identical(xml2::xml_attr(actions, "class")[[1L]], "kat-theme-toggle")
+  expect_identical(xml2::xml_text(actions[[2L]]), "Book a call")
+  expect_length(find(site, ".//select"), 0L)
+  # The hamburger, for a phone: named for the bar it opens, with the drawer's
+  # state and its two parts, the links and the actions
+  burger <- find(site, ".//button[@id='kat-nav-toggle']")
+  expect_length(burger, 1L)
+  expect_identical(xml2::xml_attr(burger, "type"), "button")
+  expect_identical(xml2::xml_attr(burger, "aria-label"), "katonometrica.com menu")
+  expect_identical(xml2::xml_attr(burger, "aria-expanded"), "false")
+  expect_identical(xml2::xml_attr(burger, "aria-controls"), "kat-nav-menu kat-nav-actions")
+  expect_length(find(burger, sprintf("./span[%s]", class_is("kat-hamburger-line"))), 3L)
+  # The app's row: its name as text, then the five tabs, which no menu button
+  # hides, as the site's links and not Bootstrap's underlined tabs
+  app <- navs[[2L]]
+  name <- find(app, sprintf(".//*[%s]", class_is("prexp-app-name")))
+  expect_identical(xml2::xml_name(name), "span")
+  expect_identical(xml2::xml_text(name), "Prescription Explorer")
+  tabs <- find(app, ".//ul[@id='tab']")
+  expect_identical(xml2::xml_attr(find(tabs, "./li/a"), "data-value"), app_tabs)
+  expect_no_match(xml2::xml_attr(tabs, "class"), "nav-underline", fixed = TRUE)
+  expect_length(find(app, ".//button"), 0L)
+  expect_length(find(app, sprintf(".//*[%s]", class_is("collapse"))), 0L)
+  # The window's title is still the app's
+  expect_match(rendered$head, "<title>Prescription Explorer</title>", fixed = TRUE)
+})
+
+test_that("navbar.js gives the header the site's behaviour, at the site's widths", {
+  www <- system.file("app", "www", package = "prexp")
+  js <- paste(readLines(file.path(www, "navbar.js")), collapse = "\n")
+  css <- paste(readLines(file.path(www, "prexp.css")), collapse = "\n")
+  # The site's background once the page has scrolled 50 px
+  expect_match(js, "var SCROLLED = 50;", fixed = TRUE)
+  expect_match(
+    js, "header.classList.toggle('kat-scrolled', window.scrollY > SCROLLED)", fixed = TRUE
+  )
+  expect_match(css, ".kat-navbar.kat-scrolled::before {", fixed = TRUE)
+  # The drawer below 900 px, in the script as in the stylesheet; it says
+  # whether it is open, and Escape closes it
+  expect_match(js, "var DRAWER = 900;", fixed = TRUE)
+  expect_match(css, "@media (max-width: 900px) {", fixed = TRUE)
+  expect_match(js, "button.setAttribute('aria-expanded', 'true')", fixed = TRUE)
+  expect_match(js, "button.setAttribute('aria-expanded', 'false')", fixed = TRUE)
+  expect_match(js, "e.key === 'Escape' && isOpen()", fixed = TRUE)
+})
+
 test_that("the tabs are the page's main landmark, and each tab has an h1", {
   page <- htmltools::renderTags(app_ui(NULL))$html
   count <- function(pattern) lengths(regmatches(page, gregexpr(pattern, page, perl = TRUE)))
   expect_identical(count("role=\"main\""), 1L)
   expect_identical(count("<div class=\"tab-content[^\"]*\"[^>]*role=\"main\""), 1L)
-  # The navbar comes before the main landmark and the footer after it, so
+  # The header comes before the main landmark and the footer after it, so
   # neither is inside it
   main_at <- regexpr("role=\"main\"", page)
-  expect_lt(regexpr("<nav ", page), main_at)
+  expect_lt(regexpr("</header>", page), main_at)
   expect_gt(regexpr("<footer class=\"prexp-footer\">", page), main_at)
   headings <- regmatches(page, gregexpr("<h1 class=\"visually-hidden\">[^<]*</h1>", page))[[1]]
   expect_identical(
@@ -148,7 +238,8 @@ test_that("the theme is in the brand's fonts, square, and fetches no font itself
   expect_match(vars[["font-family-sans-serif"]], "^\"IBM Plex Sans\", \"Segoe UI\", system-ui")
   expect_match(vars[["font-family-monospace"]], "^\"IBM Plex Mono\", Consolas, monospace")
   expect_no_match(vars[["font-family-monospace"]], "Source Code Pro", fixed = TRUE)
-  # The navbar takes the page's colour, in either theme (brand_css())
+  # No colour for the navbar: the header draws its own, from the tokens
+  # (prexp.css)
   expect_true(is.na(vars[["navbar-bg"]]) || identical(unname(vars[["navbar-bg"]]), "null"))
   # Square corners, no shadows, weights up to the font's 600
   expect_identical(unname(vars[c("border-radius", "card-border-radius")]), c("0", "0"))

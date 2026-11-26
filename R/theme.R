@@ -33,6 +33,12 @@
 #' colour; tick labels in the secondary text colour, axis titles in the text
 #' colour, gridlines as faint as the borders.
 #'
+#' The header (app_ui()), katonometrica.com's bar over the app's tabs, takes
+#' two of the site's tokens as they are: `navbar_scrolled_bg`, its background
+#' once the page has scrolled, translucent over a blur of what scrolls under
+#' it, and `overlay`, the backdrop behind the phone's drawer, the same in
+#' both themes, as the site sets it once.
+#'
 #' @return A list of two named lists of colours, `light` and `dark`: hex or
 #'   `rgba()` strings.
 #' @noRd
@@ -45,6 +51,7 @@ brand_tokens <- function() {
     accent = "#7d6523", accent_hover = "#5e4c1a", accent_subtle = "rgba(125,101,35,0.1)",
     on_accent = "#FDFCFB",
     success = "#166534", success_bg = "#dcfce7", error = "#b91c1c", error_bg = "#fee2e2",
+    navbar_scrolled_bg = "rgba(245,243,238,0.95)", overlay = "rgba(0,0,0,0.5)",
     chart_mark = "#355695", chart_grid = "rgba(0,0,0,0.12)",
     chart_tip_bg = "#FDFCFB", chart_tip_border = "rgba(0,0,0,0.25)"
   )
@@ -56,6 +63,7 @@ brand_tokens <- function() {
     accent = "#c9a84c", accent_hover = "#d4b65e", accent_subtle = "rgba(201,168,76,0.06)",
     on_accent = "#0b1222",
     success = "#4ade80", success_bg = "#2d6a4f", error = "#f87171", error_bg = "#9b2226",
+    navbar_scrolled_bg = "rgba(11,18,34,0.92)", overlay = "rgba(0,0,0,0.5)",
     chart_mark = "#678ccf", chart_grid = "rgba(200,195,185,0.14)",
     chart_tip_bg = "#0f1730", chart_tip_border = "rgba(200,195,185,0.14)"
   )
