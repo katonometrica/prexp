@@ -6,33 +6,7 @@ How Prescription Explorer is built, and why: each decision below names what it c
 
 The English Prescribing Dataset (EPD) publishes each month as one CSV of about 18 million rows, 7.7 GB, around the 20th of the second month after it. A row is a practice's prescriptions of one product in one quantity per item. The app answers questions across a rolling twelve months: a drug's national series and its presentations, a practice's top drugs, a drug compared across the regions. That is about 220 million source rows, which a lookup must not read.
 
-```mermaid
-flowchart LR
-  portal["NHSBSA open data portal<br/>CKAN API, ~18M rows a month"]
-  subgraph jobs["jobs container (R)"]
-    load["load_latest(), monthly<br/>stage, aggregate, check, swap"]
-    check["check_plans(), nightly"]
-  end
-  subgraph db["PostgreSQL 18"]
-    staging["staging<br/>unlogged"]
-    fact["fact table<br/>a partition a month,<br/>covering indexes"]
-    rollups["rollup tables"]
-    views["app views<br/>read-only role"]
-  end
-  subgraph app["app container (R, Shiny)"]
-    registry["query registry<br/>inst/sql/queries"]
-    cache["shared cache, pool"]
-    modules["modules: drug, practice,<br/>region, report"]
-    workers["mirai workers:<br/>exports"]
-  end
-  proxy["proxy: HTTPS, noindex"]
-  browser["browser"]
-  portal --> load --> staging --> fact --> rollups --> views
-  fact --> views
-  check -.-> views
-  views --> registry --> cache --> modules --> workers
-  modules <--> proxy <--> browser
-```
+![How it fits together: the NHSBSA portal; a jobs container that loads each month into PostgreSQL 18 and checks every query's plan nightly; and the app container, which reads the database's views through a query registry and a shared cache, runs exports on mirai workers, and answers the browser through an HTTPS proxy](images/architecture.svg)
 
 ## The data layer
 

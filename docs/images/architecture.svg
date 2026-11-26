@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -16 792 570" width="792" height="570" role="img" aria-labelledby="title desc">
+  <title id="title">How Prescription Explorer fits together</title>
+  <desc id="desc">The NHSBSA portal publishes a CSV a month. A jobs container loads each month into PostgreSQL 18, through a staging table into a fact table with a partition a month, rollup tables and read-only views for the app; a nightly check reads every query's plan. The app container reads the views through a query registry and a shared cache, draws them in Shiny modules, runs exports on mirai workers, and answers the browser through an HTTPS proxy.</desc>
+  <style>
+    svg { --bg: #ffffff; --frame: #f6f8fa; --edge: #d0d7de; --box: #ffffff; --line: #59636e; --text: #1f2328; --sub: #59636e; --label: #7d6523; }
+    @media (prefers-color-scheme: dark) {
+      svg { --bg: #0d1117; --frame: #151b23; --edge: #3d444d; --box: #0d1117; --line: #9198a1; --text: #f0f6fc; --sub: #9198a1; --label: #c9a84c; }
+    }
+    .bg { fill: var(--bg); }
+    .frame { fill: var(--frame); stroke: var(--edge); }
+    .box { fill: var(--box); stroke: var(--edge); }
+    .line { fill: none; stroke: var(--line); stroke-width: 1.25; }
+    .plan { stroke-dasharray: 3 4; }
+    .head { fill: var(--line); }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; }
+    .label { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 11px; fill: var(--label); }
+    .title { font-size: 13px; font-weight: 600; fill: var(--text); }
+    .sub { font-size: 12px; fill: var(--sub); }
+    .code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 11px; fill: var(--sub); }
+  </style>
+  <defs>
+    <marker id="head" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+      <path class="head" d="M0 1 L10 5 L0 9 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="-16" y="-16" width="792" height="570"/>
+
+  <rect class="frame" x="192" y="1" width="567" height="111"/>
+  <rect class="frame" x="1" y="148" width="758" height="132"/>
+  <rect class="frame" x="1" y="316" width="758" height="112"/>
+  <text class="label" x="204" y="19">jobs container · R</text>
+  <text class="label" x="12" y="166">PostgreSQL 18</text>
+  <text class="label" x="12" y="334">app container · R</text>
+
+  <rect class="box" x="12" y="28" width="160" height="72"/>
+  <text class="title" x="92" y="53" text-anchor="middle">NHSBSA portal</text>
+  <text class="sub" x="92" y="71" text-anchor="middle">a CSV a month of</text>
+  <text class="sub" x="92" y="87" text-anchor="middle">about 18 million rows</text>
+  <rect class="box" x="204" y="28" width="352" height="72"/>
+  <text class="title" x="380" y="60" text-anchor="middle">load_latest(), monthly</text>
+  <text class="sub" x="380" y="78" text-anchor="middle">download · stage · aggregate · check · swap</text>
+  <rect class="box" x="588" y="28" width="160" height="72"/>
+  <text class="title" x="668" y="53" text-anchor="middle">check_plans()</text>
+  <text class="sub" x="668" y="71" text-anchor="middle">nightly: each query's</text>
+  <text class="sub" x="668" y="87" text-anchor="middle">plan and time</text>
+
+  <rect class="box" x="12" y="176" width="160" height="72"/>
+  <text class="title" x="92" y="208" text-anchor="middle">staging</text>
+  <text class="sub" x="92" y="226" text-anchor="middle">unlogged</text>
+  <rect class="box" x="204" y="176" width="160" height="72"/>
+  <text class="title" x="284" y="201" text-anchor="middle">fact table</text>
+  <text class="sub" x="284" y="219" text-anchor="middle">a partition a month,</text>
+  <text class="sub" x="284" y="235" text-anchor="middle">covering indexes</text>
+  <rect class="box" x="396" y="176" width="160" height="72"/>
+  <text class="title" x="476" y="201" text-anchor="middle">rollup tables</text>
+  <text class="sub" x="476" y="219" text-anchor="middle">by region or practice,</text>
+  <text class="sub" x="476" y="235" text-anchor="middle">and month</text>
+  <rect class="box" x="588" y="176" width="160" height="72"/>
+  <text class="title" x="668" y="208" text-anchor="middle">app views</text>
+  <text class="sub" x="668" y="226" text-anchor="middle">read-only role</text>
+
+  <rect class="box" x="12" y="344" width="160" height="72"/>
+  <text class="title" x="92" y="376" text-anchor="middle">query registry</text>
+  <text class="code" x="92" y="394" text-anchor="middle">inst/sql/queries</text>
+  <rect class="box" x="204" y="344" width="160" height="72"/>
+  <text class="title" x="284" y="369" text-anchor="middle">shared cache</text>
+  <text class="sub" x="284" y="387" text-anchor="middle">fetches and charts,</text>
+  <text class="sub" x="284" y="403" text-anchor="middle">connection pool</text>
+  <rect class="box" x="396" y="344" width="160" height="72"/>
+  <text class="title" x="476" y="369" text-anchor="middle">Shiny modules</text>
+  <text class="sub" x="476" y="387" text-anchor="middle">drug, practice,</text>
+  <text class="sub" x="476" y="403" text-anchor="middle">region, report</text>
+  <rect class="box" x="588" y="344" width="160" height="72"/>
+  <text class="title" x="668" y="376" text-anchor="middle">mirai workers</text>
+  <text class="sub" x="668" y="394" text-anchor="middle">exports</text>
+
+  <rect class="box" x="396" y="464" width="160" height="72"/>
+  <text class="title" x="476" y="496" text-anchor="middle">HTTPS proxy</text>
+  <text class="sub" x="476" y="514" text-anchor="middle">Traefik, under Coolify</text>
+  <rect class="box" x="588" y="464" width="160" height="72"/>
+  <text class="title" x="668" y="505" text-anchor="middle">browser</text>
+
+  <path class="line" d="M172 64 H204" marker-end="url(#head)"/>
+  <path class="line" d="M232 100 V130 H160 V176" marker-end="url(#head)"/>
+  <path class="line plan" d="M668 100 V176" marker-end="url(#head)"/>
+  <path class="line" d="M172 212 H204" marker-end="url(#head)"/>
+  <path class="line" d="M364 212 H396" marker-end="url(#head)"/>
+  <path class="line" d="M556 212 H588" marker-end="url(#head)"/>
+  <path class="line" d="M284 248 V266 H630 V248" marker-end="url(#head)"/>
+  <path class="line" d="M668 248 V298 H160 V344" marker-end="url(#head)"/>
+  <path class="line" d="M172 380 H204" marker-end="url(#head)"/>
+  <path class="line" d="M364 380 H396" marker-end="url(#head)"/>
+  <path class="line" d="M556 380 H588" marker-end="url(#head)"/>
+  <path class="line" d="M476 416 V464" marker-start="url(#head)" marker-end="url(#head)"/>
+  <path class="line" d="M556 500 H588" marker-start="url(#head)" marker-end="url(#head)"/>
+</svg>
