@@ -7,7 +7,7 @@ What must stay private never goes in this repository or its issues: the app's ad
 ## Before you start
 
 - **The server:** at least 4 vCPUs, 16 GB of RAM and 100 GB of free disk, with Coolify's default proxy (Traefik). [docs/benchmarks.md](benchmarks.md#the-server-p6-02) records the one in use: 4 vCPUs and 15 GiB, shared with other projects. `docker/db/postgresql.prod.conf` is sized for it. On a server of prexp's own, or a larger one, raise `shared_buffers` (to a quarter of the RAM) and the database's memory limit with it (section 1, step 6), to `shared_buffers` plus about 3 GB: with no swap, shared buffers larger than the limit get the database's processes killed once they fill. Then set `effective_cache_size` to the limit less about 1 GB, and the parallel workers to the CPUs.
-- **A shared server:** give prexp a project of its own (Projects → +) and a Docker network of its own (Servers → the server → Destinations → +), and choose that destination for each resource below. Containers on one Coolify network can reach each other, so other projects would otherwise reach the database's port. Cap each container's memory, as below: there may be no swap.
+- **A shared server:** give prexp a project of its own, named `prexp` (Projects → +) and a Docker network of its own (Servers → the server → Destinations → +), and choose that destination for each resource below. Containers on one Coolify network can reach each other, so other projects would otherwise reach the database's port. Cap each container's memory, as below: there may be no swap.
 - **The images:** make `ghcr.io/katonometrica/prexp-app`, which the server pulls, and `prexp-ci` public packages, so that the server needs no registry login. They start private. On GitHub, for each: the organisation → Packages → the package → Package settings → Danger Zone → Change visibility → Public, which cannot be undone. Then check from any machine that `curl -s 'https://ghcr.io/token?scope=repository:katonometrica/prexp-app:pull'` prints a token, and the same for `prexp-ci`. `authentication required` means the package is still private, and the deployments in sections 2 and 3 would fail at the pull.
 - **DNS:** an A record for `<app-host>` pointing at the server's public IPv4, and ports 80 and 443 open to the internet. Let's Encrypt publishes the certificate's name in its public Certificate Transparency logs: the name is not a secret, and the noindex header keeps the app out of search engines.
 - **Coolify on HTTPS:** Coolify → Settings → General → **URL:** `https://<coolify-host>`, with **Redirect HTTP to HTTPS** on, and an A record for `<coolify-host>` pointing at the server. Coolify's proxy then gets that name a Let's Encrypt certificate, so it is in the Certificate Transparency logs too. Until the name resolves, Coolify answers only at `http://<server-ip>:8000`, in clear text, and the steps below carry the three passwords and the API token: do them at `https://<coolify-host>`. Once the dashboard, its live updates and its terminal work there, and nothing else uses port 8000 (another project's GitHub App webhook, for example), close ports 8000, 6001 and 6002 in the provider's firewall. UFW does not block the ports Docker publishes.
@@ -15,7 +15,7 @@ What must stay private never goes in this repository or its issues: the app's ad
 
 ## 1. The database
 
-New resource → Databases → PostgreSQL → PostgreSQL 18. Coolify creates it stopped. **Before the first start**, on its pages:
+New resource → Databases → PostgreSQL → PostgreSQL 18, named `prexp-db` (General → Name): the runbook and section 5 find each resource by its name. Coolify creates it stopped. **Before the first start**, on its pages:
 
 1. **General → Image:** `postgres:18.7-trixie@sha256:eb63372c1e05c755f55fa30cbd07aecc443676fc6c0fa90b9002d01537841e1a`, the reference `compose.yaml` and CI pin (Debian, so the same C library and collations). Coolify pulls the image again at every start, and the digest keeps it the build CI tests: when `compose.yaml`'s digest changes, change it here too and restart the database. Then check **Persistent Storage**: the volume is mounted at `/var/lib/postgresql`. PostgreSQL 18 keeps its cluster in `/var/lib/postgresql/18/docker`, and an image name Coolify does not recognise can give the wrong path.
 2. **General → Username:** leave `postgres`. It is Coolify's superuser; the app's roles are ordinary logins.
@@ -33,7 +33,7 @@ New resource → Databases → PostgreSQL → PostgreSQL 18. Coolify creates it 
 
 ## 2. The `jobs` container
 
-New resource → Docker Image: `ghcr.io/katonometrica/prexp-app`, tag `main`.
+New resource → Docker Image: `ghcr.io/katonometrica/prexp-app`, tag `main`, named `prexp-jobs` (General → Name).
 
 1. **Ports Exposes:** empty, and no domain. Nothing connects to it.
 2. **Custom Docker options:** `--init --entrypoint 'sleep infinity'`. It waits for Coolify's scheduled tasks and terminal instead of running the app. Coolify has no start-command field. `--init` gives `sleep` a process 1 that passes signals on, so a stop takes a second, not the 30-second grace period.
@@ -56,11 +56,11 @@ New resource → Docker Image: `ghcr.io/katonometrica/prexp-app`, tag `main`.
    ```
 
    It downloads and loads the months oldest first. A run that stops can be started again, and carries on.
-2. `Rscript -e "prexp::check_plans()"`: every check must pass.
+2. `Rscript -e "prexp::check_plans(max_ms = 150)"`: every check must pass. It allows 150 ms a query, as the nightly check does (section 5): at the default 50 ms, two checks fail on time on this server.
 
 ## 3. The app
 
-New resource → Docker Image: `ghcr.io/katonometrica/prexp-app`, tag `main`.
+New resource → Docker Image: `ghcr.io/katonometrica/prexp-app`, tag `main`, named `prexp-app` (General → Name).
 
 1. **Ports Exposes:** `3838`.
 2. **Domains → Add domain:** `https`, `<app-host>`, port `3838`.
@@ -111,7 +111,7 @@ From then on, a merge to `main` redeploys both. The step fails when Coolify does
 - **The nightly check** applies any new migration, then checks the app's query plans. It allows 150 ms a query, not the default 50 ms: this server's CPUs are slower than the development machine's, and its slowest checks take 52 to 58 ms there, 78 ms on the first run after a load ([docs/benchmarks.md](benchmarks.md)). A plan that goes wrong fails whatever its time: a sequential scan, partitions not pruned, or heap fetches.
 - **Run each by hand** after setting it up, from its page: **Execute Now**, then **Executions** for its output. Both must succeed.
 
-**Alerts.** Coolify → **Notifications → Email**, with **Scheduled task failure** and **Deployment failure** among the events. The email itself goes through Coolify's own mail service, set once for the instance: **Settings → Transactional Email**, for example Resend, with its API key and a sender on a domain verified there. **Send Test** checks it. A task that fails ten times in a row is disabled, and its page says so.
+**Alerts.** The mail service is the instance's: Coolify → **Settings → Email** (its page is titled Transactional Email), for example Resend, with its API key and a sender on a domain verified there. Then Coolify → **Notifications → Email: Email service: Use system-wide settings**, with **Scheduled task failure** and **Deployment failure** among the events. A new team starts on its own settings, with no provider, and then sends no email at all, though its events can be ticked. **Send test** on Notifications → Email checks the whole path; the one on Settings → Email checks only the instance's provider. A task that fails ten times in a row is disabled, and its page says so.
 
 ## Rehearse it locally
 
@@ -142,4 +142,4 @@ There is no proxy in the rehearsal, so the noindex header and HTTPS are checked 
 - **The two deployments run in no set order.** `migrate()` runs in the `jobs` container after its deployment has finished, which Coolify reports as success before the command runs. A migration that fails therefore sends no deployment email. The nightly scheduled task runs `migrate()` again before `check_plans()` (P6-03), and its failure does send an email.
 - **A restart of the `jobs` container is a full deployment:** it pulls the image again and runs `migrate()`. It also stops a scheduled task that is running, so avoid it between 02:00 and 05:00.
 - **Docker cleanup** (Servers → the server → Docker Cleanup): keep "Unused volumes" at its default, Keep. Deleting them can remove a stopped database's volume.
-- **The database is not backed up.** It can be rebuilt from the source, from an empty database: `migrate()`, `load_window()`, `check_plans()` (spec §7; the runbook, P6-04).
+- **The database is not backed up.** It can be rebuilt from the source, from an empty database: `migrate()`, `load_window()`, `check_plans(max_ms = 150)` (spec §7; [docs/runbook.md](runbook.md)).

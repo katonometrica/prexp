@@ -380,7 +380,7 @@ A failing scheduled task notifies by email through Coolify's notifications.
 
 **Hiding the app.** `X-Robots-Tag: noindex, nofollow` on every response, from Coolify's proxy (the domain's "Search engine indexing: Noindex"), `noindex` in the page head, and no links from the company site, the repository or the issues. There is no `robots.txt`: the proxy cannot serve one, and a rule that kept crawlers out would also keep them from seeing the noindex header, so a URL linked from elsewhere could still be listed. The certificate is Let's Encrypt's for the subdomain, so its name is in the public Certificate Transparency logs; noindex keeps it out of search engines. The address is shared privately, and never appears in the repository or its issues.
 
-**Backups.** The data can be rebuilt from the source, so there is no database backup. `docs/runbook.md` documents a rebuild from an empty database: `migrate()`, `load_window()`, `check_plans()`. The rebuild time comes from the window load on the server in P6-02.
+**Backups.** The data can be rebuilt from the source, so there is no database backup. `docs/runbook.md` documents a rebuild from an empty database: `migrate()`, `load_window()`, `check_plans(max_ms = 150)`. It took 64 minutes on the server (P6-02).
 
 **Server.** Minimum 4 vCPU, 16 GB RAM, 100 GB SSD free for Postgres. Checked when it is provisioned (P6-02) and recorded in `docs/benchmarks.md`. Until then the full database runs locally (P1-08), inside Docker Desktop's virtual disk.
 
