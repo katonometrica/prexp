@@ -46,7 +46,7 @@ The English Prescribing Dataset (EPD) publishes each month as one CSV of about 1
 
 ## Techniques and where they are
 
-Every technique the project uses, with the files that show it. The [README](../README.md#what-sets-the-engineering-apart) picks out five.
+Every technique the project uses, with the files that show it. The [README](../README.md#five-techniques-and-where-they-are) picks out five.
 
 | Technique | Where |
 | --- | --- |

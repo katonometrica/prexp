@@ -6,7 +6,7 @@
 - **Deploys from CI** (#118): a merge to `main` that publishes a new app image deploys the app and the jobs container to production.
 - **The server's measurements** (#124), in `docs/benchmarks.md`, and again after #125: lookups at 141 ms at the median and 540 ms at the 95th percentile (569 ms before), and 699 ms for the largest chemical (957 ms before). The load test's sessions are recorded again by `bench/drive.R`.
 - **The README and the architecture page:** how the project was built, specification first; a diagram that can be read at the page's width; the techniques table brought up to date. The screenshots, the badges and the diagram in KATONOMETRICA's look (#129).
-- **The README leads with the method** (#135): the specification, the issues and their checks, one pull request per issue, CI and the review at each phase's end, then how it went and one requirement traced end to end. `docs/case-study.md` gives the evidence: the specification's changes, what the reviews caught, estimates against time and where the agent failed. The full techniques table moves to `docs/architecture.md`.
+- **The README leads with the method** (#135): the developer's plan, then the specification and the issues with their checks, written from it by the agent and approved before any code; a pull request for each change, naming its issue; CI; and the stop at each phase's end. Then how it went, and one requirement traced end to end. `docs/case-study.md` gives the evidence: the specification's and the issues' changes, drift against the targets, what the reviews and the developer caught, estimates against elapsed time, and where the agent failed. The full techniques table moves to `docs/architecture.md`.
 
 # prexp 0.1.0
 
