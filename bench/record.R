@@ -33,12 +33,26 @@
 # Turning the cache off in the browser's developer tools also gives a first
 # visit.
 # The app must be the app container (docker compose --profile app up -d --build app).
+#
+# Since P6-02 a pick's view is one message, so the recordings made before
+# (bench/recording.log, bench/recording-largest.log) no longer replay against
+# the app: bench/recording-p602.log and bench/recording-largest-p602.log are
+# the same sessions recorded again, by bench/drive.R in the rstudio container,
+# which has shinyloadtest (bench/setup.sh) and Chrome. The second argument is
+# the app (http://app:3838 by default), the third the proxy's port:
+#
+#   Rscript bench/record.R recording-p602.log http://app:3838 8600 &
+#   Rscript bench/drive.R ordinary http://127.0.0.1:8600/
+#   Rscript bench/tidy.R bench/recording-p602.log
+#
+# A recording against another app, such as the production server, names it
+# in its "# target_url:" line: write <app-host> there before it is committed.
 
 args <- commandArgs(trailingOnly = TRUE)
 shinyloadtest::record_session(
-  "http://app:3838",
+  if (length(args) > 1L) args[[2L]] else "http://app:3838",
   host = "0.0.0.0",
-  port = 8600,
+  port = if (length(args) > 2L) as.integer(args[[3L]]) else 8600L,
   output_file = file.path(
     "/home/rstudio/prexp/bench", if (length(args) > 0L) args[[1L]] else "recording.log"
   ),
