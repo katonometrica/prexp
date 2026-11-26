@@ -32,6 +32,11 @@ test_that("the page has the five tabs, the robots meta in its head, and the foot
     footer, "<a href=\"https://github.com/katonometrica/prexp\">Source on GitHub</a>",
     fixed = TRUE
   )
+  # Last, KATONOMETRICA's wordmark, linking its site
+  expect_match(
+    footer,
+    "<a class=\"prexp-wordmark\" href=\"https://katonometrica.com\">KATONOMETRICA</a>\\s*</footer>"
+  )
 })
 
 test_that("the tabs are the page's main landmark, and each tab has an h1", {
@@ -131,18 +136,24 @@ test_that("the About tab shows every section, measure and limitation, and the so
   }
 })
 
-test_that("the theme loads no web font and keeps the navbar's text readable", {
+test_that("the theme is in the brand's fonts, square, and fetches no font itself", {
   theme <- prexp_theme()
-  navbar <- c("navbar-light-color", "navbar-light-hover-color", "navbar-light-active-color")
-  vars <- bslib::bs_get_variables(
-    theme, c("font-family-base", "font-family-monospace", "navbar-bg", navbar)
-  )
+  vars <- bslib::bs_get_variables(theme, c(
+    "font-family-base", "font-family-sans-serif", "font-family-monospace", "navbar-bg",
+    "border-radius", "card-border-radius", "headings-font-weight", "font-weight-bold",
+    "bslib-enable-shadows"
+  ))
   expect_identical(unname(vars[["font-family-base"]]), "var(--bs-font-sans-serif)")
+  # Sass writes the names in double quotes
+  expect_match(vars[["font-family-sans-serif"]], "^\"IBM Plex Sans\", \"Segoe UI\", system-ui")
+  expect_match(vars[["font-family-monospace"]], "^\"IBM Plex Mono\", Consolas, monospace")
   expect_no_match(vars[["font-family-monospace"]], "Source Code Pro", fixed = TRUE)
-  # WCAG AA for the tab names on the navbar's blue, open or not
-  for (colour in navbar) {
-    expect_gte(contrast_ratio(vars[[colour]], vars[["navbar-bg"]]), 4.5, label = colour)
-  }
+  # The navbar takes the page's colour, in either theme (brand_css())
+  expect_true(is.na(vars[["navbar-bg"]]) || identical(unname(vars[["navbar-bg"]]), "null"))
+  # Square corners, no shadows, weights up to the font's 600
+  expect_identical(unname(vars[c("border-radius", "card-border-radius")]), c("0", "0"))
+  expect_identical(unname(vars[c("headings-font-weight", "font-weight-bold")]), c("600", "600"))
+  expect_identical(unname(vars[["bslib-enable-shadows"]]), "false")
   deps <- bslib::bs_theme_dependencies(theme)
   bootstrap <- deps[[which(vapply(deps, function(dep) dep$name, "") == "bootstrap")]]
   css <- paste(

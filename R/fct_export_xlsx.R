@@ -289,12 +289,12 @@ xlsx_methods <- function(wb, sections) {
       # Excel does not grow a row to fit wrapped text it did not write
       wb$set_row_heights(sheet, rows = rows, heights = 15 * pmax(1, ceiling(nchar(lines) / 110)))
     }
-    # The links last, each a hyperlink to its page, in the palette's blue
+    # The links last, each a hyperlink to its page, in the exports' palette's blue
     for (k in seq_along(section$links)) {
       cell <- xlsx_cells(row + length(lines) - length(section$links) + k, 1L)
       wb$add_hyperlink(sheet, cell, target = section$links[[k]]$url)
       wb$add_font(
-        sheet, cell, color = openxlsx2::wb_color(hex = prexp_palette()[["blue"]]),
+        sheet, cell, color = openxlsx2::wb_color(hex = export_palette()[["blue"]]),
         underline = "single"
       )
     }

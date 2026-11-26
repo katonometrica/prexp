@@ -257,7 +257,7 @@ region_table <- function(rows, measure) {
         format = reactable::colFormat(percent = TRUE, digits = 1, locales = "en-GB")
       )
     ),
-    pagination = FALSE, sortable = FALSE, compact = TRUE, striped = TRUE,
+    pagination = FALSE, sortable = FALSE, compact = TRUE, theme = table_theme(),
     defaultColDef = reactable::colDef(footerStyle = list(fontWeight = 600))
   )
 }

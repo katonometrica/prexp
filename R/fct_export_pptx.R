@@ -16,7 +16,7 @@
 #' @return Invisibly, `path`.
 #' @noRd
 export_pptx <- function(spec, con, path, exported = Sys.time()) {
-  use_chart_font()
+  use_export_font()
   fetches <- plain_fetches(con)
   window <- fetches$window()
   items <- export_items(spec, fetches)
@@ -232,10 +232,10 @@ pptx_table <- function(deck, item, rows, page) {
 pptx_methods <- function(deck, page) {
   deck <- officer::add_slide(deck, layout = "Title Only", master = "Office Theme")
   deck <- pptx_slide_title(deck, page$title)
-  text <- function(...) officer::fp_text(font.size = 12, font.family = chart_font, ...)
+  text <- function(...) officer::fp_text(font.size = 12, font.family = export_font, ...)
   body <- text(color = "#333333")
   bold <- text(color = "#333333", bold = TRUE)
-  link <- text(color = prexp_palette()[["blue"]], underlined = TRUE)
+  link <- text(color = export_palette()[["blue"]], underlined = TRUE)
   spaced <- officer::fp_par(padding.bottom = 6)
   paragraphs <- lapply(page$blocks, function(block) {
     switch(block$kind,
@@ -259,7 +259,7 @@ pptx_methods <- function(deck, page) {
 }
 
 pptx_slide_title <- function(deck, title) {
-  prop <- officer::fp_text(font.size = 24, color = "#222222", font.family = chart_font)
+  prop <- officer::fp_text(font.size = 24, color = "#222222", font.family = export_font)
   officer::ph_with(
     deck, officer::fpar(officer::ftext(title, prop)), location = officer::ph_location_type("title")
   )
@@ -268,7 +268,7 @@ pptx_slide_title <- function(deck, title) {
 # Lines of text in a box of their own, a paragraph each
 pptx_text <- function(deck, lines, top, height, size, colour = "#333333", left = pptx_left,
                       width = pptx_width) {
-  prop <- officer::fp_text(font.size = size, color = colour, font.family = chart_font)
+  prop <- officer::fp_text(font.size = size, color = colour, font.family = export_font)
   paragraphs <- lapply(lines, function(line) officer::fpar(officer::ftext(line, prop)))
   officer::ph_with(
     deck, do.call(officer::block_list, paragraphs),

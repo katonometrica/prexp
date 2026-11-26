@@ -236,13 +236,13 @@ prexp/
 │   ├── fct_loader.R           load_month(), load_latest(), load_window()
 │   ├── fct_plan_check.R       check_plans()
 │   ├── mod_search.R, mod_drug.R, mod_practice.R, mod_region.R, mod_report.R
-│   ├── theme.R                palette, bslib, ggplot2 and mschart themes
+│   ├── theme.R                brand tokens and CSS; bslib, ggplot2, reactable and mschart themes
 │   └── utils_validate.R, utils_format.R, utils_log.R
 ├── inst/
 │   ├── sql/migrations/, sql/load/, sql/queries/
 │   ├── templates/report.pptx, report.docx
 │   ├── extdata/epd_columns.csv   expected source header
-│   └── app/www/                  CSS, search.js
+│   └── app/www/                  CSS, scripts, fonts (IBM Plex, OFL), favicon
 ├── tests/testthat/
 │   ├── fixtures/                 thirteen fixture months, saved API responses
 │   └── test-*.R
@@ -294,7 +294,7 @@ Each query is registered in `fct_query_registry.R` with two sample argument sets
 
 ### 5.3 Screens
 
-`bslib::page_navbar` with five tabs. The footer on every tab shows the data window and the NHSBSA attribution. The page head carries `noindex, nofollow`.
+`bslib::page_navbar` with five tabs and the theme button. The footer on every tab shows the data window, the NHSBSA attribution, the link to the source and KATONOMETRICA's wordmark. The page head carries `noindex, nofollow`.
 
 | Tab | Inputs | Shows | Pinnable |
 | --- | --- | --- | --- |
@@ -305,6 +305,28 @@ Each query is registered in `fct_query_registry.R` with two sample argument sets
 | About | none | Methods, data source, licence, limitations | n/a |
 
 Every view handles three states besides the normal one: nothing selected, no rows, and query error. Each shows a message rather than an empty chart.
+
+**The look.** The app looks like KATONOMETRICA's site, katonometrica.com. Its values come from the site's `styles.css` (the tokens of its dark theme and its light one) and `fonts/fonts.css`; its principles from the brand's designer instructions: square corners, flat surfaces with no shadows, gold as a signal (the call to action, the open tab, a selected mark, the focus outline), sentence case, and motion limited to shifts of colour and border in 150 ms (`cubic-bezier(0.4, 0, 0.2, 1)`), none where the visitor asks for reduced motion.
+
+- **Themes.** Dark on every first visit, as on the site, with a light theme. A button at the navbar's right, as the site's (◐ in dark, ◑ in light, labelled "Switch to light theme" or "Switch to dark theme"), switches between them, and the browser keeps the choice in `localStorage` under `theme`; no cookie. An inline script in the head sets `data-bs-theme` on the page's root before the page is drawn, so Bootstrap 5.3's colour modes and the app's own colours switch together.
+- **One source for the colours.** `brand_tokens()` in `R/theme.R` holds each theme's colours. `brand_css()` writes them into the head as custom properties (`--prexp-*`) and as Bootstrap's own, and `inst/app/www/prexp.css` styles every component from those alone. The tests check, in both themes, every text on every surface it sits on at 4.5:1 and every mark and control edge at 3:1.
+- **Type.** IBM Plex Sans, weights 400 to 600, for everything; IBM Plex Mono for small details: codes, badges, the footer's provenance line. The site's files are served with the app from `inst/app/www/fonts`, under the SIL Open Font License 1.1 (`OFL.txt` beside them); nothing is fetched from elsewhere.
+- **Charts.** Drawn once on the server, in the light theme's colours, with no background of their own. CSS generated from the same tokens maps each role's colour to the theme shown, so a switch costs no redraw and no cache entry: marks in navy blue (#355695 light, #678ccf dark); a selected mark in the gold, a bar outlined at 2 px in the text colour, a point drawn 1.8 times larger with a 1 px ring in the text colour; tick labels in the secondary text colour, axis titles in the text colour, gridlines as faint as the borders, at one pixel. Tooltips are square, in IBM Plex Sans. The server measures the charts' text with the page's own copy of IBM Plex Sans, registered with `systemfonts` when the app starts, unless IBM Plex Sans is installed: the installed font, with the same metrics, then measures it.
+- **Components.** The navbar on the page's colour, a rule under it, its tabs as the site's links (14 px, weight 500, in the secondary text colour; the open tab in the text colour over a 2 px gold rule, which in the collapsed menu is at its left). Cards on the brand's surface with a 1 px border. Fields, selects and the note box as the site's inputs: a well of the page's colour, the edge gold on focus, no glow. Radios stay round, filled gold when checked. One gold button per view (Add to report, Prepare); the site's outline button for downloads and links; ghost buttons for moving and removing. Neutral badges in Plex Mono, "Months clamped" marked by the word Note rather than a warning colour. Tables on no background of their own, a stronger rule under the header, no stripes. Notifications as the site's: square and opaque. The About tab as the site's policy pages: one column at most 800 px wide. Focus is a 2 px gold outline, 2 px off the element, or just inside a table's cell, which the table's scroll box would cut. The favicon is the brand's mark.
+- **Where the app departs from the site,** for WCAG AA, which the brand calls non-negotiable:
+
+| What | The site | The app |
+| --- | --- | --- |
+| Edges of fields, selects, radios and their lists | `--border-strong`: 1.3:1 dark, 1.8:1 light | #706b63 dark, #858280 light: 3.3:1 or more on the page and on cards |
+| Placeholders | `--muted` #5a5650: 2.6:1 on the dark page | The secondary text colour; `--muted` marks disabled controls only |
+| Disabled controls, light | `--muted` #5a5650, the secondary text colour (7.1:1): a disabled button looks live | #9e9a94: 2.7:1 on the page, as dark's muted is 2.6:1 |
+| Hover of the gold buttons, light | #c9a84c: 2.2:1 under their text | #5e4c1a: 8.1:1 |
+| Error text | #e74c3c dark, #dc2626 light: under 4.5:1 on raised surfaces | #f87171 dark, #b91c1c light: 5:1 or more |
+| Success text, light | #15803d: under 4.5:1 on raised surfaces | #166534 |
+| Links | Gold, 1.7:1 from the dark theme's text | Underlined in running text, 0.2 em below it |
+| Floating layers that carry secondary text | `--bg-elevated` #182545: 4.1:1 | `--bg-alt` #0f1730: lists, tooltips, notifications |
+
+The Office exports keep their own colours and Arial for now; the next part of the restyle brings them to the brand.
 
 ### 5.4 Runtime
 
@@ -354,7 +376,7 @@ Tests connect to the `prexp_test` database, and make the databases they read or 
 3. Install the package, then `lintr::lint_package()`, failing on any lint
 4. `prexp::migrate()` on the empty service database and on the test database
 5. Tests and coverage in one run. The gate: 85% overall, and no package function with zero coverage, so deleting any test that is a function's only coverage fails CI. The `coverage/` report is uploaded as an artifact
-6. The end-to-end flows (`tests/testthat/e2e-flows.R`): the app as the `app` image runs it, the installed package with its background workers, on the fixture database, driven in Google Chrome by `shinytest2`. Five flows: search a drug, see its series and change the measure; page through a practice's top drugs; compare a drug across the regions; pin two views with notes and export them to Excel; copy the report's link and open it in a new tab. They assert on values and outputs, against the fetch functions' results, never on screenshots. The file's name does not start with `test`, so the suite and the coverage run leave it out: the app runs in its own process, where coverage could not count it. A skipped flow fails the step, since shinytest2 skips rather than fails a flow when Chrome cannot start; a failing run uploads the apps' logs
+6. The end-to-end flows (`tests/testthat/e2e-flows.R`): the app as the `app` image runs it, the installed package with its background workers, on the fixture database, driven in Google Chrome by `shinytest2`. Seven flows: search a drug, see its series and change the measure; page through a practice's top drugs; compare a drug across the regions; pin two views with notes and export them to Excel; copy the report's link and open it in a new tab; type, paste or dictate over a picked drug; open the page dark, switch it to light with the theme button, which recolours the page and a chart, and open it light again on a narrow screen, with the keyboard's focus shown on a radio and on the collapsed navbar's toggle, and the open tab marked in the collapsed menu. They assert on values and outputs, against the fetch functions' results, never on screenshots. The file's name does not start with `test`, so the suite and the coverage run leave it out: the app runs in its own process, where coverage could not count it. A skipped flow fails the step, since shinytest2 skips rather than fails a flow when Chrome cannot start; a failing run uploads the apps' logs
 7. Jobs `app-image` (pull requests, read-only token) and `app-publish` (`main` only): build the `app` image on the tested CI image's own layers and check that `library(prexp)` loads. `app-publish` pushes `:<commit sha>`, and moves `:main` only while the commit is still the tip of `main`, so re-running an old run cannot roll it back. When `:main` moved, it asks Coolify's API to deploy the app and the `jobs` container (P6-02), over HTTPS, with a deploy-only token. The token, Coolify's host name and the two applications' ids are four repository secrets, one value in each, so that Actions hides each in its logs. Coolify answers 200 even when it could not queue an application, so the step checks that both were queued
 
 Triggers: pull requests, pushes to `main`, a monthly schedule on the 1st (which publishes the refreshed image) and manual runs. Third-party actions are pinned to commit SHAs and updated by Dependabot, with a seven-day cooldown on new releases; the BuildKit image is pinned by digest and updated by hand, because the image jobs hold a token that can push packages. The required check is strict: a pull request must be up to date with `main` before it merges. The container packages are public from P6-02, so the server pulls them without logging in; jobs log in with `GITHUB_TOKEN` to push, and to read the registry caches.

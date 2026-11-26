@@ -68,7 +68,7 @@ mod_report_server <- function(id, report, run = NULL) {
       n <- count()
       shiny::tagList(
         shiny::span(
-          class = "badge text-bg-secondary", `aria-hidden` = "true", paste0(n, "/", limit)
+          class = "badge prexp-badge", `aria-hidden` = "true", paste0(n, "/", limit)
         ),
         shiny::span(class = "visually-hidden", paste(n, "of at most", limit, "items"))
       )
@@ -194,9 +194,11 @@ report_item_ui <- function(ns, item, first, last) {
         # button pressed is gone, after a removal
         shiny::h2(class = "h6 mb-1", tabindex = "-1", title),
         shiny::p(class = "small text-body-secondary mb-1", report_item_summary(item)),
+        # Marked by a word, not a colour: the brand has no warning colour
         if (isTRUE(item$clamped)) {
           shiny::span(
-            class = "badge text-bg-warning", "Months clamped",
+            class = "badge prexp-badge",
+            shiny::span(class = "prexp-badge-marker", "Note"), "Months clamped",
             shiny::span(
               class = "visually-hidden",
               ": the data window no longer holds all of its months, so they were moved into it"

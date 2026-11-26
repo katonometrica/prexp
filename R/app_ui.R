@@ -1,6 +1,7 @@
-# The page (spec section 5.3): five tabs in a navbar, the data window and the
-# attribution in a footer on every tab, and a head that asks search engines
-# not to index the app.
+# The page (spec section 5.3): five tabs in a navbar with the theme button,
+# the data window and the attribution in a footer on every tab, and a head
+# that sets the theme before the page is drawn, loads the brand's fonts and
+# asks search engines not to index the app.
 
 # The tabs' values, which URL bookmarks name
 app_tabs <- c("drug", "practice", "region", "report", "about")
@@ -22,8 +23,18 @@ app_ui <- function(request) {
     fillable = FALSE,
     header = shiny::tagList(
       shiny::tags$head(
+        # First, so the page is never drawn in the other theme
+        shiny::tags$script(shiny::HTML(theme_script())),
         shiny::tags$meta(name = "robots", content = "noindex, nofollow"),
+        shiny::tags$link(rel = "icon", type = "image/svg+xml", href = "prexp/favicon.svg"),
+        shiny::tags$link(
+          rel = "preload", href = "prexp/fonts/ibm-plex-sans-var-latin.woff2", as = "font",
+          type = "font/woff2", crossorigin = NA
+        ),
+        shiny::tags$link(rel = "stylesheet", href = "prexp/fonts/fonts.css"),
+        shiny::tags$style(shiny::HTML(brand_css())),
         shiny::tags$link(rel = "stylesheet", href = "prexp/prexp.css"),
+        shiny::tags$script(src = "prexp/theme.js"),
         shiny::tags$script(src = "prexp/search.js"),
         shiny::tags$script(src = "prexp/report.js")
       ),
@@ -42,9 +53,21 @@ app_ui <- function(request) {
       "Report", value = "report", view_heading("Report"), mod_report_ui("report")
     ),
     bslib::nav_panel("About", value = "about", view_heading("About the data"), about_ui()),
+    bslib::nav_spacer(),
+    bslib::nav_item(theme_button()),
     footer = footer_ui()
   )
   main_landmark(page)
+}
+
+# The theme button, at the navbar's right as on katonometrica.com: its glyph
+# shows the theme, its label what a press does. The page opens dark
+# (theme_script()), and theme.js sets both when the theme changes.
+theme_button <- function() {
+  shiny::tags$button(
+    type = "button", id = "prexp-theme-toggle", class = "prexp-theme-toggle",
+    `aria-label` = "Switch to light theme", "\u25d0"
+  )
 }
 
 # A tab's heading: the page's h1 while the tab shows, for screen readers (the
@@ -92,11 +115,12 @@ about_ui <- function() {
       }
     )
   })
-  bslib::card(class = "prexp-about", bslib::card_body(sections))
+  # One column, as the brand's policy pages are
+  shiny::div(class = "prexp-about", sections)
 }
 
-#' The footer on every tab: the data window, the attribution, and the link to
-#' the source
+#' The footer on every tab: the data window, the attribution, the link to
+#' the source, and KATONOMETRICA's wordmark, which links its site
 #'
 #' @return Shiny UI; the window is the server's output `window`.
 #' @noRd
@@ -117,7 +141,8 @@ footer_ui <- function() {
       "."
     ),
     " \u00b7 ",
-    shiny::tags$a(href = source_url(), "Source on GitHub")
+    shiny::tags$a(href = source_url(), "Source on GitHub"),
+    shiny::tags$a(class = "prexp-wordmark", href = "https://katonometrica.com", "KATONOMETRICA")
   )
 }
 

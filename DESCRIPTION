@@ -3,7 +3,8 @@ Title: Prescription Explorer for the English Prescribing Dataset
 Version: 0.1.0
 Authors@R: c(
     person("Marcelo", "Katogui", , "60530366+mkatogui@users.noreply.github.com", role = c("aut", "cre")),
-    person("Katonométrica", role = c("cph", "fnd"))
+    person("Katonométrica", role = c("cph", "fnd")),
+    person("IBM Corp.", role = "cph", comment = "IBM Plex fonts in inst/app/www/fonts")
   )
 Description: A 'shiny' app over the English Prescribing Dataset, published
     monthly by the NHS Business Services Authority, backed by 'PostgreSQL'.

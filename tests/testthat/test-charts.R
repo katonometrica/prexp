@@ -112,16 +112,20 @@ test_that("month labels name each month, with the year under the first and each 
   )
 })
 
-test_that("chart marks keep 3:1 against the white background", {
+test_that("chart marks are drawn in the marks' colour, which keeps 3:1 in both themes", {
   marks <- c(
     unique(ggplot2::ggplot_build(chart_series(series()))$data[[1]]$colour),
-    unique(ggplot2::ggplot_build(chart_bars(regions()))$data[[1]]$fill),
-    # A selected mark
-    prexp_palette()[["vermillion"]]
+    unique(ggplot2::ggplot_build(chart_series(series()))$data[[2]]$colour),
+    unique(ggplot2::ggplot_build(chart_bars(regions()))$data[[1]]$fill)
   )
-  expect_length(marks, 3L)
-  for (colour in marks) {
-    expect_gte(contrast_ratio(colour, "#FFFFFF"), 3, label = colour)
+  expect_identical(unique(toupper(marks)), chart_colours()$mark)
+  # The page shows them in each theme's own colour, a selected one in its gold
+  # (test-theme.R checks those on every surface)
+  for (mode in c("light", "dark")) {
+    t <- brand_tokens()[[mode]]
+    for (colour in c(t$chart_mark, t$chart_selected)) {
+      expect_gte(contrast_ratio(colour, t$bg), 3, label = paste(mode, colour))
+    }
   }
 })
 
@@ -281,13 +285,43 @@ test_that("render_girafe() makes the widget: hover, one selection, no toolbar, f
   settings <- widget$x$settings
   expect_setequal(settings$toolbar$hidden, c("selection", "zoom", "misc", "saveaspng"))
   expect_identical(settings$select$type, "single")
-  # A selected mark has an outline as well as its colour
-  expect_match(settings$select$css, "stroke:#222222", fixed = TRUE)
+  # A selected mark in the theme's gold, with an outline in its text colour;
+  # the light theme's where the page has none
+  light <- brand_tokens()$light
+  expect_match(
+    settings$select$css,
+    paste0(
+      "fill:var(--prexp-chart-selected,", light$accent, ");",
+      "stroke:var(--prexp-chart-outline,", light$text, ");stroke-width:2px;"
+    ),
+    fixed = TRUE
+  )
+  # A selected point drawn larger, its outline under the gold: at its size
+  # the outline alone would hide the gold
+  expect_match(
+    settings$select$css,
+    paste0("circle.select_data_SVGID_ { ", selected_point_css(), " }"),
+    fixed = TRUE
+  )
+  expect_match(selected_point_css(), "paint-order:stroke;", fixed = TRUE)
+  expect_match(selected_point_css(), "transform:scale(1.8);", fixed = TRUE)
+  # The tooltip in the theme's colours and the page's font, square
+  tooltip <- settings$tooltip$css
+  expect_match(tooltip, paste0("background:var(--prexp-chart-tip-bg,", light$bg, ")"), fixed = TRUE)
+  expect_match(tooltip, "color:var(--prexp-chart-tip-text,", fixed = TRUE)
+  expect_match(tooltip, "border-radius:0;", fixed = TRUE)
+  expect_match(tooltip, "font-family:'IBM Plex Sans'", fixed = TRUE)
   expect_true(settings$sizing$rescale)
   expect_identical(settings$sizing$width, 1)
-  # The SVG names the charts' font, measured with one that has its metrics
-  expect_match(widget$x$html, "font-family='Arial'", fixed = TRUE)
-  expect_identical(theme_prexp()$text$family, "Arial")
+  # The SVG names the page's font, measured with the page's own copy of it,
+  # and brings no font files of its own: the page's @font-face is their source
+  expect_match(widget$x$html, "font-family='IBM Plex Sans'", fixed = TRUE)
+  expect_no_match(widget$x$html, "font-family='(Arial|Liberation)")
+  expect_identical(theme_prexp()$text$family, "IBM Plex Sans")
+  deps <- vapply(widget$dependencies, function(dep) dep$name, "")
+  expect_false(any(grepl("font|liberation|plex", deps, ignore.case = TRUE)), label = toString(deps))
+  # No background of its own: the card shows through
+  expect_no_match(widget$x$html, "<rect[^>]*fill='#FFFFFF' fill-opacity='1'")
   # The chart's name and description, for screen readers
   expect_match(widget$x$html, "<title[^>]*>Atorvastatin</title>")
   expect_match(widget$x$html, "<desc[^>]*>Items by month, Jul", perl = TRUE)
@@ -306,21 +340,60 @@ test_that("the charts' theme and fonts are made once and kept", {
 })
 
 test_that("the charts' kept theme and fonts draw as made afresh", {
+  # Naming the font makes gdtools copy it to its cache: a temporary one
+  withr::local_envvar(GDTOOLS_CACHE_DIR = withr::local_tempdir())
   p <- chart_series(series())
   kept <- render_girafe(p, title = "Atorvastatin")
-  # As before they were kept: a theme built for this chart, girafe's own fonts
+  # As before they were kept: a theme built for this chart, a font set made
+  # for it
+  colours <- chart_colours()
   fresh <- ggiraph::girafe(
-    ggobj = p + ggplot2::theme_minimal(base_size = 12, base_family = "Arial") +
+    ggobj = p + ggplot2::theme_minimal(base_size = 12, base_family = "IBM Plex Sans") +
       ggplot2::theme(
+        plot.background = ggplot2::element_blank(),
+        panel.grid.major = ggplot2::element_line(
+          colour = colours$grid, linewidth = 1 / ggplot2::.pt
+        ),
         panel.grid.minor = ggplot2::element_blank(),
-        axis.title = ggplot2::element_text(colour = "#5A6470"),
-        axis.text = ggplot2::element_text(colour = "#333333"),
+        axis.title = ggplot2::element_text(colour = colours$title),
+        axis.text = ggplot2::element_text(colour = colours$tick),
         plot.title.position = "plot", legend.position = "none"
       ),
-    width_svg = 8, height_svg = 4, title = "Atorvastatin", desc = ggplot2::get_alt_text(p)
+    width_svg = 8, height_svg = 4, bg = "transparent",
+    font_set = gdtools::font_set(sans = "IBM Plex Sans"),
+    title = "Atorvastatin", desc = ggplot2::get_alt_text(p)
   )
   svg <- function(widget) gsub("svg_[0-9a-f_]+", "svg_ID", widget$x$html)
   expect_identical(svg(kept), svg(fresh))
+})
+
+test_that("the charts' text is measured in the page's own IBM Plex Sans", {
+  use_chart_font()
+  found <- systemfonts::match_fonts("IBM Plex Sans")
+  # The page's own copy, unless the font is installed, as it measures the same
+  if (!chart_font %in% systemfonts::system_fonts()$family) {
+    expect_match(found$path, "ibm-plex-sans-var-latin[.]woff2$")
+  }
+  # The font's own widths, not a fallback's: its digits are 0.6 em wide
+  # (Arial's 0.556, DejaVu Sans's 0.636), at the tick labels' 9.6 pt, measured
+  # at a high resolution, as ggiraph measures, which hinting does not round
+  width <- systemfonts::string_width(
+    "0123456789", family = "IBM Plex Sans", size = 9.6, res = 7200
+  ) / 100
+  expect_equal(width, 57.5, tolerance = 0.005)
+})
+
+test_that("use_chart_font() works where IBM Plex Sans is installed", {
+  # systemfonts will not register a name an installed font has: the app
+  # would not start, and no chart would draw
+  saved <- chart_state$font
+  withr::defer(chart_state$font <- saved)
+  chart_state$font <- NULL
+  local_mocked_bindings(
+    system_fonts = function() data.frame(family = "IBM Plex Sans"), .package = "systemfonts"
+  )
+  expect_identical(use_chart_font(), "IBM Plex Sans")
+  expect_true(chart_state$font)
 })
 
 test_that("render_girafe() draws the chart at the size it is shown at", {

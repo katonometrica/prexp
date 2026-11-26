@@ -14,7 +14,7 @@
 #' @return Invisibly, `path`.
 #' @noRd
 export_docx <- function(spec, con, path, exported = Sys.time()) {
-  use_chart_font()
+  use_export_font()
   fetches <- plain_fetches(con)
   window <- fetches$window()
   items <- export_items(spec, fetches)
@@ -133,7 +133,7 @@ docx_section <- function(doc, section) {
   for (text in section$text) {
     doc <- officer::body_add_par(doc, text, style = "Normal")
   }
-  text <- function(...) officer::fp_text_lite(font.family = chart_font, ...)
+  text <- function(...) officer::fp_text_lite(font.family = export_font, ...)
   # A list Word and screen readers know as one, its bullets from the style
   for (point in section$points) {
     runs <- c(
@@ -142,7 +142,7 @@ docx_section <- function(doc, section) {
     )
     doc <- officer::body_add_fpar(doc, do.call(officer::fpar, runs), style = "List Bullet")
   }
-  link <- text(color = prexp_palette()[["blue"]], underlined = TRUE)
+  link <- text(color = export_palette()[["blue"]], underlined = TRUE)
   for (target in section$links) {
     doc <- officer::body_add_fpar(
       doc, officer::fpar(officer::hyperlink_ftext(target$text, prop = link, href = target$url)),

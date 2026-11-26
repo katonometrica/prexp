@@ -1,4 +1,18 @@
-/* Prescription Explorer: what the bslib theme leaves to the page */
+/* Prescription Explorer: the brand's components (spec section 5.3), as
+   katonometrica.com draws its own. Every colour is a custom property that
+   brand_css() writes in the page's head from R/theme.R's token lists, for
+   the dark theme and the light one: nothing here names a colour of its own.
+   Corners are square, surfaces flat, and gold marks what is active. */
+
+:root {
+  --prexp-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --prexp-fast: 150ms;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
 /* A view's body (view_body()) reports its width for its charts
    (chart_width()). Shiny makes a uiOutput with content display: contents, a
@@ -10,48 +24,541 @@
   gap: inherit;
 }
 
-.prexp-footer {
-  margin-top: 1.5rem;
-  padding: 0.75rem 1rem;
-  border-top: 1px solid var(--bs-border-color);
-  color: var(--bs-secondary-color);
-  font-size: 0.875rem;
+/* Motion: a colour or a border shifts, in 150 ms, and nothing moves where the
+   visitor asks for less motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
-.prexp-about {
-  max-width: 52rem;
+/* Links: gold, and underlined in running text, as gold and the text are too
+   close to tell apart by colour alone */
+a {
+  text-underline-offset: 0.2em;
+  transition: color var(--prexp-fast) var(--prexp-ease);
 }
 
-.prexp-methods-section h2 {
-  font-size: 1.25rem;
-  margin-top: 1rem;
+/* Focus: a gold outline, never a glow */
+:focus-visible {
+  outline: 2px solid var(--prexp-accent);
+  outline-offset: 2px;
+}
+.btn:focus-visible,
+.nav-link:focus-visible,
+.form-check-input:focus-visible,
+.prexp-theme-toggle:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--prexp-accent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.btn:focus,
+.nav-link:focus,
+.form-check-input:focus {
+  box-shadow: none;
+}
+/* The same where a component's own focus rule weighs more: the collapsed
+   navbar's toggle (Bootstrap's), Shiny's radios (bslib's glow) and a
+   table's page buttons (reactable's, whose stylesheet comes after this one) */
+.navbar .navbar-toggle:focus-visible,
+.navbar .navbar-toggler:focus-visible,
+.shiny-input-container .radio input[type="radio"]:focus-visible,
+.shiny-input-container .radio-inline input[type="radio"]:focus-visible,
+.Reactable .rt-page-button:focus-visible {
+  outline: 2px solid var(--prexp-accent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.shiny-input-container .radio input[type="radio"]:focus,
+.shiny-input-container .radio-inline input[type="radio"]:focus {
+  box-shadow: none;
+}
+/* A table's header row sits at the edge of its scroll box, which cuts an
+   outline drawn outside a cell: inside the cell */
+.Reactable .rt-th:focus-visible,
+.Reactable .rt-td:focus-visible {
+  outline-offset: -2px;
 }
 
-.prexp-option-meta {
-  color: var(--bs-secondary-color);
-  font-size: 0.8rem;
+/* The navbar: on the page's colour, a rule under it, the tabs as the site's
+   links; the open tab in the text colour over a gold rule */
+.navbar {
+  --bslib-navbar-light-bg: var(--prexp-bg);
+  --bslib-navbar-dark-bg: var(--prexp-bg);
+  --bs-navbar-color: var(--prexp-text-secondary);
+  --bs-navbar-hover-color: var(--prexp-text);
+  --bs-navbar-active-color: var(--prexp-text);
+  --bs-navbar-brand-color: var(--prexp-text);
+  --bs-navbar-brand-hover-color: var(--prexp-text);
+  --bs-navbar-toggler-border-color: var(--prexp-border-strong);
+  background-color: var(--prexp-bg);
+  min-height: 56px;
+}
+.navbar-brand {
+  font-weight: 600;
+  font-size: 1.125rem;
+  letter-spacing: -0.01em;
+}
+.navbar .nav-underline {
+  --bs-nav-link-font-size: 14px;
+  --bs-nav-link-font-weight: 500;
+  --bs-nav-underline-link-active-color: var(--prexp-text);
+}
+.navbar .nav-underline .nav-link {
+  font-weight: 500;
+  transition: color var(--prexp-fast) var(--prexp-ease),
+    border-color var(--prexp-fast) var(--prexp-ease);
+}
+.navbar .nav-underline .nav-link:hover,
+.navbar .nav-underline .nav-link:focus {
+  border-bottom-color: transparent;
+}
+.navbar .nav-underline .nav-link.active,
+.navbar .nav-underline .show > .nav-link {
+  color: var(--prexp-text);
+  font-weight: 500;
+  border-bottom-color: var(--prexp-accent);
+}
+/* In the collapsed menu bslib drops the underline (.navbar-collapse.show,
+   .collapsing): the open tab takes a gold rule at its left instead, and the
+   others a clear one, so the names stay in line. bslib also pads a link's
+   foot so that the underline meets the navbar's edge, overlapping the next
+   link: the menu pads it as its head, so the rule spans its own link only,
+   at the same spacing. */
+.navbar-collapse.show .nav-underline .nav-link,
+.navbar-collapse.collapsing .nav-underline .nav-link {
+  border-left: 2px solid transparent;
+  padding-bottom: var(--bs-nav-link-padding-y);
+  margin-bottom: 0;
+}
+.navbar-collapse.show .nav-underline .nav-link.active,
+.navbar-collapse.collapsing .nav-underline .nav-link.active {
+  border-left-color: var(--prexp-accent);
+}
+.navbar .bslib-nav-item {
+  display: flex;
+  align-items: center;
 }
 
-/* The search's dropdown sits on the page, not in its card: no wider than the
+/* The theme button, as the site's */
+.prexp-theme-toggle {
+  background: none;
+  border: 1px solid var(--prexp-border-strong);
+  border-radius: 0;
+  padding: 6px 12px;
+  font-family: var(--bs-font-monospace);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  color: var(--prexp-text-secondary);
+  cursor: pointer;
+  transition: color var(--prexp-fast) var(--prexp-ease),
+    border-color var(--prexp-fast) var(--prexp-ease);
+}
+.prexp-theme-toggle:hover {
+  color: var(--prexp-text);
+  border-color: var(--prexp-accent);
+}
+
+/* Cards: the brand's surface, a hairline edge, no shadow */
+.card {
+  --bs-card-bg: var(--prexp-surface);
+  --bs-card-color: var(--prexp-text);
+  --bs-card-border-color: var(--prexp-border);
+  --bs-card-cap-bg: transparent;
+  --bs-card-border-radius: 0;
+  --bs-card-inner-border-radius: 0;
+  box-shadow: none;
+}
+.bslib-card .card-header {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--prexp-text);
+  border-bottom: 1px solid var(--prexp-border);
+}
+.bslib-card .card-footer {
+  border-top: 1px solid var(--prexp-border);
+  background: transparent;
+}
+
+/* Labels: smaller, in the secondary text colour, above their field */
+.control-label,
+.form-label,
+.shiny-input-container > label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--prexp-text-secondary);
+}
+
+/* Fields: a well of the page's colour, with an edge at 3:1, square; the edge
+   turns gold with the focus */
+.form-control,
+.selectize-control .selectize-input,
+.selectize-control.single .selectize-input,
+.selectize-control.single .selectize-input.input-active {
+  background-color: var(--prexp-bg);
+  background-image: none;
+  border: 1px solid var(--prexp-control-border);
+  border-radius: 0;
+  color: var(--prexp-text);
+  box-shadow: none;
+  font-size: 15px;
+  line-height: 1.5;
+  transition: border-color var(--prexp-fast) var(--prexp-ease);
+}
+.form-control:focus,
+.selectize-control .selectize-input.focus,
+.selectize-control.single .selectize-input.focus {
+  background-color: var(--prexp-bg);
+  border-color: var(--prexp-accent);
+  color: var(--prexp-text);
+  box-shadow: none;
+  outline: none;
+}
+.selectize-control .selectize-input > input {
+  color: var(--prexp-text);
+}
+.form-control::placeholder,
+.selectize-control .selectize-input > input::placeholder {
+  color: var(--prexp-text-secondary);
+  opacity: 1;
+}
+/* A month's select: the site's chevron, in the secondary text colour */
+.selectize-control.single .selectize-input:not(.no-arrow)::after,
+.selectize-control.single .selectize-input:not(.no-arrow).dropdown-active::after {
+  border: 0;
+  width: 12px;
+  height: 8px;
+  margin-top: -4px;
+  right: 14px;
+  background: var(--prexp-chevron) no-repeat center;
+}
+.selectize-control.single .selectize-input:not(.no-arrow).dropdown-active::after {
+  transform: rotate(180deg);
+}
+/* A long pick stops short of the clear button and the chevron, cut with an
+   ellipsis */
+.selectize-control.single .selectize-input {
+  padding-right: 32px;
+}
+.selectize-control.plugin-clear_button.single .selectize-input {
+  padding-right: 64px;
+}
+.selectize-control.single .selectize-input > .item {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
+/* The clear button's cross is all that shows it: opaque, not selectize's
+   0.4, at 4.5:1 or more on the field */
+.selectize-control.plugin-clear_button .clear {
+  color: var(--prexp-text-secondary);
+  opacity: 1;
+}
+.selectize-control.plugin-clear_button .clear:hover {
+  color: var(--prexp-text);
+}
+
+/* The lists under them: the alternate panel, square, no shadow; the option
+   under the pointer marked by a gold rule */
+.selectize-dropdown,
+.selectize-dropdown.form-control {
+  background: var(--prexp-bg-alt);
+  border: 1px solid var(--prexp-control-border);
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--prexp-text);
+}
+/* The search's list sits on the page, not in its card: no wider than the
    screen, its long names wrapped */
 .selectize-dropdown {
   max-width: calc(100vw - 2rem);
 }
-
+.selectize-dropdown .option,
+.selectize-dropdown .optgroup-header,
+.selectize-dropdown .no-results,
+.selectize-dropdown .create {
+  color: var(--prexp-text);
+  border-left: 2px solid transparent;
+}
+.selectize-dropdown .option.selected {
+  color: var(--prexp-accent);
+  background: transparent;
+}
+.selectize-dropdown .option.active,
+.selectize-dropdown .option.active.selected {
+  background: var(--prexp-bg);
+  border-left-color: var(--prexp-accent);
+}
+.selectize-dropdown .option.active:not(.selected) {
+  color: var(--prexp-text);
+}
+.selectize-dropdown [data-selectable] .highlight {
+  background: none;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--prexp-accent);
+  text-underline-offset: 0.2em;
+}
 .prexp-option {
   white-space: normal;
   overflow-wrap: anywhere;
 }
-
+.prexp-option-meta {
+  color: var(--prexp-text-secondary);
+  font-size: 13px;
+}
 .prexp-search-message {
   min-height: 1.25rem;
-  color: var(--bs-secondary-color);
-  font-size: 0.875rem;
+  color: var(--prexp-text-secondary);
+  font-size: 14px;
+}
+
+/* Scrollbars of the lists and tables in the theme's colours. The tables
+   scroll sideways only: a switch of theme made Chrome keep a vertical
+   scrollbar on a wide one, with nothing to scroll. reactable's stylesheet
+   comes with the first table, after this one, so the rule weighs more. */
+.selectize-dropdown-content,
+.Reactable .rt-table {
+  scrollbar-color: var(--prexp-control-border) transparent;
+}
+.Reactable.ReactTable .rt-table {
+  overflow-y: hidden;
+}
+/* A paged table's count of rows: opaque, not reactable's 0.9, so it keeps
+   4.5:1 on a card */
+.Reactable .rt-page-info {
+  opacity: 1;
+}
+
+/* A practice's profile: its terms as the fields' labels */
+.prexp-profile dt {
+  font-weight: 500;
+  color: var(--prexp-text-secondary);
+}
+
+/* Radios stay round, so as not to read as checkboxes: filled gold when
+   checked */
+.form-check-input,
+.shiny-input-radiogroup input[type="radio"] {
+  background-color: var(--prexp-bg);
+  border: 1px solid var(--prexp-control-border);
+}
+.form-check-input:checked,
+.shiny-input-radiogroup input[type="radio"]:checked {
+  background-color: var(--prexp-accent);
+  border-color: var(--prexp-accent);
+}
+.form-check-input[type="radio"]:checked,
+.shiny-input-radiogroup input[type="radio"]:checked {
+  background-image: var(--prexp-radio-dot);
+}
+.shiny-input-radiogroup .radio label,
+.shiny-input-radiogroup .radio-inline {
+  color: var(--prexp-text);
+}
+
+/* Buttons: the gold call to action; the site's outline button; ghosts for
+   the rest. Square, a colour shift on hover, nothing that lifts or glows. */
+.btn {
+  --bs-btn-font-weight: 500;
+  --bs-btn-border-radius: 0;
+  --bs-btn-box-shadow: none;
+  --bs-btn-focus-box-shadow: none;
+  --bs-btn-disabled-opacity: 1;
+  border-radius: 0;
+  transition: color var(--prexp-fast) var(--prexp-ease),
+    background-color var(--prexp-fast) var(--prexp-ease),
+    border-color var(--prexp-fast) var(--prexp-ease);
+}
+.btn-sm,
+.btn-group-sm > .btn {
+  --bs-btn-padding-y: 6px;
+  --bs-btn-padding-x: 14px;
+  --bs-btn-font-size: 14px;
+}
+.btn-primary {
+  --bs-btn-color: var(--prexp-on-accent);
+  --bs-btn-bg: var(--prexp-accent);
+  --bs-btn-border-color: var(--prexp-accent);
+  --bs-btn-hover-color: var(--prexp-on-accent);
+  --bs-btn-hover-bg: var(--prexp-accent-hover);
+  --bs-btn-hover-border-color: var(--prexp-accent-hover);
+  --bs-btn-active-color: var(--prexp-on-accent);
+  --bs-btn-active-bg: var(--prexp-accent-hover);
+  --bs-btn-active-border-color: var(--prexp-accent-hover);
+  --bs-btn-disabled-color: var(--prexp-muted);
+  --bs-btn-disabled-bg: transparent;
+  --bs-btn-disabled-border-color: var(--prexp-border);
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--prexp-accent);
+  --bs-btn-bg: transparent;
+  --bs-btn-border-color: var(--prexp-border-strong);
+  --bs-btn-hover-color: var(--prexp-accent-hover);
+  --bs-btn-hover-bg: var(--prexp-accent-subtle);
+  --bs-btn-hover-border-color: var(--prexp-accent);
+  --bs-btn-active-color: var(--prexp-accent-hover);
+  --bs-btn-active-bg: var(--prexp-accent-subtle);
+  --bs-btn-active-border-color: var(--prexp-accent);
+  --bs-btn-disabled-color: var(--prexp-muted);
+  --bs-btn-disabled-bg: transparent;
+  --bs-btn-disabled-border-color: var(--prexp-border);
+}
+.btn-outline-secondary {
+  --bs-btn-color: var(--prexp-text);
+  --bs-btn-bg: transparent;
+  --bs-btn-border-color: var(--prexp-border-strong);
+  --bs-btn-hover-color: var(--prexp-accent);
+  --bs-btn-hover-bg: transparent;
+  --bs-btn-hover-border-color: var(--prexp-accent);
+  --bs-btn-active-color: var(--prexp-accent);
+  --bs-btn-active-bg: transparent;
+  --bs-btn-active-border-color: var(--prexp-accent);
+  --bs-btn-disabled-color: var(--prexp-muted);
+  --bs-btn-disabled-bg: transparent;
+  --bs-btn-disabled-border-color: var(--prexp-border);
+}
+
+/* Badges: neutral, in the mono font, a hairline edge */
+.badge.prexp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  font-family: var(--bs-font-monospace);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--prexp-text-secondary);
+  background: transparent;
+  border: 1px solid var(--prexp-border-strong);
+  border-radius: 0;
+}
+.prexp-badge-marker {
+  color: var(--prexp-text);
+  font-weight: 500;
+  padding-right: 6px;
+  border-right: 1px solid var(--prexp-border-strong);
+}
+
+/* A view's message in place of its results: the secondary text colour; an
+   error marked by a rule in the error colour */
+.prexp-view-message {
+  color: var(--prexp-text-secondary);
+}
+.prexp-view-error {
+  border-left: 2px solid var(--prexp-error);
+  padding-left: 12px;
 }
 
 /* The report panel: one item after another, a rule between them */
 .prexp-report-item + .prexp-report-item {
   margin-top: 1rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--bs-border-color);
+  border-top: 1px solid var(--prexp-border);
+}
+.prexp-report-item .form-text {
+  font-family: var(--bs-font-monospace);
+  font-size: 12px;
+  color: var(--prexp-text-secondary);
+}
+
+/* Shiny's notifications, as the site's: square, opaque */
+#shiny-notification-panel .shiny-notification {
+  background-color: var(--prexp-bg-alt);
+  color: var(--prexp-text);
+  border: 1px solid var(--prexp-border-strong);
+  border-radius: 0;
+  box-shadow: none;
+  opacity: 1;
+  font-size: 14px;
+}
+#shiny-notification-panel .shiny-notification-warning {
+  border-left: 2px solid var(--prexp-accent);
+}
+#shiny-notification-panel .shiny-notification-error {
+  background-color: var(--prexp-error-bg);
+  border-color: var(--prexp-error-bg);
+}
+#shiny-notification-panel .shiny-notification-close {
+  color: inherit;
+}
+#shiny-disconnected-overlay {
+  background-color: var(--prexp-bg);
+  opacity: 0.7;
+}
+
+/* The About tab: one column, as the brand's policy pages */
+.prexp-about {
+  max-width: 800px;
+  margin: 0 auto;
+  padding-bottom: 24px;
+}
+.prexp-about h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--prexp-text);
+  margin: 48px 0 12px;
+}
+.prexp-about .prexp-methods-section:first-child h2 {
+  margin-top: 16px;
+}
+.prexp-about p,
+.prexp-about li {
+  color: var(--prexp-text-secondary);
+  line-height: 1.7;
+  margin-bottom: 8px;
+}
+.prexp-about ul {
+  padding-left: 20px;
+  margin-bottom: 16px;
+}
+.prexp-about strong {
+  color: var(--prexp-text);
+  font-weight: 600;
+}
+
+/* The footer: the provenance in the mono font, and the wordmark */
+.prexp-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.5em;
+  row-gap: 4px;
+  margin-top: 1.5rem;
+  padding: 16px 1rem;
+  border-top: 1px solid var(--prexp-border);
+  color: var(--prexp-text-secondary);
+  font-family: var(--bs-font-monospace);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.prexp-footer a {
+  color: var(--prexp-text-secondary);
+}
+.prexp-footer a:hover {
+  color: var(--prexp-accent);
+}
+.prexp-footer .prexp-wordmark {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--prexp-text);
+}
+.prexp-footer .prexp-wordmark:hover {
+  color: var(--prexp-accent);
 }

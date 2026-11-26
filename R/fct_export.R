@@ -289,7 +289,7 @@ table_text <- function(table) {
 #'   the cells of the workbook that hold it, as [openxlsx2::wb_data()] gives
 #'   them, with the columns "Month" or "Region" and the measure's label.
 #' @return An mschart chart: a line by month, or bars by region, in the
-#'   palette's blue, with the measure's label as the series' name and its
+#'   exports' palette's blue, with the measure's label as the series' name and its
 #'   title on the values' axis.
 #' @noRd
 export_chart <- function(chart, measure, data = NULL) {
@@ -306,7 +306,7 @@ export_chart <- function(chart, measure, data = NULL) {
     mschart::ms_barchart(data, x = category, y = label)
   }
   named <- function(value) structure(value, names = label)
-  blue <- named(prexp_palette()[["blue"]])
+  blue <- named(export_palette()[["blue"]])
   graph <- mschart::chart_data_fill(graph, values = blue)
   graph <- mschart::chart_data_stroke(graph, values = blue)
   if (line) {
@@ -369,7 +369,7 @@ export_axis <- function(values, measure) {
 #' How an item's table is laid out
 #'
 #' Each column is as wide as its widest value or name, measured in the
-#' charts' font. When that is wider than `width`, the widest column of text,
+#' exports' font. When that is wider than `width`, the widest column of text,
 #' such as the presentations' names, is narrowed to fit, down to an inch and
 #' a half, and its values wrap; each row is then as high as its lines.
 #'
@@ -386,7 +386,7 @@ table_layout <- function(table, size, width) {
     if (length(strings) == 0L) {
       return(numeric())
     }
-    systemfonts::string_width(strings, family = chart_font, size = size, weight = weight) / 72
+    systemfonts::string_width(strings, family = export_font, size = size, weight = weight) / 72
   }
   cells <- lapply(text, measure)
   names <- measure(table$labels, weight = "bold")
@@ -458,7 +458,7 @@ export_flextable <- function(table, size, layout, rows = seq_len(nrow(table$data
     ft, values = structure(as.list(table$labels), names = names(data))
   )
   ft <- flextable::border_remove(ft)
-  ft <- flextable::font(ft, fontname = chart_font, part = "all")
+  ft <- flextable::font(ft, fontname = export_font, part = "all")
   ft <- flextable::fontsize(ft, size = size, part = "all")
   ft <- flextable::color(ft, color = "#222222", part = "all")
   ft <- flextable::bold(ft, part = "header")
@@ -487,7 +487,7 @@ export_flextable <- function(table, size, layout, rows = seq_len(nrow(table$data
 
 #' How many lines paragraphs take, wrapped at spaces as Office wraps them
 #'
-#' Each word is measured in the charts' font; a word wider than the box
+#' Each word is measured in the exports' font; a word wider than the box
 #' breaks across lines.
 #'
 #' @param lines The paragraphs.
@@ -496,14 +496,14 @@ export_flextable <- function(table, size, layout, rows = seq_len(nrow(table$data
 #' @return The lines each paragraph takes.
 #' @noRd
 text_lines <- function(lines, size, width) {
-  space <- systemfonts::string_width(" ", family = chart_font, size = size) / 72
+  space <- systemfonts::string_width(" ", family = export_font, size = size) / 72
   vapply(lines, function(line) {
     words <- strsplit(line, " ", fixed = TRUE)[[1]]
     words <- words[nzchar(words)]
     if (length(words) == 0L) {
       return(1L)
     }
-    widths <- systemfonts::string_width(words, family = chart_font, size = size) / 72
+    widths <- systemfonts::string_width(words, family = export_font, size = size) / 72
     count <- 1L
     used <- 0
     for (w in widths) {

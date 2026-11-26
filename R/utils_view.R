@@ -95,8 +95,11 @@ months_controls <- function(ns, window, from = NULL, to = NULL) {
     return(shiny::p(class = "text-muted", "No months are loaded yet."))
   }
   keep <- function(value, default) if (!is.null(value) && value %in% choices) value else default
+  # Side by side where the controls' card is wide enough for both months,
+  # one above the other below that. The grid's twelve columns keep eleven
+  # gaps, which at bslib's 24 px each were wider than a narrow card.
   bslib::layout_columns(
-    col_widths = c(6, 6),
+    col_widths = bslib::breakpoints(sm = c(12, 12), lg = c(6, 6)), gap = "0.75rem",
     shiny::selectInput(ns("from"), "From", choices, selected = keep(from, min(choices))),
     shiny::selectInput(ns("to"), "To", choices, selected = keep(to, max(choices)))
   )
@@ -268,11 +271,14 @@ complete_months <- function(rows, months, zeros) {
 #'
 #' @param text What to say.
 #' @param retry The id of a retry button to show under it, or `NULL`.
+#' @param error Whether it says that something failed, which a rule in the
+#'   error colour marks: by default, when it offers a retry.
 #' @return Shiny UI.
 #' @noRd
-view_message <- function(text, retry = NULL) {
+view_message <- function(text, retry = NULL, error = !is.null(retry)) {
   shiny::div(
-    class = "prexp-view-message", role = "status",
+    class = paste(c("prexp-view-message", if (error) "prexp-view-error"), collapse = " "),
+    role = "status",
     shiny::p(text),
     if (!is.null(retry)) shiny::actionButton(retry, "Try again", class = "btn-outline-primary")
   )
@@ -287,6 +293,12 @@ brand_or_generic <- function(is_generic) {
 # two. Its column is also given the width the longest needs, since a table
 # hides what overflows a cell; the table scrolls sideways instead.
 nowrap <- list(whiteSpace = "nowrap")
+
+# A code, such as a BNF code, on one line in the brand's mono font, which it
+# keeps for such details
+code_style <- list(
+  whiteSpace = "nowrap", fontFamily = "var(--bs-font-monospace)", fontSize = "13px"
+)
 
 # Table columns of counts and of pounds, written the British way whatever the
 # browser's language (1,234,567 and GBP 1,234.56), as the rest of the app is
@@ -406,7 +418,7 @@ no_window_message <- function(fetched) {
   if (fetched) {
     view_message("No data is loaded yet.")
   } else {
-    view_message("The data could not be fetched. The app is trying again.")
+    view_message("The data could not be fetched. The app is trying again.", error = TRUE)
   }
 }
 

@@ -30,6 +30,8 @@ run_app <- function(host = getOption("shiny.host", "127.0.0.1"),
       app_server(state$pool, state$cache)(input, output, session)
     },
     onStart = function() {
+      # The charts' font, the page's own copy, for measuring their text
+      use_chart_font()
       state$pool <- db_pool()
       # One cache for the process, shared by every session
       state$cache <- app_cache()

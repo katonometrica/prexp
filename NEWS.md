@@ -1,5 +1,6 @@
 # prexp (development version)
 
+- **KATONOMETRICA's look** (#129, the app's part): the app looks like katonometrica.com. Dark by default, with a light theme and a button that switches it and is remembered; IBM Plex Sans and Mono, served with the app; the brand's navy and gold, square corners and flat surfaces. The charts take the theme's colours without being drawn again. Where the site's colours fall short of WCAG AA, the app uses stronger ones. The Office exports keep their look for now.
 - **One message for each lookup** (#125): a view's results are drawn again only when their layout changes, and each chart once, at the width the browser reports. The shared cache keeps drawn charts as well as fetches.
 - **Deploys from CI** (#118): a merge to `main` that publishes a new app image deploys the app and the jobs container to production.
 - **The server's measurements** (#124), in `docs/benchmarks.md`, and again after #125: lookups at 141 ms at the median and 540 ms at the 95th percentile (569 ms before), and 699 ms for the largest chemical (957 ms before). The load test's sessions are recorded again by `bench/drive.R`.

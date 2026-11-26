@@ -166,7 +166,7 @@ test_that("a table is laid out to fit its width, and cut into pages that fit the
     data.frame(name = long, items = seq(1000, by = 1000, length.out = 30)),
     c("Presentation", "Items"), c("text", "items")
   )
-  use_chart_font()
+  use_export_font()
   wide <- table_layout(table, size = 9, width = 12)
   expect_lte(sum(wide$widths), 12)
   expect_true(all(wide$heights == wide$heights[[1]]))
@@ -205,7 +205,7 @@ test_that("the methods are cut into pages, a section each, a long one over more"
     )
   }))
   expect_identical(blocks, expected)
-  use_chart_font()
+  use_export_font()
   expect_false("Methods: Limitations (continued)" %in% titles)
   # A small box: the long sections go on, and say so
   small <- methods_pages(sections, height = 1.5)
@@ -662,7 +662,7 @@ made_deck <- function(items) {
 }
 
 test_that("a slide holds its text: a long note goes on, a long address moves the chart", {
-  use_chart_font()
+  use_export_font()
   points <- paste(sprintf("- point %d: costs rose", 1:15), collapse = "\n")
   short <- made_item(note = "Costs rose.", clamped = TRUE)
   long <- made_item(note = points, clamped = TRUE)
@@ -692,7 +692,7 @@ test_that("a slide holds its text: a long note goes on, a long address moves the
 })
 
 test_that("a short table with no chart takes the chart's place", {
-  use_chart_font()
+  use_export_font()
   table <- export_table(
     "By region",
     data.frame(

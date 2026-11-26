@@ -296,6 +296,9 @@ test_that("the chart shows the measure chosen, and the table numbers its rows", 
   )
   expect_identical(names(practice_measures()), c("Items", "Net ingredient cost", "Actual cost"))
   table <- top_drugs_table(ranked_drugs(2L), first = 26L)
+  # The tables' one theme, without stripes
+  expect_identical(table$x$tag$attribs$theme, table_theme())
+  expect_null(table$x$tag$attribs$striped)
   data <- jsonlite::fromJSON(as.character(table$x$tag$attribs$data))
   expect_identical(data$rank, 26:27)
   expect_identical(data$kind, c("Generic", "Generic"))
