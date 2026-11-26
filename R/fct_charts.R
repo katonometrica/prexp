@@ -45,7 +45,7 @@ chart_series <- function(data, months = NULL, width = 768) {
   )
   known <- plot_data[!is.na(plot_data$value), ]
   axis <- month_axis(data$year_month, most = max(3L, width %/% 64L))
-  colour <- prexp_palette()[["blue"]]
+  colour <- chart_colours()$mark
   # A line needs two months with values; it breaks at a month without one
   line <- if (nrow(known) > 1L) {
     ggplot2::geom_line(colour = colour, linewidth = 0.8, na.rm = TRUE)
@@ -106,7 +106,7 @@ chart_bars <- function(data, label = "region_name", id = "region_code", chars = 
   ggplot2::ggplot(plot_data, ggplot2::aes(x = .data$value, y = .data$id)) +
     ggiraph::geom_col_interactive(
       ggplot2::aes(tooltip = .data$tooltip, data_id = .data$data_id),
-      fill = prexp_palette()[["blue"]], width = 0.7
+      fill = chart_colours()$mark, width = 0.7
     ) +
     ggplot2::scale_y_discrete(labels = structure(shorten(labels, fit), names = ids)) +
     ggplot2::scale_x_continuous(
@@ -164,6 +164,11 @@ chart_top_drugs <- function(data, by, width = 768) {
 #' screen, and shrinks to fit until it is drawn again. The chart's text
 #' alternative becomes the SVG's description, and `title` its name.
 #'
+#' The SVG has no background, so the card shows through, and is drawn in the
+#' light theme's colours, which the page recolours for the theme shown
+#' (chart_css()). The selection and the tooltip take the theme's colours from
+#' the page's custom properties, the light theme's where those are missing.
+#'
 #' @param p A ggplot from a chart builder.
 #' @param width,height The chart's size in CSS pixels: the width of the
 #'   output it is shown in.
@@ -173,32 +178,51 @@ chart_top_drugs <- function(data, by, width = 768) {
 #' @noRd
 render_girafe <- function(p, width = 768, height = 384, title = NULL) {
   use_chart_font()
-  highlight <- prexp_palette()[["vermillion"]]
   alt <- ggplot2::get_alt_text(p)
   ggiraph::girafe(
     ggobj = p,
     width_svg = width / 96,
     height_svg = height / 96,
+    bg = "transparent",
     font_set = chart_font_set(),
     title = title,
     desc = if (nzchar(alt)) alt,
     options = list(
       ggiraph::opts_hover(css = "opacity:0.75;cursor:pointer;"),
-      ggiraph::opts_selection(
-        type = "single", only_shiny = TRUE,
-        css = paste0("fill:", highlight, ";stroke:#222222;stroke-width:2px;")
-      ),
+      ggiraph::opts_selection(type = "single", only_shiny = TRUE, css = selection_css()),
       ggiraph::opts_toolbar(saveaspng = FALSE, hidden = c("selection", "zoom", "misc")),
       ggiraph::opts_sizing(rescale = TRUE, width = 1),
-      ggiraph::opts_tooltip(
-        use_fill = FALSE,
-        css = paste(
-          "background:#ffffff;color:#222222;border:1px solid #c8ccd0;padding:4px 8px;",
-          "border-radius:4px;font-family:Arial,sans-serif;font-size:13px;"
-        )
-      )
+      ggiraph::opts_tooltip(use_fill = FALSE, css = tooltip_css())
     )
   )
+}
+
+# A selected mark: the gold, outlined in the text colour, as gold and the
+# marks' blue are only 1.3 to 1.5:1 apart
+selection_css <- function() {
+  light <- brand_tokens()$light
+  paste0(
+    "fill:", theme_var("chart-selected", light$chart_selected), ";",
+    "stroke:", theme_var("chart-outline", light$chart_outline), ";stroke-width:2px;"
+  )
+}
+
+# The tooltip: square and flat, in the page's font
+tooltip_css <- function() {
+  light <- brand_tokens()$light
+  paste0(
+    "background:", theme_var("chart-tip-bg", light$chart_tip_bg), ";",
+    "color:", theme_var("chart-tip-text", light$chart_tip_text), ";",
+    "border:1px solid ", theme_var("chart-tip-border", light$chart_tip_border), ";",
+    "border-radius:0;box-shadow:none;padding:4px 8px;",
+    "font-family:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;font-size:13px;line-height:1.4;"
+  )
+}
+
+# A custom property of the page's theme, with the light theme's value where
+# the page has none
+theme_var <- function(name, fallback) {
+  paste0("var(--prexp-", name, ",", fallback, ")")
 }
 
 # The input has the columns the chart needs, and rows
