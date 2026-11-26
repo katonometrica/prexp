@@ -8,7 +8,7 @@
 # report.pptx is officer's template.pptx:
 # - widened to 16:9, 13.333 by 7.5 inches, with every shape of its master and
 #   layouts widened in proportion, so that the layouts keep their margins;
-# - in Arial, the font of the app's charts, rather than Calibri;
+# - in Arial, the exports' font (export_font), rather than Calibri;
 # - with neutral document properties in English, rather than officer's
 #   author's name and French ones, with no revision number or counts that
 #   officer would not update, and without its 4:3 thumbnail and its printer
@@ -127,7 +127,7 @@ app_properties <- paste0(
 )
 
 # report.docx is officer's template.docx, A4 with 2.5 cm margins:
-# - in Arial, the font of the app's charts, rather than Calibri and Cambria;
+# - in Arial, the exports' font (export_font), rather than Calibri and Cambria;
 # - with its styles' names and ids in English, as Word names them, rather
 #   than in French, and headings that are not numbered;
 # - with a Title style for the report's title, 6 points after a paragraph,
