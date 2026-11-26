@@ -96,9 +96,10 @@ months_controls <- function(ns, window, from = NULL, to = NULL) {
   }
   keep <- function(value, default) if (!is.null(value) && value %in% choices) value else default
   # Side by side where the controls' card is wide enough for both months,
-  # one above the other below that
+  # one above the other below that. The grid's twelve columns keep eleven
+  # gaps, which at bslib's 24 px each were wider than a narrow card.
   bslib::layout_columns(
-    col_widths = bslib::breakpoints(sm = c(12, 12), lg = c(6, 6)),
+    col_widths = bslib::breakpoints(sm = c(12, 12), lg = c(6, 6)), gap = "0.75rem",
     shiny::selectInput(ns("from"), "From", choices, selected = keep(from, min(choices))),
     shiny::selectInput(ns("to"), "To", choices, selected = keep(to, max(choices)))
   )
