@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -16 792 570" width="792" height="570" role="img" aria-labelledby="title desc">
   <title id="title">How Prescription Explorer fits together</title>
-  <desc id="desc">The NHSBSA portal publishes a CSV a month. A jobs container loads each month into PostgreSQL 18, through a staging table into a fact table with a partition a month, rollup tables and read-only views for the app; a nightly check reads every query's plan. The app container reads the views through a query registry and a shared cache, draws them in Shiny modules, runs exports on mirai workers, and answers the browser through an HTTPS proxy.</desc>
+  <desc id="desc">The NHSBSA portal publishes a CSV a month. A jobs container loads each month into PostgreSQL 18, through a staging table into a fact table with a partition a month, rollup tables and read-only views for the app; a nightly check reads every query's plan. The app container reads the views through a query registry and a shared cache, draws them in Shiny modules, runs exports on mirai workers, which read the views over their own connections, and answers the browser through an HTTPS proxy.</desc>
   <style>
     svg { --bg: #ffffff; --frame: #f6f8fa; --edge: #d0d7de; --box: #ffffff; --line: #59636e; --text: #1f2328; --sub: #59636e; --label: #7d6523; }
     @media (prefers-color-scheme: dark) {
@@ -88,6 +88,7 @@
   <path class="line" d="M556 212 H588" marker-end="url(#head)"/>
   <path class="line" d="M284 248 V266 H630 V248" marker-end="url(#head)"/>
   <path class="line" d="M668 248 V298 H160 V344" marker-end="url(#head)"/>
+  <path class="line" d="M720 248 V344" marker-end="url(#head)"/>
   <path class="line" d="M172 380 H204" marker-end="url(#head)"/>
   <path class="line" d="M364 380 H396" marker-end="url(#head)"/>
   <path class="line" d="M556 380 H588" marker-end="url(#head)"/>
