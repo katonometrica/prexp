@@ -95,8 +95,10 @@ months_controls <- function(ns, window, from = NULL, to = NULL) {
     return(shiny::p(class = "text-muted", "No months are loaded yet."))
   }
   keep <- function(value, default) if (!is.null(value) && value %in% choices) value else default
+  # Side by side where the controls' card is wide enough for both months,
+  # one above the other below that
   bslib::layout_columns(
-    col_widths = c(6, 6),
+    col_widths = bslib::breakpoints(sm = c(12, 12), lg = c(6, 6)),
     shiny::selectInput(ns("from"), "From", choices, selected = keep(from, min(choices))),
     shiny::selectInput(ns("to"), "To", choices, selected = keep(to, max(choices)))
   )

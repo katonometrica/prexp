@@ -207,7 +207,7 @@ a:focus-visible,
 /* A long pick stops short of the clear button and the chevron, cut with an
    ellipsis */
 .selectize-control.single .selectize-input {
-  padding-right: 40px;
+  padding-right: 32px;
 }
 .selectize-control.plugin-clear_button.single .selectize-input {
   padding-right: 64px;
