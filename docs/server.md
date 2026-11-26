@@ -2,7 +2,7 @@
 
 Production runs on one server under [Coolify](https://coolify.io) v4 (these steps were written against v4.7.6): a PostgreSQL 18 database, the `jobs` container and the app, the last two from this repository's app image (spec §2.3, §7). This page sets the server up, step by step, in Coolify's web interface. The runbook (P6-04) covers operating it.
 
-What must stay private never goes in this repository or its issues: the app's address, the server's and Coolify's, and every password and token. They live in Coolify, and those that CI needs in the repository's GitHub secrets, one value to each, because Actions hides a secret in its logs only where its whole value appears. Below they appear as `<app-host>`, `<coolify-host>`, `<server-ip>`, `<db-id>`, `<app-id>` and `<jobs-id>`.
+What must stay private never goes in this repository or its issues: the server's address and Coolify's, and every password and token. They live in Coolify, and those that CI needs in the repository's GitHub secrets, one value to each, because Actions hides a secret in its logs only where its whole value appears. Below they appear as `<coolify-host>`, `<server-ip>`, `<db-id>`, `<app-id>` and `<jobs-id>`. The app's address is public, and appears below as `<app-host>`: prexp's own is [prexp.katonometrica.com](https://prexp.katonometrica.com/).
 
 ## Before you start
 
