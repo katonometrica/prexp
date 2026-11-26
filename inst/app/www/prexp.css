@@ -62,6 +62,28 @@ a:focus-visible,
 .form-check-input:focus {
   box-shadow: none;
 }
+/* The same where a component's own focus rule weighs more: the collapsed
+   navbar's toggle (Bootstrap's), Shiny's radios (bslib's glow) and a
+   table's page buttons (reactable's, whose stylesheet comes after this one) */
+.navbar .navbar-toggle:focus-visible,
+.navbar .navbar-toggler:focus-visible,
+.shiny-input-container .radio input[type="radio"]:focus-visible,
+.shiny-input-container .radio-inline input[type="radio"]:focus-visible,
+.Reactable .rt-page-button:focus-visible {
+  outline: 2px solid var(--prexp-accent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.shiny-input-container .radio input[type="radio"]:focus,
+.shiny-input-container .radio-inline input[type="radio"]:focus {
+  box-shadow: none;
+}
+/* A table's header row sits at the edge of its scroll box, which cuts an
+   outline drawn outside a cell: inside the cell */
+.Reactable .rt-th:focus-visible,
+.Reactable .rt-td:focus-visible {
+  outline-offset: -2px;
+}
 
 /* The navbar: on the page's colour, a rule under it, the tabs as the site's
    links; the open tab in the text colour over a gold rule */
@@ -74,7 +96,6 @@ a:focus-visible,
   --bs-navbar-brand-color: var(--prexp-text);
   --bs-navbar-brand-hover-color: var(--prexp-text);
   --bs-navbar-toggler-border-color: var(--prexp-border-strong);
-  --bs-navbar-toggler-focus-width: 0;
   background-color: var(--prexp-bg);
   min-height: 56px;
 }
@@ -102,6 +123,22 @@ a:focus-visible,
   color: var(--prexp-text);
   font-weight: 500;
   border-bottom-color: var(--prexp-accent);
+}
+/* In the collapsed menu bslib drops the underline (.navbar-collapse.show,
+   .collapsing): the open tab takes a gold rule at its left instead, and the
+   others a clear one, so the names stay in line. bslib also pads a link's
+   foot so that the underline meets the navbar's edge, overlapping the next
+   link: the menu pads it as its head, so the rule spans its own link only,
+   at the same spacing. */
+.navbar-collapse.show .nav-underline .nav-link,
+.navbar-collapse.collapsing .nav-underline .nav-link {
+  border-left: 2px solid transparent;
+  padding-bottom: var(--bs-nav-link-padding-y);
+  margin-bottom: 0;
+}
+.navbar-collapse.show .nav-underline .nav-link.active,
+.navbar-collapse.collapsing .nav-underline .nav-link.active {
+  border-left-color: var(--prexp-accent);
 }
 .navbar .bslib-nav-item {
   display: flex;
@@ -219,8 +256,11 @@ a:focus-visible,
   white-space: nowrap;
   vertical-align: top;
 }
+/* The clear button's cross is all that shows it: opaque, not selectize's
+   0.4, at 4.5:1 or more on the field */
 .selectize-control.plugin-clear_button .clear {
   color: var(--prexp-text-secondary);
+  opacity: 1;
 }
 .selectize-control.plugin-clear_button .clear:hover {
   color: var(--prexp-text);
@@ -293,6 +333,11 @@ a:focus-visible,
 .Reactable.ReactTable .rt-table {
   overflow-y: hidden;
 }
+/* A paged table's count of rows: opaque, not reactable's 0.9, so it keeps
+   4.5:1 on a card */
+.Reactable .rt-page-info {
+  opacity: 1;
+}
 
 /* A practice's profile: its terms as the fields' labels */
 .prexp-profile dt {
@@ -352,7 +397,7 @@ a:focus-visible,
   --bs-btn-active-border-color: var(--prexp-accent-hover);
   --bs-btn-disabled-color: var(--prexp-muted);
   --bs-btn-disabled-bg: transparent;
-  --bs-btn-disabled-border-color: var(--prexp-border-strong);
+  --bs-btn-disabled-border-color: var(--prexp-border);
 }
 .btn-outline-primary {
   --bs-btn-color: var(--prexp-accent);

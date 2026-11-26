@@ -102,6 +102,21 @@ search_pick <- function(app, view, text, value) {
   expect_identical(app$get_value(input = input), value)
 }
 
+# Presses Tab until the element the selector names has the focus, as a
+# keyboard moves through the page: whether it got there
+tab_to <- function(app, selector, presses = 12L) {
+  at <- sprintf(
+    "document.activeElement.matches(%s)", jsonlite::toJSON(selector, auto_unbox = TRUE)
+  )
+  for (i in seq_len(presses)) {
+    press_key(app, "Tab", "Tab", 9L)
+    if (isTRUE(app$get_js(at))) {
+      return(TRUE)
+    }
+  }
+  FALSE
+}
+
 # Opens a tab of the app
 open_tab <- function(app, tab) {
   app$set_inputs(tab = tab, wait_ = FALSE)
@@ -531,17 +546,34 @@ test_that("flow 7: dark at first, the theme button switches it, and the choice i
     "return f.family.replace(/\"/g, '') === 'IBM Plex Sans' && f.status === 'loaded'; })"
   ))
   # A chart is drawn once, in the light theme's colours, and the page shows
-  # its marks in the theme's own
+  # its marks and its tick labels in the theme's own
   search_pick(app, "drug", "atorva", paste0("chemical:", drug$id))
   mark <- "getComputedStyle(document.querySelector('#drug-chart svg [data-id]')).fill"
+  tick <- paste0(
+    "getComputedStyle(document.querySelector(\"#drug-chart svg text[fill='#5A5650' i]\"))",
+    ".fill"
+  )
   expect_identical(app$get_js(mark), "rgb(103, 140, 207)")
+  expect_identical(app$get_js(tick), "rgb(139, 133, 121)")
+  # Focus is a gold outline, never a glow, on Shiny's radios too: the
+  # keyboard's way to the measure chosen
+  focus <- paste(
+    "(function () { var s = getComputedStyle(document.activeElement);",
+    "return [s.outlineStyle, s.outlineWidth, s.boxShadow]; })()"
+  )
+  expect_true(tab_to(app, "#drug-measure input:checked"))
+  expect_identical(unlist(app$get_js(focus)), c("solid", "2px", "none"))
   app$run_js("document.getElementById('prexp-theme-toggle').click();")
   expect_identical(app$get_js(theme), "light")
   expect_identical(app$get_js(label), "Switch to dark theme")
   expect_identical(app$get_js("window.localStorage.getItem('theme')"), "light")
   expect_identical(app$get_js(page), "rgb(253, 252, 251)")
   expect_identical(app$get_js(mark), "rgb(53, 86, 149)")
-  # Opened again, the page is light from the start
+  expect_identical(app$get_js(tick), "rgb(90, 86, 80)")
+  # Opened again, the page is light from the start; here on a narrow screen,
+  # where the navbar collapses behind its toggle
+  app$set_window_size(width = 760, height = 900)
+  app$wait_for_idle(duration = 1000)
   app$run_js("window.location.reload();")
   app$wait_for_js(paste(
     "document.readyState === 'complete' &&",
@@ -549,4 +581,18 @@ test_that("flow 7: dark at first, the theme button switches it, and the choice i
   ))
   expect_identical(app$get_js(theme), "light")
   expect_identical(app$get_js(label), "Switch to dark theme")
+  # The toggle is the keyboard's first stop, and shows its focus
+  press_key(app, "Tab", "Tab", 9L)
+  expect_true(app$get_js("document.activeElement.matches('.navbar-toggle, .navbar-toggler')"))
+  expect_identical(unlist(app$get_js(focus)), c("solid", "2px", "none"))
+  # The menu it opens marks the open tab by more than its colour: a gold
+  # rule, at its left
+  app$run_js("document.activeElement.click();")
+  app$wait_for_js("document.querySelector('.navbar-collapse.collapse.show') !== null")
+  Sys.sleep(0.3)
+  rule <- paste(
+    "(function () { var s = getComputedStyle(document.querySelector('.navbar .nav-link.active'));",
+    "return [s.borderLeftStyle, s.borderLeftWidth, s.borderLeftColor]; })()"
+  )
+  expect_identical(unlist(app$get_js(rule)), c("solid", "2px", "rgb(125, 101, 35)"))
 })

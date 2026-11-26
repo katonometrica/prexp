@@ -179,6 +179,39 @@ test_that("the generated CSS recolours every role the charts draw", {
   for (widget in list(render_girafe(chart_series(series)), render_girafe(chart_bars(regions)))) {
     expect_setequal(setdiff(drawn(widget), "#FFFFFF"), intersect(drawn(widget), unlist(colours)))
     expect_true(colours$mark %in% drawn(widget))
+    # Each role drawn in the form its rule matches: the colour as an
+    # attribute, the tick labels' and the axis titles' on text
+    html <- widget$x$html
+    expect_match(html, paste0(" stroke='", colours$grid, "'"), fixed = TRUE)
+    expect_match(html, paste0("<text[^>]*fill='", colours$tick, "'"), ignore.case = TRUE)
+    expect_match(html, paste0("<text[^>]*fill='", colours$title, "'"), ignore.case = TRUE)
+  }
+})
+
+test_that("a paged table's controls read on a card in both themes", {
+  theme <- table_theme()
+  # A page button under the pointer or the keyboard's focus on the page's
+  # colour, where the secondary text and the gold read (the checks above):
+  # on the surface over a card they would not
+  expect_identical(theme$pageButtonHoverStyle$backgroundColor, "var(--prexp-bg)")
+  expect_identical(theme$pageButtonActiveStyle$backgroundColor, "var(--prexp-bg)")
+  # The count of rows opaque, not reactable's 0.9, and a focused page button
+  # outlined, as reactable's stylesheet would leave it without
+  css <- paste(
+    readLines(system.file("app", "www", "prexp.css", package = "prexp")), collapse = "\n"
+  )
+  expect_match(css, ".Reactable .rt-page-info {\n  opacity: 1;\n}", fixed = TRUE)
+  expect_match(css, ".Reactable .rt-page-button:focus-visible", fixed = TRUE)
+})
+
+test_that("a disabled control looks disabled in both themes", {
+  for (mode in c("light", "dark")) {
+    t <- brand_tokens()[[mode]]
+    # Its text fainter than any text that can be used, which reads at 4.5:1,
+    # but still seen
+    muted <- contrast_on(t$muted, t$bg)
+    expect_lt(muted, 3, label = paste(mode, "muted"))
+    expect_gt(muted, 2, label = paste(mode, "muted"))
   }
 })
 

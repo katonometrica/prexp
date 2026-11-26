@@ -162,10 +162,11 @@ chart_top_drugs <- function(data, by, width = 768) {
 #' A chart as an interactive widget
 #'
 #' The one place for the girafe() options: hover, single selection marked by
-#' an outline as well as its colour, no toolbar (so no save button). The chart
-#' is drawn at the size it is shown at, so its text is the page's size on any
-#' screen, and shrinks to fit until it is drawn again. The chart's text
-#' alternative becomes the SVG's description, and `title` its name.
+#' an outline as well as its colour (a selected point drawn larger, too), no
+#' toolbar (so no save button). The chart is drawn at the size it is shown
+#' at, so its text is the page's size on any screen, and shrinks to fit until
+#' it is drawn again. The chart's text alternative becomes the SVG's
+#' description, and `title` its name.
 #'
 #' The SVG has no background, so the card shows through, and is drawn in the
 #' light theme's colours, which the page recolours for the theme shown
@@ -192,7 +193,10 @@ render_girafe <- function(p, width = 768, height = 384, title = NULL) {
     desc = if (nzchar(alt)) alt,
     options = list(
       ggiraph::opts_hover(css = "opacity:0.75;cursor:pointer;"),
-      ggiraph::opts_selection(type = "single", only_shiny = TRUE, css = selection_css()),
+      ggiraph::opts_selection(
+        type = "single", only_shiny = TRUE,
+        css = ggiraph::girafe_css(css = selection_css(), point = selected_point_css())
+      ),
       ggiraph::opts_toolbar(saveaspng = FALSE, hidden = c("selection", "zoom", "misc")),
       ggiraph::opts_sizing(rescale = TRUE, width = 1),
       ggiraph::opts_tooltip(use_fill = FALSE, opacity = 1, css = tooltip_css())
@@ -201,12 +205,24 @@ render_girafe <- function(p, width = 768, height = 384, title = NULL) {
 }
 
 # A selected mark: the gold, outlined in the text colour, as gold and the
-# marks' blue are only 1.3 to 1.5:1 apart
+# marks' blue are only 1.3 to 1.5:1 apart. A selected bar keeps the 2 px
+# outline.
 selection_css <- function() {
   light <- brand_tokens()$light
   paste0(
     "fill:", theme_var("chart-selected", light$chart_selected), ";",
     "stroke:", theme_var("chart-outline", light$chart_outline), ";stroke-width:2px;"
+  )
+}
+
+# A selected point: a dot about 6 px wide would be mostly outline, and read
+# as a dot of the text colour, so it is drawn 1.8 times larger, with the
+# outline painted under the gold, which leaves a 1 px ring
+selected_point_css <- function() {
+  paste0(
+    selection_css(),
+    "paint-order:stroke;vector-effect:non-scaling-stroke;",
+    "transform-box:fill-box;transform-origin:center;transform:scale(1.8);"
   )
 }
 

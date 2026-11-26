@@ -296,6 +296,15 @@ test_that("render_girafe() makes the widget: hover, one selection, no toolbar, f
     ),
     fixed = TRUE
   )
+  # A selected point drawn larger, its outline under the gold: at its size
+  # the outline alone would hide the gold
+  expect_match(
+    settings$select$css,
+    paste0("circle.select_data_SVGID_ { ", selected_point_css(), " }"),
+    fixed = TRUE
+  )
+  expect_match(selected_point_css(), "paint-order:stroke;", fixed = TRUE)
+  expect_match(selected_point_css(), "transform:scale(1.8);", fixed = TRUE)
   # The tooltip in the theme's colours and the page's font, square
   tooltip <- settings$tooltip$css
   expect_match(tooltip, paste0("background:var(--prexp-chart-tip-bg,", light$bg, ")"), fixed = TRUE)
@@ -331,6 +340,8 @@ test_that("the charts' theme and fonts are made once and kept", {
 })
 
 test_that("the charts' kept theme and fonts draw as made afresh", {
+  # Naming the font makes gdtools copy it to its cache: a temporary one
+  withr::local_envvar(GDTOOLS_CACHE_DIR = withr::local_tempdir())
   p <- chart_series(series())
   kept <- render_girafe(p, title = "Atorvastatin")
   # As before they were kept: a theme built for this chart, a font set made
@@ -359,7 +370,10 @@ test_that("the charts' kept theme and fonts draw as made afresh", {
 test_that("the charts' text is measured in the page's own IBM Plex Sans", {
   use_chart_font()
   found <- systemfonts::match_fonts("IBM Plex Sans")
-  expect_match(found$path, "ibm-plex-sans-var-latin[.]woff2$")
+  # The page's own copy, unless the font is installed, as it measures the same
+  if (!chart_font %in% systemfonts::system_fonts()$family) {
+    expect_match(found$path, "ibm-plex-sans-var-latin[.]woff2$")
+  }
   # The font's own widths, not a fallback's: its digits are 0.6 em wide
   # (Arial's 0.556, DejaVu Sans's 0.636), at the tick labels' 9.6 pt, measured
   # at a high resolution, as ggiraph measures, which hinting does not round
@@ -367,6 +381,19 @@ test_that("the charts' text is measured in the page's own IBM Plex Sans", {
     "0123456789", family = "IBM Plex Sans", size = 9.6, res = 7200
   ) / 100
   expect_equal(width, 57.5, tolerance = 0.005)
+})
+
+test_that("use_chart_font() works where IBM Plex Sans is installed", {
+  # systemfonts will not register a name an installed font has: the app
+  # would not start, and no chart would draw
+  saved <- chart_state$font
+  withr::defer(chart_state$font <- saved)
+  chart_state$font <- NULL
+  local_mocked_bindings(
+    system_fonts = function() data.frame(family = "IBM Plex Sans"), .package = "systemfonts"
+  )
+  expect_identical(use_chart_font(), "IBM Plex Sans")
+  expect_true(chart_state$font)
 })
 
 test_that("render_girafe() draws the chart at the size it is shown at", {

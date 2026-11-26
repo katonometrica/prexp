@@ -22,7 +22,9 @@
 #' every surface they sit on; and in light, a darker gold for the hover of
 #' gold buttons (the site's #c9a84c is 2.2:1 under their text). Placeholders
 #' take the secondary text colour, and `muted` marks disabled controls only:
-#' it is 2.6:1 on the dark page.
+#' #5a5650 in dark (2.6:1 on the page) and #9e9a94 in light (2.7:1). The
+#' site's light `muted` is its secondary text colour, which makes a disabled
+#' button look live.
 #'
 #' The charts (chart_colours()) mark their values in the brand's navy blue,
 #' lighter in dark, and a selected mark in the gold, outlined in the text
@@ -37,7 +39,7 @@ brand_tokens <- function() {
     bg = "#FDFCFB", bg_alt = "#F7F5F2",
     surface = "rgba(0,0,0,0.05)", border = "rgba(0,0,0,0.12)",
     border_strong = "rgba(0,0,0,0.25)", control_border = "#858280",
-    text = "#0b1222", text_secondary = "#5a5650", muted = "#5a5650",
+    text = "#0b1222", text_secondary = "#5a5650", muted = "#9e9a94",
     accent = "#7d6523", accent_hover = "#5e4c1a", accent_subtle = "rgba(125,101,35,0.1)",
     on_accent = "#FDFCFB",
     success = "#166534", success_bg = "#dcfce7", error = "#b91c1c", error_bg = "#fee2e2",
@@ -146,7 +148,7 @@ theme_block <- function(selector, scheme, t) {
     paste(grDevices::col2rgb(colour)[, 1L], collapse = ", ")
   }, "")
   # Images in the theme's colours: a checked radio's dot, in the colour of
-  # text on the gold, and a select's chevron, as the site's
+  # text on the gold, and a select's chevron, the site's filled one
   svg <- function(...) {
     paste0(
       "url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' ", ...,
@@ -156,8 +158,8 @@ theme_block <- function(selector, scheme, t) {
   colour <- function(x) sub("#", "%23", x, fixed = TRUE)
   dot <- svg("viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='", colour(t$on_accent), "'/%3e")
   chevron <- svg(
-    "width='12' height='8' viewBox='0 0 12 8'%3e%3cpath fill='none' stroke='",
-    colour(t$text_secondary), "' stroke-width='1.5' d='M1 1.5l5 5 5-5'/%3e"
+    "width='12' height='8' viewBox='0 0 12 8'%3e%3cpath fill='",
+    colour(t$text_secondary), "' d='M1 1l5 5 5-5'/%3e"
   )
   paste0(
     selector, " {\n",
@@ -259,7 +261,9 @@ theme_prexp <- function(base_size = 12) {
 # The charts' font: the page's, IBM Plex Sans. ggiraph measures the text with
 # a font R can find and names it in the SVG, which the browser draws with the
 # page's own copy (inst/app/www/fonts). use_chart_font() registers that copy
-# with systemfonts, so the text is measured with the very font it is drawn in.
+# with systemfonts, so the text is measured with the very font it is drawn in,
+# unless IBM Plex Sans is installed: then the installed font, with the same
+# metrics, measures it.
 chart_font <- "IBM Plex Sans"
 
 use_chart_font <- function() {
@@ -270,7 +274,10 @@ use_chart_font <- function() {
   if (!nzchar(path)) {
     stop("The charts' font, IBM Plex Sans, is missing from the package.", call. = FALSE)
   }
-  systemfonts::register_font(chart_font, plain = path)
+  # systemfonts will not register a name an installed font has
+  if (!chart_font %in% systemfonts::system_fonts()$family) {
+    systemfonts::register_font(chart_font, plain = path)
+  }
   chart_state$font <- TRUE
   invisible(chart_font)
 }
@@ -341,7 +348,9 @@ prexp_theme <- function() {
 #' One reactable theme for every table, from the page's custom properties,
 #' so it follows the theme shown: no background of its own, a rule between
 #' rows, a stronger one under the header and over the footer, the row under
-#' the pointer on the brand's surface, no stripes.
+#' the pointer on the brand's surface, no stripes. A page button under the
+#' pointer or the keyboard's focus takes the page's colour: on the surface
+#' over a card, its secondary text and its gold would fall under 4.5:1.
 #'
 #' @return A [reactable::reactableTheme()].
 #' @noRd
@@ -360,8 +369,8 @@ table_theme <- function() {
     footerStyle = list(fontWeight = 600, borderTop = "1px solid var(--prexp-border-strong)"),
     paginationStyle = list(color = "var(--prexp-text-secondary)"),
     pageButtonStyle = list(borderRadius = 0),
-    pageButtonHoverStyle = list(backgroundColor = "var(--prexp-surface)"),
-    pageButtonActiveStyle = list(backgroundColor = "var(--prexp-surface)"),
+    pageButtonHoverStyle = list(backgroundColor = "var(--prexp-bg)"),
+    pageButtonActiveStyle = list(backgroundColor = "var(--prexp-bg)"),
     # The page shown, in the gold of what is active, and heavier
     pageButtonCurrentStyle = list(color = "var(--prexp-accent)", fontWeight = 600),
     selectStyle = list(
