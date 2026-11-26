@@ -204,6 +204,21 @@ a:focus-visible,
 .selectize-control.single .selectize-input:not(.no-arrow).dropdown-active::after {
   transform: rotate(180deg);
 }
+/* A long pick stops short of the clear button and the chevron, cut with an
+   ellipsis */
+.selectize-control.single .selectize-input {
+  padding-right: 40px;
+}
+.selectize-control.plugin-clear_button.single .selectize-input {
+  padding-right: 64px;
+}
+.selectize-control.single .selectize-input > .item {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
 .selectize-control.plugin-clear_button .clear {
   color: var(--prexp-text-secondary);
 }
@@ -265,6 +280,18 @@ a:focus-visible,
   min-height: 1.25rem;
   color: var(--prexp-text-secondary);
   font-size: 14px;
+}
+
+/* Scrollbars of the lists and tables in the theme's colours */
+.selectize-dropdown-content,
+.Reactable .rt-table {
+  scrollbar-color: var(--prexp-control-border) transparent;
+}
+
+/* A practice's profile: its terms as the fields' labels */
+.prexp-profile dt {
+  font-weight: 500;
+  color: var(--prexp-text-secondary);
 }
 
 /* Radios stay round, so as not to read as checkboxes: filled gold when
