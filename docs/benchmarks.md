@@ -1,6 +1,6 @@
 # Benchmarks
 
-Measurements of the loader, of the app's queries (from phase 2) and of the app under load (from phase 4); see spec §6.3. Until the server arrives in P6-02, everything runs in the local Docker stack, on the machine below. [The server, rehearsed](#the-server-rehearsed-p6-02) repeats the server's setup on four of its CPUs.
+Measurements of the loader, of the app's queries (from phase 2) and of the app under load (from phase 4); see spec §6.3. Phases 1 to 5 ran in the local Docker stack, on the machine below; from P6-02 the production server is measured too. [The server, rehearsed](#the-server-rehearsed-p6-02) repeats the server's setup on four of its CPUs.
 
 **Units.** Database and disk sizes are in PostgreSQL's units, 1 GB = 1,024 MB, which is also what Windows and `df -h` show. The sizes of the portal's files, ZIP and CSV, are in millions of bytes, as the portal and the loader's messages give them.
 
@@ -18,6 +18,13 @@ The full window, 202510 to 202609, in the local Docker stack on the machine belo
 | The swap's transaction, the only step the app can wait for | about 1 s; the rollups are vacuumed after it, without blocking the app |
 | App queries, warm | Every check under 50 ms: the slowest, a two-letter search, takes 33 ms, and 13 of the 21 under 1 ms |
 | Fact table | Read only by index-only scans of the months asked for, with no heap fetches |
+
+The app on the production server, 26 November 2026 ([One message for each lookup](#one-message-for-each-lookup-p6-02)):
+
+| | |
+| --- | --- |
+| Lookups, five users, the network included | 141 ms at the median and 540 ms at the 95th percentile, against a target of 300 ms; 699 ms at the 95th percentile for the chemical with the most presentations |
+| What sets the 95th percentile | Opening a session, about half a second |
 
 ## Machine (P1-08)
 
@@ -445,3 +452,46 @@ So the nightly scheduled task, which must fail only when a plan goes wrong, allo
 - **Neither run meets the 300 ms target.** Ordinary lookups take about 2.5 times the rehearsal's (p95 569 ms against 224), and the largest chemical 2.6 times (957 ms against 370).
 - **The time is the app's own work,** as in the rehearsal: building the charts and tables in R, on cores about half as fast. A message that only updates a few outputs takes 95 to 115 ms, against about 35 ms on the development machine, the round trip included.
 - **One session of S1 failed,** with a 502 on its first request, about 26 s after the restart began and 12 s after the app first answered again, while the proxy was still switching to the new container. S2 started only once the app had answered for 30 s straight, and all its sessions replayed to the end.
+
+## One message for each lookup (P6-02)
+
+The production server again, on 26 November 2026, with the app image CI built from `main` at `8846eca`: #125, which answers a lookup in one message, draws each chart once, at its width, and keeps drawn charts in the shared cache ([docs/architecture.md](architecture.md#the-app)).
+
+**Measured by #125's review** on the development machine, one user, from the action to the complete view (the WebSocket trace in #125):
+
+| Lookup | Before #125 | After, first time | After, repeated |
+| --- | ---: | ---: | ---: |
+| Drug pick | 229 ms, 3 messages, chart drawn again | 171 ms, 1 message | 51 ms |
+| Practice pick | 229 ms, 2 messages, chart drawn again | 195 ms | 54 ms |
+| Region pick | 212 ms, 2 messages | 167 ms | 40 ms |
+| The largest chemical's pick | 255 ms, chart drawn again | 187 ms | 78 ms |
+
+"Repeated" is a lookup another session has made, whose chart comes from the cache.
+
+**The sessions, recorded again.** P4-08's recordings encode the messages before #125, so they no longer replay. `bench/drive.R` goes through the same two sessions ([The app under load](#the-app-under-load-p4-08)) in a headless Chrome, at the first recordings' times, through `shinyloadtest`'s proxy (`bench/record.R`).
+- **Each search is put in at once, as a paste is.** Typed, the browser sends the first letter and then the whole text. On a busy server the 300 ms wait for typing to stop can pass between the two, so the first letter is answered too, and a replay, which expects the recording's messages in order, fails.
+- **The recordings:**
+  - `bench/recording-server-p602.log` and `bench/recording-largest-server-p602.log` were recorded against the server, with its address replaced by `<app-host>`;
+  - `bench/recording-p602.log` and `bench/recording-largest-p602.log` were recorded against the development stack.
+
+**The runs**, as in [The server, measured](#the-server-measured-p6-02): `shinycannon` 1.1.3, 5 users for 5 minutes, from the development machine, after a restart, so that the cache starts empty. Each started once the app had answered for 30 s straight. Every session replayed to its end.
+
+| | Run S3: ordinary lookups | Run S4: the largest chemical |
+| --- | ---: | ---: |
+| Sessions, and in the steady part | 18, 10 | 28, 20 |
+| **Lookups, the searches' wait aside: p50, p95, max** | **141, 540, 864 ms** | **255, 699, 1,271 ms** |
+| The same before #125, runs S1 and S2: p50, p95, max | 192, 569, 2,436 ms | 501, 957, 1,545 ms |
+| Lookups counted | 120 | 100 |
+| Opening a session, its first message: p50, p95 | 527, 579 ms | 490, 1,036 ms |
+| The pick: p50, p95 | Drug 243, 654 ms; practice 176, 253 ms; region 137, 209 ms | 291, 699 ms |
+| Search results, the wait included: p50, p95 | 360, 614 ms | 359, 679 ms |
+| The page itself: p50, max | 409, 723 ms | 422, 1,939 ms |
+
+- **Lookups are faster.**
+  - At the median: 141 ms against 192, and 255 ms against 501 for the largest chemical.
+  - At the 95th percentile: 540 ms against 569, and 699 ms against 957.
+
+  A pick is now one message, and a chart another session drew comes from the cache.
+- **The 95th percentile is still over the 300 ms target.** What sets it now is opening a session: the first message, which brings the outputs every view starts with, takes about half a second on the server. In S3 that is 10 of the 120 lookups, at 424 to 579 ms, and with a few slow tab changes and picks they make the top 5%.
+- **The development machine has not been measured again since #125.**
+- **S4 ran while the development machine, which plays the five users, was busy** with other measurements for about half the run. Its figures may include some delay on that side.
