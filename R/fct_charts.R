@@ -101,7 +101,9 @@ chart_bars <- function(data, label = "region_name", id = "region_code", chars = 
     tooltip = paste0(escape_html(labels), ": ", value_words(data$value, measure)),
     data_id = ids
   )
-  # About 6.8 px a character, the names taking at most 40% of the width
+  # About 6.8 px a character, the names taking at most 40% of the width. In
+  # IBM Plex Sans at the tick labels' 9.6 pt, drug names take 5.8 to 6.3 px a
+  # character and names in capitals 7.2 to 7.5.
   fit <- max(12L, min(as.integer(chars), as.integer(width * 0.4 / 6.8)))
   ggplot2::ggplot(plot_data, ggplot2::aes(x = .data$value, y = .data$id)) +
     ggiraph::geom_col_interactive(
@@ -129,7 +131,8 @@ theme_bars <- function() {
         panel.grid.major.y = ggplot2::element_blank(),
         # Room on the right for half the last tick label, centred on a break
         # that can fall at the panel's edge: the canvas would cut the rest. The
-        # labels are short ("16M", "GBP 250K"), half the widest under 18 pt.
+        # labels are short ("16M", "GBP 12.5M"): in IBM Plex Sans, half the
+        # widest a view's breaks give is 16.7 pt.
         plot.margin = ggplot2::margin(5.5, 18, 5.5, 5.5)
       )
   }

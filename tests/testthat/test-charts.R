@@ -361,11 +361,12 @@ test_that("the charts' text is measured in the page's own IBM Plex Sans", {
   found <- systemfonts::match_fonts("IBM Plex Sans")
   expect_match(found$path, "ibm-plex-sans-var-latin[.]woff2$")
   # The font's own widths, not a fallback's: its digits are 0.6 em wide
-  # (Arial's 0.556, DejaVu Sans's 0.636), at the tick labels' 9.6 pt
-  expect_equal(
-    systemfonts::string_width("0123456789", family = "IBM Plex Sans", size = 9.6), 57.6,
-    tolerance = 0.01
-  )
+  # (Arial's 0.556, DejaVu Sans's 0.636), at the tick labels' 9.6 pt, measured
+  # at a high resolution, as ggiraph measures, which hinting does not round
+  width <- systemfonts::string_width(
+    "0123456789", family = "IBM Plex Sans", size = 9.6, res = 7200
+  ) / 100
+  expect_equal(width, 57.5, tolerance = 0.005)
 })
 
 test_that("render_girafe() draws the chart at the size it is shown at", {

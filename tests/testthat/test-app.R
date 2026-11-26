@@ -144,8 +144,9 @@ test_that("the theme is in the brand's fonts, square, and fetches no font itself
     "bslib-enable-shadows"
   ))
   expect_identical(unname(vars[["font-family-base"]]), "var(--bs-font-sans-serif)")
-  expect_match(vars[["font-family-sans-serif"]], "^'IBM Plex Sans', 'Segoe UI', system-ui")
-  expect_match(vars[["font-family-monospace"]], "^'IBM Plex Mono', Consolas, monospace")
+  # Sass writes the names in double quotes
+  expect_match(vars[["font-family-sans-serif"]], "^\"IBM Plex Sans\", \"Segoe UI\", system-ui")
+  expect_match(vars[["font-family-monospace"]], "^\"IBM Plex Mono\", Consolas, monospace")
   expect_no_match(vars[["font-family-monospace"]], "Source Code Pro", fixed = TRUE)
   # The navbar takes the page's colour, in either theme (brand_css())
   expect_true(is.na(vars[["navbar-bg"]]) || identical(unname(vars[["navbar-bg"]]), "null"))
