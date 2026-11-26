@@ -21,4 +21,4 @@ The first release: Prescription Explorer in production, over a rolling twelve mo
 ## Running it
 
 - **A demo in one command,** with Docker: the published image, PostgreSQL and the test fixtures.
-- **Production on Coolify,** with the scheduled monthly load, the nightly check, failure emails and automatic deploys from CI; `docs/server.md` sets it up and `docs/runbook.md` operates it.
+- **Production on Coolify,** with the scheduled monthly load and the nightly check; `docs/server.md` sets it up, failure emails and deploys from CI included, and `docs/runbook.md` operates it.
