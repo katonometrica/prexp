@@ -282,10 +282,15 @@ a:focus-visible,
   font-size: 14px;
 }
 
-/* Scrollbars of the lists and tables in the theme's colours */
+/* Scrollbars of the lists and tables in the theme's colours. The tables
+   scroll sideways only: a switch of theme made Chrome keep a vertical
+   scrollbar on a wide one, with nothing to scroll. */
 .selectize-dropdown-content,
 .Reactable .rt-table {
   scrollbar-color: var(--prexp-control-border) transparent;
+}
+.Reactable .rt-table {
+  overflow-y: hidden;
 }
 
 /* A practice's profile: its terms as the fields' labels */
