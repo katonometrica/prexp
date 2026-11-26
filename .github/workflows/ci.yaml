@@ -453,14 +453,18 @@ jobs:
           fi
 
       # Production (P6-02; docs/server.md, section 4): Coolify redeploys the app and the
-      # jobs container, and each deployment pulls :main again. One value to each secret,
+      # jobs container, each from the tag set on it in Coolify (main, unless it is pinned
+      # for a rollback: docs/runbook.md). One value to each secret,
       # because Actions hides a secret in its logs only where its whole value appears,
       # and curl names a host it cannot reach on its own. The address is built here,
       # always over HTTPS, so the deploy-only token never crosses in clear; force=true,
       # or Coolify skips a deployment asked for while another is queued. Coolify answers
       # 200 even when it could not queue an application, so each entry of its answer is
-      # checked. Only the entries' messages are printed: they name the applications, not
-      # their ids; an HTTP error stops the step before the answer is printed.
+      # checked, against both ids. Only the entries' messages are printed: they name the
+      # applications, not their ids. --fail, not --fail-with-body: an error's body would
+      # stay in front of the answer of a retry that succeeds, and an error stops the step
+      # before anything is printed. A retried 429 or 5xx can queue an application twice,
+      # which deploys the same image again.
       - name: Deploy to production
         if: ${{ steps.push.outputs.moved == 'true' }}
         env:
@@ -481,17 +485,22 @@ jobs:
               exit 1
               ;;
           esac
+          if [ "$COOLIFY_APP_UUID" = "$COOLIFY_JOBS_UUID" ]; then
+            echo "::error::COOLIFY_APP_UUID and COOLIFY_JOBS_UUID hold the same id (docs/server.md, section 4)."
+            exit 1
+          fi
           url="https://${COOLIFY_HOST}/api/v1/deploy?uuid=${COOLIFY_APP_UUID},${COOLIFY_JOBS_UUID}&force=true"
-          answer="$(curl -sS --fail-with-body --retry 2 -X POST \
+          answer="$(curl -sS --fail --retry 2 -X POST \
             -H "Authorization: Bearer ${COOLIFY_TOKEN}" "$url")"
           python3 -c '
-          import json, sys
+          import json, os, sys
           entries = json.loads(sys.stdin.read()).get("deployments") or []
           for entry in entries:
               print(entry.get("message") or "")
-          queued = [e for e in entries
-                    if e.get("deployment_uuid") and "deployment queued" in (e.get("message") or "")]
-          if len(queued) != 2:
-              print(f"::error::Coolify queued {len(queued)} of the 2 deployments.")
+          queued = {e.get("resource_uuid") for e in entries
+                    if e.get("deployment_uuid") and "deployment queued" in (e.get("message") or "")}
+          wanted = {os.environ["COOLIFY_APP_UUID"], os.environ["COOLIFY_JOBS_UUID"]}
+          if not wanted <= queued:
+              print(f"::error::Coolify queued {len(queued & wanted)} of the 2 deployments.")
               sys.exit(1)
           ' <<< "$answer"
