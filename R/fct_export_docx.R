@@ -46,7 +46,7 @@ export_docx <- function(spec, con, path, exported = Sys.time()) {
   # The last section, which the template's makes continuous: portrait, on a
   # page of its own
   doc <- officer::body_set_default_section(doc, docx_page("portrait"))
-  english_charts(file.path(doc$package_dir, "word", "charts"))
+  finish_charts(file.path(doc$package_dir, "word", "charts"))
   print(doc, target = path)
   invisible(path)
 }

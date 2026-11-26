@@ -47,7 +47,7 @@ export_pptx <- function(spec, con, path, exported = Sys.time()) {
   for (page in methods_pages(methods_content(spec, window, exported))) {
     deck <- pptx_methods(deck, page)
   }
-  english_charts(file.path(deck$package_dir, "ppt", "charts"))
+  finish_charts(file.path(deck$package_dir, "ppt", "charts"))
   print(deck, target = path)
   invisible(path)
 }
@@ -196,7 +196,7 @@ pptx_wordmark <- function(deck) {
       charset = "0"
     ))
   }
-  deck
+  top_anchor(deck)
 }
 
 # The months loaded, for the title page
@@ -301,12 +301,13 @@ pptx_methods <- function(deck, page) {
       )
     )
   })
-  officer::ph_with(
+  deck <- officer::ph_with(
     deck, do.call(officer::block_list, paragraphs),
     location = officer::ph_location(
       left = pptx_left, top = text_box$top, width = pptx_width, height = text_box$height
     )
   )
+  top_anchor(deck)
 }
 
 # A slide's title, in the theme's font for titles, IBM Plex Sans too
@@ -322,15 +323,30 @@ pptx_text <- function(deck, lines, top, height, size, colour = export_palette()[
                       left = pptx_left, width = pptx_width) {
   prop <- officer::fp_text_lite(font.size = size, color = colour)
   paragraphs <- lapply(lines, function(line) officer::fpar(officer::ftext(line, prop)))
-  officer::ph_with(
+  deck <- officer::ph_with(
     deck, do.call(officer::block_list, paragraphs),
     location = officer::ph_location(left = left, top = top, width = width, height = height)
   )
+  top_anchor(deck)
 }
 
 # The current slide's XML, which officer keeps as the deck is built
 slide_xml <- function(deck) {
   deck$slide$get_slide(deck$cursor)$get()
+}
+
+# officer writes a box placed with ph_location() as a placeholder of no
+# type, which PowerPoint draws as the layout's title, its text centred in
+# its height: a methods slide's text would start halfway down its box. The
+# current slide's boxes of no type start their text at their top.
+top_anchor <- function(deck) {
+  slide <- slide_xml(deck)
+  ns <- xml2::xml_ns(slide)
+  boxes <- xml2::xml_find_all(
+    slide, "//p:sp[p:nvSpPr/p:nvPr/p:ph[not(@type)]]/p:txBody/a:bodyPr", ns
+  )
+  xml2::xml_set_attr(boxes, "anchor", "t")
+  deck
 }
 
 # officer places a chart without alt text: the slide's last chart gets the
@@ -357,12 +373,14 @@ table_header_row <- function(deck) {
 }
 
 # mschart writes each chart from its template, which says the chart's text is
-# French: the charts of a deck or a document, written into its folder as
-# they were placed, say British English instead, for Office's proofing
-english_charts <- function(dir) {
+# French, and with no line of its own around it, so that Word draws its grey
+# frame: the charts of a deck or a document, written into its folder as they
+# were placed, say British English instead, with english_chart(), and have no
+# frame, with flat_chart_space()
+finish_charts <- function(dir) {
   for (file in list.files(dir, "[.]xml$", full.names = TRUE)) {
-    xml <- readLines(file, encoding = "UTF-8", warn = FALSE)
-    writeLines(gsub("\"fr-FR\"", "\"en-GB\"", xml, fixed = TRUE), file, useBytes = TRUE)
+    xml <- paste(readLines(file, encoding = "UTF-8", warn = FALSE), collapse = "\n")
+    writeLines(flat_chart_space(english_chart(xml)), file, useBytes = TRUE)
   }
   invisible(dir)
 }

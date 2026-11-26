@@ -314,7 +314,9 @@ export_chart <- function(chart, measure, data = NULL) {
   colours <- export_palette()
   mark <- named(colours[["mark"]])
   graph <- mschart::chart_data_fill(graph, values = mark)
-  graph <- mschart::chart_data_stroke(graph, values = mark)
+  # Bars with no outline, as the app's: mschart's would draw each a point
+  # past its value, with rounded corners
+  graph <- mschart::chart_data_stroke(graph, values = if (line) mark else named("transparent"))
   # Its data labels, which it does not show, in the theme's font too
   graph <- mschart::chart_labels_text(
     graph, values = theme_text(color = colours[["text"]], font.size = 10)
@@ -347,6 +349,24 @@ export_chart <- function(chart, measure, data = NULL) {
 # The name of a chart's categories, its data's first column
 chart_category <- function(chart) {
   if (identical(chart$type, "line")) "Month" else "Region"
+}
+
+# A chart's part with its text in British English, for Office's proofing,
+# rather than the French of mschart's template
+english_chart <- function(xml) {
+  gsub("\"fr-FR\"", "\"en-GB\"", xml, fixed = TRUE)
+}
+
+# A chart's part with no frame around the chart, as the app's charts have
+# none. For a chart border of none (prexp_mschart_theme()) mschart writes an
+# empty shape property at the end of the chart space, out of the schema's
+# order, and Word and Excel then draw their own grey line around the chart.
+# The shape property goes straight after the chart, as the schema orders
+# it, with no line; its fill stays Office's white, so that a sheet's
+# gridlines do not show through the chart.
+flat_chart_space <- function(xml) {
+  xml <- sub("<c:spPr[^>]*/>\\s*</c:chartSpace>", "</c:chartSpace>", xml)
+  sub("</c:chart>", "</c:chart><c:spPr><a:ln><a:noFill/></a:ln></c:spPr>", xml, fixed = TRUE)
 }
 
 # The values' axis of an export's chart as the view draws it: the step of

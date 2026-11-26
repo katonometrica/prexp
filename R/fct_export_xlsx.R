@@ -278,14 +278,14 @@ xlsx_alt_text <- function(wb, sheet, alt) {
 
 # mschart writes a chart from its template for PowerPoint and Word: a link to
 # the workbook those embed, which a workbook's chart does not have and whose
-# relationship is not there, and French as its text's language. The chart
-# just added keeps neither.
+# relationship is not there, French as its text's language, and nothing to
+# stop Excel's frame around it. The chart just added keeps none of them.
 xlsx_chart_clean <- function(wb) {
   k <- nrow(wb$charts)
   chart <- sub(
     "(?s)<c:externalData[^>]*>.*?</c:externalData>", "", wb$charts$chart[k], perl = TRUE
   )
-  wb$charts$chart[k] <- gsub("\"fr-FR\"", "\"en-GB\"", chart, fixed = TRUE)
+  wb$charts$chart[k] <- flat_chart_space(english_chart(chart))
   invisible(wb)
 }
 

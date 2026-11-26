@@ -107,6 +107,38 @@ drawn_colours <- function(dir, pattern) {
 # The exports' colours as six hex digits, and white, the page's
 export_colours <- function() c(sub("#", "", export_palette(), fixed = TRUE), "FFFFFF")
 
+# That chart parts draw no frame around the chart: the chart space's one
+# shape property straight after the chart, as the schema orders it, with no
+# line, and none after its text properties, where mschart writes one
+expect_flat_charts <- function(files) {
+  expect_gt(length(files), 0L)
+  for (file in files) {
+    doc <- xml2::read_xml(file)
+    ns <- xml2::xml_ns(doc)
+    found <- function(xpath) length(xml2::xml_find_all(doc, xpath, ns))
+    expect_identical(found(
+      "/c:chartSpace/c:chart/following-sibling::*[1][self::c:spPr]/a:ln/a:noFill"
+    ), 1L, label = basename(file))
+    expect_identical(found("/c:chartSpace/c:spPr"), 1L, label = basename(file))
+    expect_identical(found("/c:chartSpace/c:txPr/following-sibling::c:spPr"), 0L)
+  }
+}
+
+# The anchors of the text boxes of no type on a deck's slides, those officer
+# places with ph_location()
+untyped_anchors <- function(path) {
+  dir <- withr::local_tempdir()
+  utils::unzip(path, exdir = dir)
+  files <- list.files(file.path(dir, "ppt", "slides"), "[.]xml$", full.names = TRUE)
+  unlist(lapply(files, function(file) {
+    doc <- xml2::read_xml(file)
+    boxes <- xml2::xml_find_all(
+      doc, "//p:sp[p:nvSpPr/p:nvPr/p:ph[not(@type)]]/p:txBody/a:bodyPr", xml2::xml_ns(doc)
+    )
+    xml2::xml_attr(boxes, "anchor")
+  }))
+}
+
 export_time_fixed <- as.POSIXct("2026-11-25 14:05", tz = "UTC")
 
 # A report with an item of each kind, two with notes
@@ -454,6 +486,21 @@ test_that("the PowerPoint file reads back: a title, each item, its tables and th
   expect_false(any(grepl("<c:smooth val=\"1\"/>", chart_xml, fixed = TRUE)))
   expect_false(any(grepl("fr-FR", chart_xml, fixed = TRUE)))
   expect_true(any(grepl("en-GB", chart_xml, fixed = TRUE)))
+  # No frame around a chart, and the region's bars with no outline: one of
+  # no opacity, as the app draws them
+  expect_flat_charts(file.path(dir, "ppt", "charts", charts))
+  outline <- unlist(lapply(file.path(dir, "ppt", "charts", charts), function(file) {
+    doc <- xml2::read_xml(file)
+    alpha <- xml2::xml_find_all(
+      doc, "//c:barChart/c:ser/c:spPr/a:ln/a:solidFill/a:srgbClr/a:alpha", xml2::xml_ns(doc)
+    )
+    xml2::xml_attr(alpha, "val")
+  }))
+  expect_identical(outline, "0")
+  # Every box officer places starts its text at its top, not halfway down
+  anchors <- untyped_anchors(path)
+  expect_gt(length(anchors), length(items))
+  expect_true(all(anchors %in% "t"))
   # Each table's first row marked as its header, for screen readers
   props <- unlist(regmatches(slides, gregexpr("<a:tblPr[^>]*>", slides)))
   expect_gt(length(props), 0L)
@@ -525,6 +572,8 @@ test_that("the Word file reads back: a title, a heading per item, its chart, not
   chart_xml <- unlist(lapply(charts, readLines, warn = FALSE))
   expect_false(any(grepl("fr-FR", chart_xml, fixed = TRUE)))
   expect_true(any(grepl("<c:smooth val=\"0\"/>", chart_xml, fixed = TRUE)))
+  # No frame around a chart, which Word would draw grey
+  expect_flat_charts(charts)
   body <- paste(readLines(file.path(dir, "word", "document.xml"), warn = FALSE), collapse = "")
   xml <- xml2::read_xml(file.path(dir, "word", "document.xml"))
   ns <- xml2::xml_ns(xml)
@@ -721,7 +770,7 @@ test_that("a Word export that fails leaves nothing in tempdir()", {
   con <- fixture_app()
   spec <- export_spec(con)
   path <- withr::local_tempfile(fileext = ".docx")
-  local_mocked_bindings(english_charts = function(dir) stop("injected failure"))
+  local_mocked_bindings(finish_charts = function(dir) stop("injected failure"))
   before <- list.files(tempdir(), all.files = TRUE, no.. = TRUE)
   expect_error(export_report("docx", spec, con, path, export_time_fixed), "injected failure")
   expect_setequal(list.files(tempdir(), all.files = TRUE, no.. = TRUE), before)
@@ -793,6 +842,8 @@ test_that("the Excel workbook reads back: a sheet per item with its tables and c
     xml2::xml_find_all(doc, xpath, xml2::xml_ns(doc))
   }
   charts <- file.path(dir, grep("^xl/charts/chart[0-9]+[.]xml$", parts, value = TRUE))
+  # No frame around a chart, which Excel would draw grey
+  expect_flat_charts(charts)
   refs <- unlist(lapply(charts, function(file) xml2::xml_text(prefixed(file, "//c:f"))))
   expect_gt(length(refs), 0L)
   quoted <- "^'((?:[^']|'')+)'![$][A-Z]+[$][0-9]+(:[$][A-Z]+[$][0-9]+)?$"
@@ -1015,6 +1066,10 @@ test_that("a slide holds its text: a long note goes on, a long address moves the
   expect_gte(frame$chart$top, frame$summary$top + frame$summary$height)
   path <- made_deck(list(short, long, many, where))
   expect_on_slides(path)
+  # The items' text and the notes' slides start at their boxes' top
+  anchors <- untyped_anchors(path)
+  expect_gt(length(anchors), 0L)
+  expect_true(all(anchors %in% "t"))
   texts <- officer::pptx_summary(officer::read_pptx(path))$text
   expect_true(all(item_note_lines(long) %in% texts))
   expect_true(paste("Note:", long$title) %in% texts)
@@ -1059,6 +1114,13 @@ test_that("an export's chart has the view's axis: whole items, labels that diffe
   expect_identical(export_chart(bars, "items")$theme$title_y_rot, 0)
   line <- list(type = "line", labels = c("A", "B"), values = c(1, 2))
   expect_false(identical(export_chart(line, "items")$theme$title_y_rot, 0))
+  # Bars filled in the mark's colour with no outline, as the app's; the line
+  # in the mark's colour
+  mark <- export_palette()[["mark"]]
+  settings <- export_chart(bars, "items")$series_settings
+  expect_identical(unname(settings$fill), mark)
+  expect_identical(unname(settings$colour), "transparent")
+  expect_identical(unname(export_chart(line, "items")$series_settings$colour), mark)
 })
 
 test_that("a drug's regions are charted in the view's order and said as the view says them", {
