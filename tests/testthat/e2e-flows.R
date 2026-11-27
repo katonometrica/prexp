@@ -603,6 +603,60 @@ test_that("flow 7: dark at first, the theme button switches it, and the choice i
   expect_identical(app$get_js(page), "rgb(253, 252, 251)")
   expect_identical(app$get_js(mark), "rgb(53, 86, 149)")
   expect_identical(app$get_js(tick), "rgb(90, 86, 80)")
+  # On a narrow screen the tabs go under the app's name, each inside the
+  # tabs' list, which never scrolls: none is out of sight. The top, bottom,
+  # left and right of an element:
+  box <- function(selector) {
+    as.numeric(unlist(app$get_js(sprintf(paste(
+      "(function () { var r = document.querySelector(\"%s\").getBoundingClientRect();",
+      "return [r.top, r.bottom, r.left, r.right]; })()"
+    ), selector))))
+  }
+  tabs_under_name <- function(width) {
+    name <- box(".navbar-brand")
+    strip <- box(".navbar ul.navbar-nav")
+    for (value in app_tabs) {
+      tab <- box(sprintf(".navbar .nav-link[data-value='%s']", value))
+      label <- paste(value, "at", width, "px")
+      expect_gte(tab[[1L]], name[[2L]] - 1, label = paste(label, "under the name"))
+      expect_gte(tab[[3L]], strip[[3L]] - 0.5, label = paste(label, "inside the list"))
+      expect_lte(tab[[4L]], strip[[4L]] + 0.5, label = paste(label, "inside the list"))
+    }
+    expect_true(app$get_js(paste(
+      "(function () { var s = document.querySelector('.navbar ul.navbar-nav');",
+      "return s.scrollWidth <= s.clientWidth; })()"
+    )), label = paste("the tabs' list does not overflow at", width, "px"))
+  }
+  # On a wide screen the header is one row: the wordmark, the name, the tabs
+  # beside it, and the theme button after the last tab
+  app$set_window_size(width = 1280, height = 900)
+  app$wait_for_idle(duration = 1000)
+  name <- box(".navbar-brand")
+  expect_lt(box(".prexp-header-wordmark")[[4L]], name[[3L]])
+  for (value in app_tabs) {
+    tab <- box(sprintf(".navbar .nav-link[data-value='%s']", value))
+    expect_lt(tab[[1L]], name[[2L]], label = paste(value, "beside the name"))
+    expect_gt(tab[[3L]], name[[4L]], label = paste(value, "after the name"))
+  }
+  expect_gt(box("#prexp-theme-toggle")[[3L]], box(".navbar .nav-link[data-value='about']")[[4L]])
+  # On a phone the app's name stands alone, as the footer carries the
+  # wordmark, and the five tabs sit on one line under it
+  app$set_window_size(width = 390, height = 800)
+  app$wait_for_idle(duration = 1000)
+  expect_identical(
+    app$get_js("getComputedStyle(document.querySelector('.prexp-header-wordmark')).display"),
+    "none"
+  )
+  tabs_under_name(390)
+  tops <- vapply(app_tabs, function(value) {
+    box(sprintf(".navbar .nav-link[data-value='%s']", value))[[1L]]
+  }, numeric(1))
+  expect_length(unique(tops), 1L)
+  # At 320 px, a narrow phone or a page zoomed to 400 %, they wrap onto a
+  # second line
+  app$set_window_size(width = 320, height = 800)
+  app$wait_for_idle(duration = 1000)
+  tabs_under_name(320)
   # Opened again, the page is light from the start; here on a narrow screen,
   # where the tabs go under the app's name and no menu button hides them
   app$set_window_size(width = 760, height = 900)
@@ -628,38 +682,16 @@ test_that("flow 7: dark at first, the theme button switches it, and the choice i
   press_enter(app)
   press_key(app, "Tab", "Tab", 9L)
   expect_true(app$get_js("document.activeElement.matches('#drug-search-pick-selectized')"))
-  # One row for the name and the theme button, the five tabs under it, all on
-  # screen; the open tab marked by more than its colour, a gold rule under it
-  box <- function(selector) {
-    unlist(app$get_js(sprintf(paste(
-      "(function () { var r = document.querySelector(\"%s\").getBoundingClientRect();",
-      "return [r.top, r.bottom, r.left, r.right]; })()"
-    ), selector)))
-  }
+  # One line for the name and the theme button, the five tabs under it; the
+  # open tab marked by more than its colour, a gold rule under it
   name <- box(".navbar-brand")
   button <- box("#prexp-theme-toggle")
   expect_lt(button[[1L]], name[[2L]])
   expect_gt(button[[3L]], name[[4L]])
-  for (value in app_tabs) {
-    tab <- box(sprintf(".navbar .nav-link[data-value='%s']", value))
-    expect_gte(tab[[1L]], name[[2L]] - 1, label = paste(value, "under the name"))
-    expect_lte(tab[[4L]], 760, label = paste(value, "on screen"))
-  }
+  tabs_under_name(760)
   rule <- paste(
     "(function () { var s = getComputedStyle(document.querySelector('.navbar .nav-link.active'));",
     "return [s.borderBottomStyle, s.borderBottomWidth, s.borderBottomColor]; })()"
   )
   expect_identical(unlist(app$get_js(rule)), c("solid", "2px", "rgb(125, 101, 35)"))
-  # On a phone the name stands alone, as the footer carries the wordmark, and
-  # the five tabs still fit across the screen
-  app$set_window_size(width = 390, height = 800)
-  app$wait_for_idle(duration = 1000)
-  expect_identical(
-    app$get_js("getComputedStyle(document.querySelector('.prexp-header-wordmark')).display"),
-    "none"
-  )
-  for (value in app_tabs) {
-    tab <- box(sprintf(".navbar .nav-link[data-value='%s']", value))
-    expect_lte(tab[[4L]], 390, label = paste(value, "on a phone"))
-  }
 })

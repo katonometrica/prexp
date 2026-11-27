@@ -20,7 +20,8 @@ app_ui <- function(request) {
     lang = "en",
     window_title = "Prescription Explorer",
     # The tabs never hide behind a menu button: on a narrow screen they go
-    # under the name, and scroll sideways if they still do not fit (prexp.css)
+    # under the name, and wrap onto a second line if they still do not fit
+    # (prexp.css)
     navbar_options = bslib::navbar_options(collapsible = FALSE),
     # Every tab flows as a page, so the footer follows its content; charts set
     # their own heights

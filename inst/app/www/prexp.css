@@ -217,13 +217,14 @@ a:focus-visible,
   border-color: var(--prexp-accent);
 }
 
-/* Below 992 px the row has no room for all of it: the tabs go under the
-   name, and scroll sideways if they still do not fit, while the theme
-   button stays beside the name. No menu button. bslib pulls each tab's foot
-   down past the list to the navbar's edge, where a list that scrolls would
-   cut it off: here the list ends at that edge, and each tab's rule and its
-   focus outline stay inside it. */
-@media (max-width: 991.98px) {
+/* Below 860 px the row has no room to spare (it needs about 790 px): the
+   tabs go under the name, the theme button stays beside it, and no menu
+   button hides them. Where the five do not fit on one line they wrap onto a
+   second, so that none is ever out of sight. bslib pulls each tab's foot
+   down past the list to the navbar's edge, which would put the open tab's
+   rule over a second line of tabs: here each tab keeps its foot, and the
+   list ends at the navbar's edge. */
+@media (max-width: 859.98px) {
   .navbar {
     padding-bottom: 0;
   }
@@ -233,22 +234,16 @@ a:focus-visible,
   .navbar ul.nav.navbar-nav {
     order: 1;
     flex: 0 0 100%;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: thin;
-    scrollbar-color: var(--prexp-control-border) transparent;
+    flex-wrap: wrap;
   }
   .navbar ul.nav-underline .nav-link {
     padding-bottom: var(--bs-nav-link-padding-y);
     margin-bottom: 0;
   }
-  .navbar ul.nav-underline .nav-link:focus-visible {
-    outline-offset: -2px;
-  }
 }
 /* Below 600 px, a phone: the app's name alone, as the footer carries the
-   wordmark too, and the tabs closer, so that the five fit across a phone
-   360 px wide */
+   wordmark too, and the tabs closer, so that the five fit on one line
+   across most phones */
 @media (max-width: 599.98px) {
   .prexp-header-wordmark {
     display: none;
