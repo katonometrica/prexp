@@ -61,7 +61,8 @@ test_that("every text the page draws reads in both themes (WCAG AA, 4.5:1)", {
         )
       }
     }
-    # The gold buttons' text, at rest and under the pointer
+    # The gold buttons' text, at rest and under the pointer, and the skip
+    # link's, on the same gold
     expect_gte(contrast_on(t$on_accent, t$accent), 4.5, label = paste(mode, "on_accent"))
     expect_gte(contrast_on(t$on_accent, t$accent_hover), 4.5, label = paste(mode, "hover"))
     # An outline button under the pointer: its gold text on its gold tint

@@ -4,7 +4,9 @@
 //
 // - Once the page has scrolled more than 50 px, the header takes the class
 //   kat-scrolled: the site's translucent background, a blur and a rule under
-//   it (prexp.css).
+//   it (prexp.css). Before that, from the first pixel, the class kat-moved:
+//   the page's colour, as the app's content, unlike the site's, starts close
+//   enough under the header to scroll under it before 50 px.
 // - Below 900 px the hamburger opens the site's drawer: its links and, at its
 //   foot, the theme button and Book a call, over a backdrop. The focus goes
 //   into the drawer and stays there while it is open. The button, Escape, the
@@ -23,6 +25,7 @@
 
   function initNavbarScroll(header) {
     function update() {
+      header.classList.toggle('kat-moved', window.scrollY > 0);
       header.classList.toggle('kat-scrolled', window.scrollY > SCROLLED);
     }
     window.addEventListener('scroll', update, { passive: true });
@@ -81,17 +84,24 @@
     }
 
     function trapFocus() {
-      // Two frames on: the drawer was hidden (visibility), and where motion
-      // is reduced its links are still hidden in this frame, so a focus now
-      // would be ignored
-      window.requestAnimationFrame(function () {
+      // The drawer was hidden (visibility), and a focus is ignored while it
+      // still is: on the next frame, and on each frame after, up to ten,
+      // until its first control takes the focus. (Where motion is reduced,
+      // the site's rule gives every element a transition of 0.01 ms, of its
+      // visibility too, which can keep the links hidden a frame or two.)
+      var tries = 0;
+      (function focusFirst() {
         window.requestAnimationFrame(function () {
           var els = focusables();
-          if (isOpen() && els.length) {
-            els[0].focus();
+          if (!isOpen() || !els.length) {
+            return;
+          }
+          els[0].focus();
+          if (document.activeElement !== els[0] && ++tries < 10) {
+            focusFirst();
           }
         });
-      });
+      })();
       trapKeydown = function (e) {
         if (e.key !== 'Tab') {
           return;

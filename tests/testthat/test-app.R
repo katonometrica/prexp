@@ -45,12 +45,21 @@ test_that("the header is katonometrica.com's bar over the app's name and tabs", 
   doc <- xml2::read_html(rendered$html)
   find <- function(node, xpath) xml2::xml_find_all(node, xpath)
   class_is <- function(name) sprintf("contains(concat(' ', @class, ' '), ' %s ')", name)
-  # One header, before everything else on the page: the drawer's backdrop,
-  # hidden from screen readers, then two navigation landmarks named apart
+  # First on the page, the site's skip link, to the tabs' content, the main
+  # landmark
+  skip <- find(doc, "//body/*[1]")
+  expect_identical(xml2::xml_name(skip), "a")
+  expect_identical(xml2::xml_attr(skip, "class"), "kat-skip-link")
+  expect_identical(xml2::xml_attr(skip, "href"), "#main-content")
+  expect_identical(xml2::xml_text(skip), "Skip to main content")
+  expect_identical(xml2::xml_attr(find(doc, "//*[@id='main-content']"), "role"), "main")
+  # Then one header, before everything else on the page: the drawer's
+  # backdrop, hidden from screen readers, then two navigation landmarks named
+  # apart
   header <- find(doc, "//header")
   expect_length(header, 1L)
   expect_identical(xml2::xml_attr(header, "id"), "kat-navbar")
-  expect_identical(xml2::xml_name(find(doc, "//body/*[1]")), "header")
+  expect_identical(xml2::xml_name(find(doc, "//body/*[2]")), "header")
   expect_identical(xml2::xml_name(find(header, "./*")), c("div", "nav", "nav"))
   backdrop <- find(header, "./div")
   expect_identical(xml2::xml_attr(backdrop, "id"), "kat-nav-menu-backdrop")
@@ -114,12 +123,22 @@ test_that("navbar.js gives the header the site's behaviour, at the site's widths
   www <- system.file("app", "www", package = "prexp")
   js <- paste(readLines(file.path(www, "navbar.js")), collapse = "\n")
   css <- paste(readLines(file.path(www, "prexp.css")), collapse = "\n")
-  # The site's background once the page has scrolled 50 px
+  # The site's background once the page has scrolled 50 px, and the page's
+  # colour before that, from the first pixel
   expect_match(js, "var SCROLLED = 50;", fixed = TRUE)
   expect_match(
     js, "header.classList.toggle('kat-scrolled', window.scrollY > SCROLLED)", fixed = TRUE
   )
   expect_match(css, ".kat-navbar.kat-scrolled::before {", fixed = TRUE)
+  expect_match(js, "header.classList.toggle('kat-moved', window.scrollY > 0)", fixed = TRUE)
+  expect_match(
+    css, ".kat-navbar.kat-moved::before {\n  background: var(--prexp-bg);\n}", fixed = TRUE
+  )
+  # Where both apply, the scrolled background, which comes later
+  expect_lt(
+    regexpr(".kat-navbar.kat-moved::before {", css, fixed = TRUE),
+    regexpr(".kat-navbar.kat-scrolled::before {", css, fixed = TRUE)
+  )
   # The drawer below 900 px, in the script as in the stylesheet; it says
   # whether it is open, and Escape closes it
   expect_match(js, "var DRAWER = 900;", fixed = TRUE)

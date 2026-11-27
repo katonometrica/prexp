@@ -1,8 +1,8 @@
-# The page (spec section 5.3): a header of two rows, katonometrica.com's bar
-# over the app's own row with its name and five tabs; the data window and the
-# attribution in a footer on every tab; and a head that sets the theme before
-# the page is drawn, loads the brand's fonts and asks search engines not to
-# index the app.
+# The page (spec section 5.3): the site's skip link, then a header of two rows,
+# katonometrica.com's bar over the app's own row with its name and five tabs;
+# the data window and the attribution in a footer on every tab; and a head
+# that sets the theme before the page is drawn, loads the brand's fonts and
+# asks search engines not to index the app.
 
 # The tabs' values, which URL bookmarks name
 app_tabs <- c("drug", "practice", "region", "report", "about")
@@ -69,22 +69,27 @@ site_url <- "https://katonometrica.com/"
 # The page's header, sticky at the top: katonometrica.com's bar (site_bar()),
 # then bslib's navbar as the app's row, its name and the tabs. The two are
 # navigation landmarks named apart. The site's drawer backdrop comes first,
-# as the site's bar has it. prexp.css draws the header and navbar.js gives it
-# the site's behaviour.
+# as the site's bar has it. Before the header, the site's skip link, the
+# keyboard's first stop, which leads past both rows to the tabs' content
+# (main_landmark()). prexp.css draws the header and navbar.js gives it the
+# site's behaviour.
 page_header <- function(page) {
   query <- htmltools::tagQuery(page)
   navbar <- query$find(".navbar")
   navbar$addClass("prexp-app-nav")$addAttrs(`aria-label` = "Prescription Explorer")
   navbar$find(".navbar-brand")$addClass("prexp-app-name")
   app_row <- navbar$selectedTags()
-  navbar$replaceWith(shiny::tags$header(
-    class = "kat-navbar", id = "kat-navbar",
-    shiny::div(
-      class = "kat-nav-menu-backdrop", id = "kat-nav-menu-backdrop", `aria-hidden` = "true"
-    ),
-    site_bar(),
-    app_row
-  ))
+  navbar$replaceWith(
+    shiny::tags$a(href = "#main-content", class = "kat-skip-link", "Skip to main content"),
+    shiny::tags$header(
+      class = "kat-navbar", id = "kat-navbar",
+      shiny::div(
+        class = "kat-nav-menu-backdrop", id = "kat-nav-menu-backdrop", `aria-hidden` = "true"
+      ),
+      site_bar(),
+      app_row
+    )
+  )
   as_page(query$allTags(), page)
 }
 
@@ -149,11 +154,11 @@ view_heading <- function(text) {
 }
 
 # The tabs as the page's main landmark, between the header and the footer, so
-# a screen reader can skip to them. Only the first .tab-content is the tabs':
-# a view's own tabs add another.
+# a screen reader can skip to them, and the skip link's target. Only the first
+# .tab-content is the tabs': a view's own tabs add another.
 main_landmark <- function(page) {
   tabs <- htmltools::tagQuery(page)$find(".tab-content")$filter(function(x, i) i == 1L)
-  as_page(tabs$addAttrs(role = "main")$allTags(), page)
+  as_page(tabs$addAttrs(role = "main", id = "main-content")$allTags(), page)
 }
 
 # tagQuery() returns a bare tag list: the page's class, language and theme

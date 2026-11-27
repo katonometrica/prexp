@@ -623,20 +623,37 @@ test_that("flow 7: dark at first, the theme button switches it, and the choice i
   reload_page(app)
   expect_identical(app$get_js(theme), "light")
   expect_identical(app$get_js(label), "Switch to dark theme")
-  # The keyboard's first stop is katonometrica.com's wordmark, at the top of
-  # the header, and it shows its focus
+  # The keyboard's first stop is the site's skip link, which comes into view
+  # at the top of the page, over the header, as the site's does; the next is
+  # katonometrica.com's wordmark. Both show the site's outline, 8 px off.
+  ring <- paste(
+    "(function () { var s = getComputedStyle(document.activeElement);",
+    "return [s.outlineStyle, s.outlineWidth, s.outlineOffset, s.boxShadow]; })()"
+  )
+  site_ring <- c("solid", "2px", "8px", "none")
+  press_key(app, "Tab", "Tab", 9L)
+  expect_true(app$get_js("document.activeElement.matches('.kat-skip-link')"))
+  expect_true(settled_js(app, "document.activeElement.getBoundingClientRect().top === 0", TRUE))
+  expect_identical(settled_js(app, ring, site_ring), site_ring)
   press_key(app, "Tab", "Tab", 9L)
   expect_true(app$get_js("document.activeElement.matches('.kat-nav-logo')"))
-  expect_identical(unlist(app$get_js(focus)), c("solid", "2px", "none"))
+  expect_identical(settled_js(app, ring, site_ring), site_ring)
+  # The skip link leads past both rows of the header: from it, the next stop
+  # is the open tab's first control, the drug's search box
+  press_key(app, "Tab", "Tab", 9L, modifiers = 8L)
+  expect_true(app$get_js("document.activeElement.matches('.kat-skip-link')"))
+  press_enter(app)
+  press_key(app, "Tab", "Tab", 9L)
+  expect_true(app$get_js("document.activeElement.matches('#drug-search-pick-selectized')"))
 })
 
 test_that("flow 8: katonometrica.com's bar over the tabs, scrolled, and on a phone", {
   app <- local_app("header")
   # As a visitor who asks for less motion: the header changes without a
   # transition (what a transition changes is read once it has settled)
-  app$get_chromote_session()$Emulation$setEmulatedMedia(
-    features = list(list(name = "prefers-reduced-motion", value = "reduce"))
-  )
+  session <- app$get_chromote_session()
+  reduced <- list(name = "prefers-reduced-motion", value = "reduce")
+  session$Emulation$setEmulatedMedia(features = list(reduced))
   values <- function(js) unlist(app$get_js(js))
   # One header: katonometrica.com's bar, then the app's row, two navigation
   # landmarks named apart
@@ -663,10 +680,18 @@ test_that("flow 8: katonometrica.com's bar over the tabs, scrolled, and on a pho
       "Book a call https://katonometrica.com/#contact"
     )
   )
-  # The site's bar is at most 1200 px wide; the app's content keeps the
-  # page's width, for its tables and charts
+  # The site's bar is at most 1200 px wide, and 72 px high, its content
+  # centred in the 71 px above its clear rule, as the site's; the app's
+  # content keeps the page's width, for its tables and charts
   expect_equal(
     app$get_js("document.querySelector('.kat-nav-container').getBoundingClientRect().width"), 1200
+  )
+  expect_identical(
+    values(paste(
+      "(function (r) { return [r.offsetHeight, r.clientHeight]; })",
+      "(document.querySelector('.kat-nav-row'))"
+    )),
+    c(72L, 71L)
   )
   expect_gt(
     app$get_js("document.querySelector('.tab-content').getBoundingClientRect().width"), 1300
@@ -707,6 +732,20 @@ test_that("flow 8: katonometrica.com's bar over the tabs, scrolled, and on a pho
   )
   top <- c("sticky", "0px", "rgba(0, 0, 0, 0)", "none", "rgba(0, 0, 0, 0)", "1e-05s", "1e-05s", "0")
   expect_identical(settled_js(app, bar, top), top)
+  # The page scrolls what takes the focus clear of the header, by its height
+  padding <- paste(
+    "getComputedStyle(document.documentElement).scrollPaddingTop ===",
+    "document.getElementById('kat-navbar').offsetHeight + 'px'"
+  )
+  expect_true(app$get_js(padding))
+  # Scrolled a little, the content goes under the header, which takes the
+  # page's colour, so that nothing shows through it
+  app$run_js("window.scrollTo(0, 30);")
+  app$wait_for_js("document.getElementById('kat-navbar').classList.contains('kat-moved')")
+  moved <- c(
+    "sticky", "0px", "rgb(253, 252, 251)", "none", "rgba(0, 0, 0, 0)", "1e-05s", "1e-05s", "0"
+  )
+  expect_identical(settled_js(app, bar, moved), moved)
   # Scrolled past 50 px, it stays at the top on the site's translucent
   # background, over a blur of the page, with a rule under it
   app$run_js("window.scrollTo(0, 400);")
@@ -717,10 +756,24 @@ test_that("flow 8: katonometrica.com's bar over the tabs, scrolled, and on a pho
   )
   expect_identical(settled_js(app, bar, scrolled), scrolled)
   app$run_js("window.scrollTo(0, 0);")
-  app$wait_for_js("!document.getElementById('kat-navbar').classList.contains('kat-scrolled')")
+  app$wait_for_js("!document.getElementById('kat-navbar').classList.contains('kat-moved')")
+  expect_identical(settled_js(app, bar, top), top)
+  # On a tablet the tabs stay beside the app's name, where they fit, and the
+  # header is as high as on a desktop
+  height <- "document.getElementById('kat-navbar').offsetHeight"
+  desktop <- app$get_js(height)
+  beside <- paste(
+    "document.querySelector('.prexp-app-nav .navbar-nav').getBoundingClientRect().top <",
+    "document.querySelector('.prexp-app-name').getBoundingClientRect().bottom"
+  )
+  expect_true(app$get_js(beside))
+  app$set_window_size(width = 768, height = 1024)
+  app$wait_for_idle(duration = 500)
+  expect_true(settled_js(app, beside, TRUE))
+  expect_identical(app$get_js(height), desktop)
   # On a phone: the wordmark and the hamburger, the site's links and actions
   # in the closed drawer, out of sight and of the keyboard's way; the app's
-  # name and its tabs stay on screen, all five there
+  # name and, under it, its tabs stay on screen, all five there
   app$set_window_size(width = 390, height = 844)
   app$wait_for_idle(duration = 500)
   # Whether an element is visible and on the screen, once that settles
@@ -739,20 +792,24 @@ test_that("flow 8: katonometrica.com's bar over the tabs, scrolled, and on a pho
   for (selector in c(".kat-nav-link", "#prexp-theme-toggle", ".kat-btn-nav")) {
     expect_false(shown(selector, FALSE), label = selector)
   }
-  expect_identical(
-    values(paste(
-      "Array.from(document.querySelectorAll('.prexp-app-nav .nav-link'))",
-      ".map(function (a) { return a.getClientRects().length > 0; })"
-    )),
-    rep(TRUE, 5L)
-  )
+  expect_false(app$get_js(beside))
+  # All five tabs fit: the strip has nothing to scroll, and each is on the
+  # screen
+  expect_true(app$get_js(paste(
+    "(function (s) { return s.scrollWidth <= s.clientWidth &&",
+    "Array.from(s.querySelectorAll('.nav-link')).every(function (a) {",
+    "var r = a.getBoundingClientRect(); return r.left >= 0 && r.right <= window.innerWidth; }); })",
+    "(document.querySelector('.prexp-app-nav .navbar-nav'))"
+  )))
+  expect_true(settled_js(app, padding, TRUE))
   # By keyboard: from the wordmark, the next stop is the hamburger, which
-  # shows its focus and says the drawer is closed, and which parts it opens
+  # shows the site's outline, 8 px off, and says the drawer is closed, and
+  # which parts it opens
   focus <- paste(
     "(function () { var s = getComputedStyle(document.activeElement);",
-    "return [s.outlineStyle, s.outlineWidth, s.boxShadow]; })()"
+    "return [s.outlineStyle, s.outlineWidth, s.outlineOffset, s.boxShadow]; })()"
   )
-  ring <- c("solid", "2px", "none")
+  ring <- c("solid", "2px", "8px", "none")
   at <- "document.activeElement.id || document.activeElement.textContent.trim()"
   expanded <- "document.getElementById('kat-nav-toggle').getAttribute('aria-expanded')"
   app$run_js("document.querySelector('.kat-nav-logo').focus();")
@@ -776,16 +833,20 @@ test_that("flow 8: katonometrica.com's bar over the tabs, scrolled, and on a pho
   }
   expect_identical(settled_js(app, focus, ring), ring)
   # Tab goes round the drawer: its links, the theme button and Book a call at
-  # its foot, the hamburger, and back to the first link
-  stops <- character()
-  for (i in 1:7) {
+  # its foot, the hamburger, and back to the first link. Each shows the
+  # site's outline, but the hamburger, which shows it inside, as gold does
+  # not read on the backdrop.
+  offset <- "getComputedStyle(document.activeElement).outlineOffset"
+  round <- list(
+    c("Work", "8px"), c("How it works", "8px"), c("Contact", "8px"),
+    c("prexp-theme-toggle", "8px"), c("Book a call", "8px"), c("kat-nav-toggle", "-2px"),
+    c("What we do", "8px")
+  )
+  for (stop in round) {
     press_key(app, "Tab", "Tab", 9L)
-    stops <- c(stops, app$get_js(at))
+    expect_identical(app$get_js(at), stop[[1]])
+    expect_identical(settled_js(app, offset, stop[[2]]), stop[[2]], label = stop[[1]])
   }
-  expect_identical(stops, c(
-    "Work", "How it works", "Contact", "prexp-theme-toggle", "Book a call", "kat-nav-toggle",
-    "What we do"
-  ))
   # The theme button works from the drawer, which stays open
   for (i in 1:3) press_key(app, "Tab", "Tab", 9L, modifiers = 8L)
   expect_identical(app$get_js(at), "prexp-theme-toggle")
@@ -803,7 +864,6 @@ test_that("flow 8: katonometrica.com's bar over the tabs, scrolled, and on a pho
   press_enter(app)
   app$wait_for_js("document.activeElement.matches('#kat-nav-menu .kat-nav-link')")
   expect_true(shown("#kat-nav-menu-backdrop", TRUE))
-  session <- app$get_chromote_session()
   for (type in c("mousePressed", "mouseReleased")) {
     session$Input$dispatchMouseEvent(type = type, x = 370, y = 600, button = "left", clickCount = 1)
   }
@@ -811,8 +871,65 @@ test_that("flow 8: katonometrica.com's bar over the tabs, scrolled, and on a pho
   expect_identical(app$get_js(at), "kat-nav-toggle")
   expect_false(shown(".kat-nav-link", FALSE))
   # Closed, the drawer leaves the tabs as they were: the next stop is the
-  # open tab, still on screen
+  # open tab, still on screen, with the app's outline, 2 px off
   press_key(app, "Tab", "Tab", 9L)
   expect_true(app$get_js(paste0(open, " === document.activeElement")))
   expect_true(shown(".prexp-app-nav .nav-link.active", TRUE))
+  tab_ring <- c("solid", "2px", "2px", "none")
+  expect_identical(settled_js(app, focus, tab_ring), tab_ring)
+  # In a forced-colours mode, which drops the surface and draws every tab's
+  # clear rule in the links' colour, the open tab keeps the only rule
+  session$Emulation$setEmulatedMedia(
+    features = list(reduced, list(name = "forced-colors", value = "active"))
+  )
+  system_colour <- function(name) {
+    app$get_js(sprintf(paste(
+      "(function () { var e = document.createElement('i'); e.style.color = '%s';",
+      "document.body.appendChild(e); var c = getComputedStyle(e).color; e.remove();",
+      "return c; })()"
+    ), name))
+  }
+  rules <- paste(
+    "Array.from(document.querySelectorAll('.prexp-app-nav .nav-link'))",
+    ".map(function (a) { return getComputedStyle(a).borderBottomColor; })"
+  )
+  forced <- c(rep(system_colour("Canvas"), 4L), system_colour("Highlight"))
+  expect_false(identical(forced[[1L]], forced[[5L]]))
+  expect_identical(settled_js(app, rules, forced), forced)
+  session$Emulation$setEmulatedMedia(features = list(reduced))
+  # On a short screen, a phone on its side, the header scrolls with the page,
+  # which then has nothing to keep clear of it
+  app$set_window_size(width = 844, height = 390)
+  app$wait_for_idle(duration = 500)
+  expect_identical(
+    settled_js(
+      app, "getComputedStyle(document.getElementById('kat-navbar')).position", "relative"
+    ),
+    "relative"
+  )
+  expect_identical(
+    app$get_js("getComputedStyle(document.documentElement).scrollPaddingTop"), "0px"
+  )
+  # At 400 %, a screen 1280 px wide is 320 px across and 205 high: the
+  # drawer's links scroll, clear of the actions over their foot, so that each
+  # stop the keyboard reaches is wholly in view
+  app$set_window_size(width = 320, height = 205)
+  app$wait_for_idle(duration = 500)
+  app$run_js("window.scrollTo(0, 0); document.getElementById('kat-nav-toggle').focus();")
+  press_enter(app)
+  app$wait_for_js("document.activeElement.matches('#kat-nav-menu .kat-nav-link')")
+  in_view <- paste(
+    "(function (a) { var r = a.getBoundingClientRect();",
+    "return [r.left + 2, r.right - 2].every(function (x) {",
+    "return [r.top + 2, r.bottom - 2].every(function (y) {",
+    "var e = document.elementFromPoint(x, y); return e === a || a.contains(e); }); }); })",
+    "(document.activeElement)"
+  )
+  for (stop in c("What we do", vapply(round, `[[`, "", 1L))) {
+    expect_identical(app$get_js(at), stop)
+    expect_true(settled_js(app, in_view, TRUE), label = stop)
+    press_key(app, "Tab", "Tab", 9L)
+  }
+  press_key(app, "Escape", "Escape", 27L)
+  expect_identical(app$get_js(expanded), "false")
 })
