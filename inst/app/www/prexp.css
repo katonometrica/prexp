@@ -7,6 +7,13 @@
 :root {
   --prexp-ease: cubic-bezier(0.4, 0, 0.2, 1);
   --prexp-fast: 150ms;
+  --prexp-normal: 250ms;
+}
+
+/* The header is sticky: what takes the keyboard's focus is scrolled clear of
+   it. navbar.js keeps its height in --prexp-header-height. */
+html {
+  scroll-padding-top: var(--prexp-header-height, 0px);
 }
 
 body {
@@ -50,23 +57,27 @@ a {
 .btn:focus-visible,
 .nav-link:focus-visible,
 .form-check-input:focus-visible,
-.prexp-theme-toggle:focus-visible,
+.kat-theme-toggle:focus-visible,
+.kat-nav-toggle:focus-visible,
 a:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--prexp-accent);
   outline-offset: 2px;
   box-shadow: none;
 }
+/* katonometrica.com's bar keeps the site's outline, 8 px off each control.
+   The app's row keeps 2 px, which its tabs' scroll box has room for. */
+.kat-nav-row :focus-visible {
+  outline-offset: 8px;
+}
 .btn:focus,
 .nav-link:focus,
 .form-check-input:focus {
   box-shadow: none;
 }
-/* The same where a component's own focus rule weighs more: the collapsed
-   navbar's toggle (Bootstrap's), Shiny's radios (bslib's glow) and a
-   table's page buttons (reactable's, whose stylesheet comes after this one) */
-.navbar .navbar-toggle:focus-visible,
-.navbar .navbar-toggler:focus-visible,
+/* The same where a component's own focus rule weighs more: Shiny's radios
+   (bslib's glow) and a table's page buttons (reactable's, whose stylesheet
+   comes after this one) */
 .shiny-input-container .radio input[type="radio"]:focus-visible,
 .shiny-input-container .radio-inline input[type="radio"]:focus-visible,
 .Reactable .rt-page-button:focus-visible {
@@ -85,84 +96,444 @@ a:focus-visible,
   outline-offset: -2px;
 }
 
-/* The navbar: on the page's colour, a rule under it, the tabs as the site's
-   links; the open tab in the text colour over a gold rule */
-.navbar {
-  --bslib-navbar-light-bg: var(--prexp-bg);
-  --bslib-navbar-dark-bg: var(--prexp-bg);
-  --bs-navbar-color: var(--prexp-text-secondary);
-  --bs-navbar-hover-color: var(--prexp-text);
-  --bs-navbar-active-color: var(--prexp-text);
-  --bs-navbar-brand-color: var(--prexp-text);
-  --bs-navbar-brand-hover-color: var(--prexp-text);
-  --bs-navbar-toggler-border-color: var(--prexp-border-strong);
-  background-color: var(--prexp-bg);
-  min-height: 56px;
+/* The site's skip link, before the header: out of sight until the keyboard
+   reaches it, its first stop, then a gold chip over the header's corner,
+   which leads past both rows to the tabs' content */
+.kat-skip-link {
+  position: absolute;
+  top: -100%;
+  left: 16px;
+  z-index: 10000;
+  background: var(--prexp-accent);
+  color: var(--prexp-on-accent);
+  padding: 8px 16px;
+  font-family: var(--bs-font-monospace);
+  font-size: 12px;
+  line-height: 1.7;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  border-radius: 0;
+  transition: top var(--prexp-fast) var(--prexp-ease);
 }
-.navbar-brand {
-  font-weight: 600;
-  font-size: 1.125rem;
-  letter-spacing: -0.01em;
+.kat-skip-link:focus {
+  top: 0;
 }
-.navbar .nav-underline {
-  --bs-nav-link-font-size: 14px;
-  --bs-nav-link-font-weight: 500;
-  --bs-nav-underline-link-active-color: var(--prexp-text);
+.kat-skip-link:hover {
+  color: var(--prexp-on-accent);
 }
-.navbar .nav-underline .nav-link {
-  font-weight: 500;
-  transition: color var(--prexp-fast) var(--prexp-ease),
-    border-color var(--prexp-fast) var(--prexp-ease);
-}
-.navbar .nav-underline .nav-link:hover,
-.navbar .nav-underline .nav-link:focus {
-  border-bottom-color: transparent;
-}
-.navbar .nav-underline .nav-link.active,
-.navbar .nav-underline .show > .nav-link {
-  color: var(--prexp-text);
-  font-weight: 500;
-  border-bottom-color: var(--prexp-accent);
-}
-/* In the collapsed menu bslib drops the underline (.navbar-collapse.show,
-   .collapsing): the open tab takes a gold rule at its left instead, and the
-   others a clear one, so the names stay in line. bslib also pads a link's
-   foot so that the underline meets the navbar's edge, overlapping the next
-   link: the menu pads it as its head, so the rule spans its own link only,
-   at the same spacing. */
-.navbar-collapse.show .nav-underline .nav-link,
-.navbar-collapse.collapsing .nav-underline .nav-link {
-  border-left: 2px solid transparent;
-  padding-bottom: var(--bs-nav-link-padding-y);
-  margin-bottom: 0;
-}
-.navbar-collapse.show .nav-underline .nav-link.active,
-.navbar-collapse.collapsing .nav-underline .nav-link.active {
-  border-left-color: var(--prexp-accent);
-}
-.navbar .bslib-nav-item {
-  display: flex;
-  align-items: center;
+.kat-skip-link:focus-visible {
+  outline-offset: 8px;
 }
 
-/* The theme button, as the site's */
-.prexp-theme-toggle {
+/* The header: katonometrica.com's bar, ported from the site's styles.css,
+   over the app's own row, its name and the tabs. The site's classes take the
+   prefix kat- and otherwise keep their names (.navbar is .kat-navbar,
+   .nav-link .kat-nav-link, .scrolled .kat-scrolled), as the site's .navbar
+   and .nav-link are Bootstrap's too; its tokens are the app's. Both rows are
+   one header, sticky at the top: transparent at the top of the page; once
+   the page has scrolled (navbar.js), on the page's colour, so that the
+   content, which starts closer under it than the site's, never shows
+   through; and from 50 px, on the site's translucent background over a blur
+   of what scrolls under it, with a rule under it. The app's content keeps
+   its full width. */
+.kat-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--prexp-normal) var(--prexp-ease);
+  text-rendering: optimizeLegibility;
+}
+/* The scrolled background and its blur on a pseudo-element, as the site's: a
+   backdrop-filter on the header itself would make it the containing block
+   of the drawer, which is fixed */
+.kat-navbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: transparent;
+  transition: background var(--prexp-normal) var(--prexp-ease),
+    backdrop-filter var(--prexp-normal) var(--prexp-ease);
+}
+.kat-navbar.kat-moved::before {
+  background: var(--prexp-bg);
+}
+.kat-navbar.kat-scrolled::before {
+  background: var(--prexp-navbar-scrolled-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.kat-navbar.kat-scrolled {
+  border-bottom-color: var(--prexp-border);
+}
+
+/* Row 1, the site's bar: 72 px high, its content at most 1200 px wide, in
+   the site's body type (16 px, 1.7). Its clear rule is the site's, which
+   centres the content in the 71 px above it. */
+.kat-nav-row {
+  height: 72px;
+  padding: 0 24px;
+  border-bottom: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  font-size: 16px;
+  line-height: 1.7;
+}
+.kat-nav-container {
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.kat-nav-logo {
+  font-family: var(--bs-font-monospace);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--prexp-text);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.kat-nav-logo:hover {
+  color: var(--prexp-accent);
+}
+.kat-nav-menu {
+  display: flex;
+  list-style: none;
+  gap: 4px;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+}
+.kat-nav-link {
+  font-family: var(--bs-font-sans-serif);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--prexp-text-secondary);
+  text-decoration: none;
+  padding: 6px 14px;
+  border-radius: 0;
+  transition: color var(--prexp-fast) var(--prexp-ease),
+    background var(--prexp-fast) var(--prexp-ease);
+}
+.kat-nav-link:hover {
+  color: var(--prexp-text);
+  background: var(--prexp-surface);
+}
+.kat-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* The theme button */
+.kat-theme-toggle {
   background: none;
   border: 1px solid var(--prexp-border-strong);
   border-radius: 0;
   padding: 6px 12px;
+  cursor: pointer;
   font-family: var(--bs-font-monospace);
   font-size: 12px;
   letter-spacing: 0.08em;
-  line-height: 1;
   color: var(--prexp-text-secondary);
-  cursor: pointer;
   transition: color var(--prexp-fast) var(--prexp-ease),
     border-color var(--prexp-fast) var(--prexp-ease);
+  line-height: 1;
 }
-.prexp-theme-toggle:hover {
+.kat-theme-toggle:hover {
   color: var(--prexp-text);
   border-color: var(--prexp-accent);
+}
+/* Book a call: the site's gold button (.btn .btn-primary .btn-nav), its
+   text in the colour of text on the gold, its hover the app's (in light, a
+   darker gold than the site's, which falls under 4.5:1) */
+.kat-btn {
+  font-family: var(--bs-font-sans-serif);
+  font-size: 15px;
+  font-weight: 500;
+  padding: 14px 28px;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  line-height: 1;
+}
+.kat-btn-primary {
+  background: var(--prexp-accent);
+  color: var(--prexp-on-accent);
+}
+.kat-btn-primary:hover {
+  background: var(--prexp-accent-hover);
+  color: var(--prexp-on-accent);
+}
+.kat-btn-nav {
+  padding: 8px 18px;
+  font-size: 12px;
+}
+/* The hamburger, shown below 900 px; a cross while the drawer is open */
+.kat-nav-toggle {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 1001;
+}
+.kat-hamburger-line {
+  display: block;
+  width: 20px;
+  height: 1.5px;
+  background: var(--prexp-text);
+  transition: transform var(--prexp-normal) var(--prexp-ease),
+    opacity var(--prexp-normal) var(--prexp-ease);
+}
+.kat-nav-toggle.kat-active .kat-hamburger-line:nth-child(1) {
+  transform: translateY(6.5px) rotate(45deg);
+}
+.kat-nav-toggle.kat-active .kat-hamburger-line:nth-child(2) {
+  opacity: 0;
+}
+.kat-nav-toggle.kat-active .kat-hamburger-line:nth-child(3) {
+  transform: translateY(-6.5px) rotate(-45deg);
+}
+/* Over the backdrop, which gold does not read on in light, the focus
+   outline goes inside the button, on the page's colour */
+.kat-nav-toggle.kat-active:focus-visible {
+  background: var(--prexp-bg);
+  outline-offset: -2px;
+}
+/* The drawer's backdrop */
+.kat-nav-menu-backdrop {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--prexp-overlay);
+  z-index: 998;
+}
+.kat-nav-menu-backdrop.kat-active {
+  display: block;
+}
+/* The hamburger's lines are a background, which a forced-colours mode
+   drops: in the text's colour there */
+@media (forced-colors: active) {
+  .kat-hamburger-line {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+}
+
+/* Row 2, the app's own: bslib's navbar, on no background of its own, its
+   content as wide as the site's bar's. The app's name, then the tabs as the
+   site's links; the open tab in the text colour on the surface, over a 2 px
+   gold rule. The tabs never hide behind a menu button: where they do not
+   fit beside the name they go under it, and where they do not fit at all
+   they scroll sideways. */
+.prexp-app-nav {
+  --bslib-navbar-light-bg: transparent;
+  --bslib-navbar-dark-bg: transparent;
+  /* The site's links' 14 px at their sides: bslib gives every navbar
+     Bootstrap's expanded one, whose rule for this outweighs any here */
+  --bs-navbar-nav-link-padding-x: 14px;
+  background-color: transparent;
+  padding: 0 24px 12px;
+}
+/* The tabs' content below the header, as far as bslib puts it below its
+   navbar, which it does only for a navbar the content follows */
+.kat-navbar + div > .tab-content > .tab-pane {
+  margin-top: 20px;
+}
+.prexp-app-nav > .container-fluid {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  column-gap: 16px;
+  row-gap: 4px;
+}
+/* The name as wide as itself, and the strip as wide as the tabs, so that the
+   tabs go under the name only where they do not fit beside it (bslib makes
+   the name's box the row's width below 992 px, and the strip take what is
+   left of the row at any width) */
+.prexp-app-nav .navbar-header {
+  flex-shrink: 0;
+  width: auto;
+}
+.prexp-app-nav ul.nav.navbar-nav {
+  flex: 0 1 auto;
+}
+.prexp-app-nav .prexp-app-name {
+  font-family: var(--bs-font-sans-serif);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.7;
+  color: var(--prexp-text);
+  padding: 0;
+  margin: 0;
+}
+/* The tabs' strip, padded so that the scroll box leaves room for the focus
+   outline */
+.prexp-app-nav .navbar-nav {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+  max-width: calc(100% + 8px);
+  overflow-x: auto;
+  padding: 4px;
+  margin: -4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--prexp-control-border) transparent;
+}
+.prexp-app-nav .navbar-nav .nav-link {
+  font-family: var(--bs-font-sans-serif);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--prexp-text-secondary);
+  white-space: nowrap;
+  padding: 6px var(--bs-navbar-nav-link-padding-x);
+  border-bottom: 2px solid transparent;
+  background-clip: padding-box;
+  transition: color var(--prexp-fast) var(--prexp-ease),
+    background var(--prexp-fast) var(--prexp-ease),
+    border-color var(--prexp-fast) var(--prexp-ease);
+}
+.prexp-app-nav .navbar-nav .nav-link:hover {
+  color: var(--prexp-text);
+  background-color: var(--prexp-surface);
+}
+.prexp-app-nav .navbar-nav .nav-link.active {
+  color: var(--prexp-text);
+  background-color: var(--prexp-surface);
+  border-bottom-color: var(--prexp-accent);
+}
+/* Forced colours draw the closed tabs' clear rule in the links' colour, and
+   drop the surface: the open tab keeps the only rule */
+@media (forced-colors: active) {
+  .prexp-app-nav .navbar-nav .nav-link {
+    border-bottom-color: Canvas;
+  }
+  .prexp-app-nav .navbar-nav .nav-link.active {
+    border-bottom-color: Highlight;
+  }
+}
+
+/* The site's safe area, on both rows */
+@supports (padding: max(0px)) {
+  .kat-nav-row,
+  .prexp-app-nav {
+    padding-left: max(24px, env(safe-area-inset-left));
+    padding-right: max(24px, env(safe-area-inset-right));
+  }
+}
+
+/* Below 900 px, as the site: the hamburger, and the drawer from the left,
+   its links and, at its foot, the theme button and Book a call. Hidden
+   while closed, so nothing in it takes the focus. Where the links scroll,
+   on a short screen or a page zoomed in, they scroll clear of the actions
+   that lie over their foot, and the link with the focus stops short of
+   them. Its items take no transition, not even the 0.01 ms the site gives
+   every element where motion is reduced, so that its links are visible as
+   soon as it opens. */
+@media (max-width: 900px) {
+  .kat-nav-toggle {
+    display: flex;
+  }
+  .kat-nav-actions {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 85%;
+    max-width: 320px;
+    padding: 16px 32px;
+    background: var(--prexp-bg);
+    border-top: 1px solid var(--prexp-border);
+    border-right: 1px solid var(--prexp-border);
+    z-index: 1000;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.3s ease, visibility 0s linear 0.3s;
+    gap: 10px;
+  }
+  .kat-nav-menu.kat-active ~ .kat-nav-actions {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform 0.3s ease;
+  }
+  .kat-nav-menu {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 85%;
+    max-width: 320px;
+    height: 100vh;
+    height: 100dvh;
+    background: var(--prexp-bg);
+    flex-direction: column;
+    padding: 80px 32px 104px;
+    scroll-padding: 12px 0 72px;
+    gap: 8px;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.3s ease, visibility 0s linear 0.3s;
+    border-right: 1px solid var(--prexp-border);
+    z-index: 999;
+    overflow-y: auto;
+  }
+  .kat-nav-menu.kat-active {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform 0.3s ease;
+  }
+  .kat-nav-item {
+    transition: none;
+  }
+  .kat-nav-link {
+    font-size: 12px;
+    padding: 10px 16px;
+    display: block;
+  }
+}
+
+/* Below 600 px, the site's phones: the tabs under the app's name, closer,
+   so that the five fit across a phone of 390 px */
+@media (max-width: 600px) {
+  .prexp-app-nav {
+    --bs-navbar-nav-link-padding-x: 10px;
+    padding-bottom: 8px;
+  }
+  .prexp-app-nav .prexp-app-name {
+    line-height: 1.3;
+  }
+}
+
+/* On a short screen, a phone on its side or a page zoomed to 200 % or more,
+   the header scrolls with the page (WCAG's technique C34): sticky, it would
+   hide nearly a third of the screen, and at 400 % nearly three quarters */
+@media (max-height: 500px) {
+  .kat-navbar {
+    position: relative;
+  }
+  html {
+    scroll-padding-top: 0;
+  }
 }
 
 /* Cards: the brand's surface, a hairline edge, no shadow */
