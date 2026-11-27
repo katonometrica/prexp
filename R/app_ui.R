@@ -1,8 +1,8 @@
-# The page (spec section 5.3): the site's skip link, then a header of two rows,
-# katonometrica.com's bar over the app's own row with its name and five tabs;
-# the data window and the attribution in a footer on every tab; and a head
-# that sets the theme before the page is drawn, loads the brand's fonts and
-# asks search engines not to index the app.
+# The page (spec section 5.3): a skip link, then a header of one row, with
+# KATONOMETRICA's wordmark, the app's name, the five tabs and the theme
+# button; the data window and the attribution in a footer on every tab; and a
+# head that sets the theme before the page is drawn, loads the brand's fonts
+# and asks search engines not to index the app.
 
 # The tabs' values, which URL bookmarks name
 app_tabs <- c("drug", "practice", "region", "report", "about")
@@ -19,9 +19,10 @@ app_ui <- function(request) {
     theme = prexp_theme(),
     lang = "en",
     window_title = "Prescription Explorer",
-    # The tabs as the site's links, on a row that never hides behind a menu
-    # button: not Bootstrap's underlined tabs, and no collapsed menu
-    navbar_options = bslib::navbar_options(collapsible = FALSE, underline = FALSE),
+    # The tabs never hide behind a menu button: on a narrow screen they go
+    # under the name, and wrap onto a second line if they still do not fit
+    # (prexp.css)
+    navbar_options = bslib::navbar_options(collapsible = FALSE),
     # Every tab flows as a page, so the footer follows its content; charts set
     # their own heights
     fillable = FALSE,
@@ -39,7 +40,6 @@ app_ui <- function(request) {
         shiny::tags$style(shiny::HTML(brand_css())),
         shiny::tags$link(rel = "stylesheet", href = "prexp/prexp.css"),
         shiny::tags$script(src = "prexp/theme.js"),
-        shiny::tags$script(src = "prexp/navbar.js"),
         shiny::tags$script(src = "prexp/search.js"),
         shiny::tags$script(src = "prexp/report.js")
       ),
@@ -63,86 +63,32 @@ app_ui <- function(request) {
   main_landmark(page_header(page))
 }
 
-# katonometrica.com's address, which its bar's links lead to, in the same tab
-site_url <- "https://katonometrica.com/"
-
-# The page's header, sticky at the top: katonometrica.com's bar (site_bar()),
-# then bslib's navbar as the app's row, its name and the tabs. The two are
-# navigation landmarks named apart. The site's drawer backdrop comes first,
-# as the site's bar has it. Before the header, the site's skip link, the
-# keyboard's first stop, which leads past both rows to the tabs' content
-# (main_landmark()). prexp.css draws the header and navbar.js gives it the
-# site's behaviour.
+# The header, one row: bslib's navbar, named for screen readers, with
+# KATONOMETRICA's wordmark before the app's name, linking to katonometrica.com
+# in the same tab, and the theme button after the tabs, outside their list,
+# so that it stays beside the name where the tabs go under it. Before the
+# header, a skip link, the keyboard's first stop, which leads past it to the
+# tabs' content (main_landmark()).
 page_header <- function(page) {
   query <- htmltools::tagQuery(page)
   navbar <- query$find(".navbar")
-  navbar$addClass("prexp-app-nav")$addAttrs(`aria-label` = "Prescription Explorer")
-  navbar$find(".navbar-brand")$addClass("prexp-app-name")
-  app_row <- navbar$selectedTags()
-  navbar$replaceWith(
-    shiny::tags$a(href = "#main-content", class = "kat-skip-link", "Skip to main content"),
-    shiny::tags$header(
-      class = "kat-navbar", id = "kat-navbar",
-      shiny::div(
-        class = "kat-nav-menu-backdrop", id = "kat-nav-menu-backdrop", `aria-hidden` = "true"
-      ),
-      site_bar(),
-      app_row
-    )
+  navbar$addAttrs(`aria-label` = "Prescription Explorer")
+  navbar$find(".navbar-brand")$before(shiny::tags$a(
+    href = "https://katonometrica.com/", class = "prexp-header-wordmark", "KATONOMETRICA"
+  ))
+  navbar$children(".container-fluid")$append(theme_button())
+  navbar$before(
+    shiny::tags$a(href = "#main-content", class = "prexp-skip-link", "Skip to main content")
   )
   as_page(query$allTags(), page)
 }
 
-# katonometrica.com's bar as the site's pages draw it (its index.html), the
-# classes under the prefix kat- (the site's .navbar and .nav-link are
-# Bootstrap's too): the wordmark; the site's four sections; and its actions,
-# the theme button and Book a call. No language menu: the app is in English.
-# Below 900 px the links and the actions are a drawer, which the hamburger
-# opens; its label names the bar it belongs to, as the page has two.
-site_bar <- function() {
-  sections <- c(
-    "What we do" = "services", "Work" = "work", "How it works" = "how", "Contact" = "contact"
-  )
-  shiny::tags$nav(
-    class = "kat-nav-row", `aria-label` = "katonometrica.com",
-    shiny::div(
-      class = "kat-nav-container",
-      shiny::tags$a(href = site_url, class = "kat-nav-logo", "KATONOMETRICA"),
-      shiny::tags$ul(
-        class = "kat-nav-menu", id = "kat-nav-menu",
-        lapply(names(sections), function(name) {
-          shiny::tags$li(
-            class = "kat-nav-item",
-            shiny::tags$a(
-              href = paste0(site_url, "#", sections[[name]]), class = "kat-nav-link", name
-            )
-          )
-        })
-      ),
-      shiny::div(
-        class = "kat-nav-actions", id = "kat-nav-actions",
-        theme_button(),
-        shiny::tags$a(
-          href = paste0(site_url, "#contact"), class = "kat-btn kat-btn-primary kat-btn-nav",
-          "Book a call"
-        )
-      ),
-      shiny::tags$button(
-        type = "button", class = "kat-nav-toggle", id = "kat-nav-toggle",
-        `aria-label` = "katonometrica.com menu", `aria-expanded` = "false",
-        `aria-controls` = "kat-nav-menu kat-nav-actions",
-        lapply(1:3, function(i) shiny::span(class = "kat-hamburger-line"))
-      )
-    )
-  )
-}
-
-# The theme button, among the site's actions as on katonometrica.com: its
-# glyph shows the theme, its label what a press does. The page opens dark
+# The theme button, at the header's right as on katonometrica.com: its glyph
+# shows the theme, its label what a press does. The page opens dark
 # (theme_script()), and theme.js sets both when the theme changes.
 theme_button <- function() {
   shiny::tags$button(
-    type = "button", id = "prexp-theme-toggle", class = "kat-theme-toggle",
+    type = "button", id = "prexp-theme-toggle", class = "prexp-theme-toggle",
     `aria-label` = "Switch to light theme", "\u25d0"
   )
 }
