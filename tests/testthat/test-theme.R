@@ -33,10 +33,6 @@ test_that("both themes have the same tokens, each a colour", {
   expect_identical(tokens$light$bg, "#FDFCFB")
   expect_identical(tokens$light$text, "#0b1222")
   expect_identical(tokens$light$accent, "#7d6523")
-  # The header's: the scrolled bar's background and the drawer's backdrop
-  expect_identical(tokens$dark$navbar_scrolled_bg, "rgba(11,18,34,0.92)")
-  expect_identical(tokens$light$navbar_scrolled_bg, "rgba(245,243,238,0.95)")
-  expect_identical(c(tokens$dark$overlay, tokens$light$overlay), rep("rgba(0,0,0,0.5)", 2L))
 })
 
 test_that("every text the page draws reads in both themes (WCAG AA, 4.5:1)", {
@@ -61,8 +57,7 @@ test_that("every text the page draws reads in both themes (WCAG AA, 4.5:1)", {
         )
       }
     }
-    # The gold buttons' text, at rest and under the pointer, and the skip
-    # link's, on the same gold
+    # The gold buttons' text, at rest and under the pointer
     expect_gte(contrast_on(t$on_accent, t$accent), 4.5, label = paste(mode, "on_accent"))
     expect_gte(contrast_on(t$on_accent, t$accent_hover), 4.5, label = paste(mode, "hover"))
     # An outline button under the pointer: its gold text on its gold tint
@@ -109,50 +104,16 @@ test_that("every mark and control edge reads in both themes (WCAG AA, 3:1)", {
   }
 })
 
-test_that("the header reads in both themes, at the top of the page and scrolled", {
+test_that("the navbar's title and tabs read on the page in both themes", {
   for (mode in c("light", "dark")) {
     t <- brand_tokens()[[mode]]
-    # What the header's text sits on: the page, at the top; once the page has
-    # scrolled, the site's translucent background over whatever scrolls under
-    # it, a surface or the largest filled marks, a gold button and a chart's
-    # bars. Text scrolls under it too, as strokes that the blur spreads thin.
-    unders <- c(surfaces(t), list(gold = t$accent, mark = t$chart_mark))
-    bars <- c(list(top = t$bg), lapply(unders, function(under) {
-      blend(t$navbar_scrolled_bg, under)
-    }))
-    for (ground in names(bars)) {
-      bar <- bars[[ground]]
-      label <- paste(mode, ground)
-      # The wordmark and the app's name in the text colour; the site's links,
-      # the theme button and the other tabs in the secondary text colour
-      expect_gte(contrast_ratio(t$text, bar), 4.5, label = paste(label, "text"))
-      expect_gte(contrast_ratio(t$text_secondary, bar), 4.5, label = paste(label, "links"))
-      # The focus outline, and Book a call's gold against the bar
-      expect_gte(contrast_ratio(t$accent, bar), 3, label = paste(label, "gold"))
-      # The open tab, or a link under the pointer, on the surface: its text,
-      # and the open tab's mark, more than its colour, a gold rule under it
-      tab <- blend(t$surface, bar)
-      expect_gte(contrast_ratio(t$text, tab), 4.5, label = paste(label, "open tab"))
-      expect_gte(contrast_ratio(t$accent, tab), 3, label = paste(label, "open tab's rule"))
-    }
-    # The hamburger's cross over the drawer's backdrop, at the top of the page
-    # and scrolled
-    for (bar in bars[c("top", "bg")]) {
-      shade <- blend(t$overlay, bar)
-      expect_gte(contrast_ratio(t$text, shade), 3, label = paste(mode, "cross on", shade))
-    }
+    # The title and the open tab in the text colour, the others in the
+    # secondary one, on the page's colour
+    expect_gte(contrast_on(t$text, t$bg), 4.5, label = paste(mode, "open tab"))
+    expect_gte(contrast_on(t$text_secondary, t$bg), 4.5, label = paste(mode, "other tabs"))
+    # The open tab is marked by more than its colour: a gold rule under it
+    expect_gte(contrast_on(t$accent, t$bg), 3, label = paste(mode, "rule"))
   }
-  # Gold does not read on the backdrop in light (1.4:1): there the
-  # hamburger's focus outline goes inside it, on the page's colour
-  t <- brand_tokens()$light
-  expect_lt(contrast_ratio(t$accent, blend(t$overlay, t$bg)), 3)
-  css <- paste(
-    readLines(system.file("app", "www", "prexp.css", package = "prexp")), collapse = "\n"
-  )
-  expect_match(css, paste0(
-    ".kat-nav-toggle.kat-active:focus-visible {\n",
-    "  background: var(--prexp-bg);\n  outline-offset: -2px;\n}"
-  ), fixed = TRUE)
 })
 
 test_that("brand_css() sets every token in both themes, dark on the attribute", {
@@ -273,7 +234,6 @@ test_that("the head sets the theme before the page is drawn, dark unless chosen"
   # The brand's CSS, then the components' that read it
   expect_lt(at("--prexp-bg:"), at("prexp/prexp.css"))
   expect_match(head, "<script src=\"prexp/theme.js\"></script>", fixed = TRUE)
-  expect_match(head, "<script src=\"prexp/navbar.js\"></script>", fixed = TRUE)
 })
 
 test_that("the theme button says what it does, and theme.js keeps the choice", {
@@ -284,12 +244,9 @@ test_that("the theme button says what it does, and theme.js keeps the choice", {
   expect_match(button, "type=\"button\"", fixed = TRUE)
   expect_match(button, "aria-label=\"Switch to light theme\"", fixed = TRUE)
   expect_match(button, paste0(">", intToUtf8(0x25D0L), "</button>"), fixed = TRUE)
-  expect_match(button, "class=\"kat-theme-toggle\"", fixed = TRUE)
-  # Among katonometrica.com's actions, before Book a call, in the bar over the
-  # tabs
-  expect_lt(regexpr("prexp-theme-toggle", page), regexpr("Book a call", page))
-  expect_gt(regexpr("prexp-theme-toggle", page), regexpr("id=\"kat-nav-actions\"", page))
-  expect_lt(regexpr("prexp-theme-toggle", page), regexpr("data-value=\"drug\"", page))
+  # In the navbar, after the tabs
+  expect_gt(regexpr("prexp-theme-toggle", page), regexpr("data-value=\"about\"", page))
+  expect_lt(regexpr("prexp-theme-toggle", page), regexpr("role=\"main\"", page))
   js <- paste(readLines(system.file("app", "www", "theme.js", package = "prexp")), collapse = "\n")
   expect_match(js, "localStorage.setItem('theme', next)", fixed = TRUE)
   expect_match(js, "setAttribute('data-bs-theme', next)", fixed = TRUE)
